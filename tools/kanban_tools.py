@@ -464,6 +464,47 @@ def _parse_bool_arg(args: dict, name: str, *, default: bool = False):
     return default, f"{name} must be a boolean or 'true'/'false'"
 
 
+def _gateway_session_platform(get_session_env) -> str:
+    """Return the messaging identity for gateway board routing.
+
+    Gateway turns normally bind ``HERMES_SESSION_PLATFORM``. The source
+    fallback also covers Discord-style test/adapter contexts that preserve
+    the messaging identity without the legacy platform variable. Known local
+    surfaces are never treated as gateway sessions, so CLI current-board
+    compatibility remains unchanged.
+    """
+    try:
+        from gateway.session_context import NON_MESSAGING_SESSION_SURFACES
+    except Exception:
+        NON_MESSAGING_SESSION_SURFACES = frozenset(
+            {
+                "",
+                "api_server",
+                "cli",
+                "codex",
+                "desktop",
+                "gateway",
+                "kanban",
+                "local",
+                "msgraph_webhook",
+                "tool",
+                "tui",
+                "webhook",
+            }
+        )
+    platform = str(
+        os.environ.get("HERMES_PLATFORM")
+        or get_session_env("HERMES_SESSION_PLATFORM", "")
+        or ""
+    ).strip()
+    if platform and platform.lower() not in NON_MESSAGING_SESSION_SURFACES:
+        return platform
+    source = str(get_session_env("HERMES_SESSION_SOURCE", "") or "").strip()
+    if source.lower() not in NON_MESSAGING_SESSION_SURFACES:
+        return source
+    return ""
+
+
 def _require_orchestrator_tool(tool_name: str) -> Optional[str]:
     """Belt-and-suspenders runtime guard for orchestrator-only handlers.
 
@@ -1425,12 +1466,12 @@ def _handle_create(args: dict, **kw) -> str:
         return tool_error(legacy_bool_error)
     try:
         from gateway.session_context import get_session_env
-        session_platform = get_session_env("HERMES_SESSION_PLATFORM", "")
+        session_platform = _gateway_session_platform(get_session_env)
     except Exception:
         def get_session_env(name: str, default: str = "") -> str:
             return os.environ.get(name, default)
 
-        session_platform = get_session_env("HERMES_SESSION_PLATFORM", "")
+        session_platform = _gateway_session_platform(get_session_env)
     if session_platform and not board:
         try:
             from hermes_cli import kanban_db as board_kb
@@ -1450,6 +1491,19 @@ def _handle_create(args: dict, **kw) -> str:
                 "intake to the orchestrator to identify or bootstrap a project "
                 "board instead of using the current-board pointer"
             )
+    if board and session_platform:
+        try:
+            from hermes_cli import kanban_db as board_kb
+            selection_error = board_kb.gateway_board_selection_error(
+                board,
+                legacy_unscoped=legacy_unscoped,
+            )
+        except Exception as exc:
+            return tool_error(
+                f"could not validate gateway board {board!r}: {exc}"
+            )
+        if selection_error:
+            return tool_error(selection_error)
     try:
         kb, conn = _connect(board=board)
         try:
@@ -1707,10 +1761,11 @@ _DESC_TASK_ID_DEFAULT = (
 
 _DESC_BOARD = (
     "Kanban board slug to target. Gateway-created tasks must pass this "
-    "explicitly; never rely on a mutable current-board pointer. Outside a "
-    "gateway session, omission resolves the active board: HERMES_KANBAN_DB "
-    "env → HERMES_KANBAN_BOARD env → the 'current' symlink under the "
-    "kanban home → 'default'."
+    "explicitly; never rely on a mutable current-board pointer or select the "
+    "shared legacy domain queues (infra, coding, security, lifeos, home, "
+    "personal) for new project work. Outside a gateway session, omission "
+    "resolves the active board: HERMES_KANBAN_DB env → HERMES_KANBAN_BOARD "
+    "env → the 'current' symlink under the kanban home → 'default'."
 )
 
 

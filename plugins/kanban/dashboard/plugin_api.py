@@ -2530,6 +2530,15 @@ def create_board_endpoint(payload: CreateBoardBody):
                 detail="default_workdir must match the selected project's primary folder.",
             )
         default_workdir = primary_path
+    legacy_requested = bool(payload.legacy_unscoped)
+    if not project_id:
+        try:
+            legacy_requested = legacy_requested or (
+                kanban_db._normalize_board_slug(payload.slug) == kanban_db.DEFAULT_BOARD
+            )
+        except ValueError:
+            # Let create_board() return its normal malformed-slug error.
+            pass
     try:
         meta = kanban_db.create_board(
             payload.slug,
@@ -2539,9 +2548,7 @@ def create_board_endpoint(payload: CreateBoardBody):
             color=payload.color,
             default_workdir=default_workdir,
             project_id=project_id,
-            legacy_unscoped=(
-                False if project_id else (payload.legacy_unscoped or None)
-            ),
+            legacy_unscoped=False if project_id else legacy_requested,
         )
     except kanban_db.BoardProjectError as exc:
         raise HTTPException(

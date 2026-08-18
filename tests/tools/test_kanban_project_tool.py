@@ -83,6 +83,50 @@ def test_gateway_thread_binding_resolves_board_without_current_pointer(
         assert kb.get_task(conn, resolved["task_id"]) is not None
 
 
+@pytest.mark.parametrize(
+    "domain_board",
+    ["infra", "coding", "security", "lifeos", "home", "personal"],
+)
+def test_gateway_create_rejects_shared_domain_board_without_project(
+    isolated_home, monkeypatch, domain_board
+):
+    kb.create_board(domain_board, legacy_unscoped=True)
+    monkeypatch.setenv("HERMES_SESSION_PLATFORM", "discord")
+
+    result = json.loads(
+        kanban_tools._handle_create(
+            {"title": "new project work", "assignee": "worker", "board": domain_board}
+        )
+    )
+
+    assert "error" in result
+    assert domain_board in result["error"]
+    assert "project board" in result["error"]
+
+
+def test_gateway_default_assignee_does_not_infer_current_domain_board(
+    isolated_home, monkeypatch
+):
+    kb.create_board("infra", legacy_unscoped=True)
+    kb.set_current_board("infra")
+    monkeypatch.delenv("HERMES_SESSION_PLATFORM", raising=False)
+    monkeypatch.setenv("HERMES_SESSION_SOURCE", "discord")
+    monkeypatch.setattr(
+        kanban_tools,
+        "load_config",
+        lambda: {"kanban": {"default_assignee": "hermes-coding"}},
+    )
+
+    result = json.loads(
+        kanban_tools._handle_create(
+            {"title": "ambiguous durable work", "assignee": "hermes-coding"}
+        )
+    )
+
+    assert "error" in result
+    assert "explicit board/project board" in result["error"]
+
+
 def test_gateway_create_schema_documents_legacy_escape():
     properties = kanban_tools.KANBAN_CREATE_SCHEMA["parameters"]["properties"]
     assert properties["legacy_unscoped"]["type"] == "boolean"

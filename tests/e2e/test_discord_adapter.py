@@ -10,6 +10,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from hermes_cli import kanban_db as kb
+from gateway.session_context import clear_session_vars, set_session_vars
 from tests.e2e.conftest import (
     BOT_USER_ID,
     E2E_MESSAGE_SETTLE_DELAY,
@@ -105,6 +107,61 @@ class TestAutoThreadingPreservesCommand:
         response = get_response_text(discord_adapter)
         assert response is not None
         assert "/new" in response
+
+
+class TestKanbanThreadRouting:
+    async def test_discord_thread_context_resolves_bound_kanban_board(
+        self, discord_adapter, bot_user
+    ):
+        """The adapter's Discord thread identity can select its bound board."""
+        board = "discord-thread-project"
+        kb.create_board(board, legacy_unscoped=True)
+        with kb.connect(board=board) as conn:
+            seed_task_id = kb.create_task(conn, title="seed", assignee="worker")
+
+        thread = make_fake_thread(thread_id=91001)
+        message = make_discord_message(
+            content=f"<@{BOT_USER_ID}> follow-up",
+            channel=thread,
+            mentions=[bot_user],
+        )
+        discord_adapter.handle_message = AsyncMock()
+        await discord_adapter._handle_message(message, recovered=True)
+
+        await_args = discord_adapter.handle_message.await_args
+        assert await_args is not None
+        event = await_args.args[0]
+        source = event.source
+        with kb.connect(board=board) as conn:
+            kb.add_notify_sub(
+                conn,
+                task_id=seed_task_id,
+                platform="discord",
+                chat_id=str(source.chat_id),
+                thread_id=str(source.thread_id),
+            )
+
+        tokens = set_session_vars(
+            platform="discord",
+            source="discord",
+            chat_id=str(source.chat_id),
+            thread_id=str(source.thread_id),
+        )
+        try:
+            import json
+            from tools import kanban_tools
+
+            result = json.loads(
+                kanban_tools._handle_create(
+                    {"title": "follow-up", "assignee": "worker"}
+                )
+            )
+        finally:
+            clear_session_vars(tokens)
+
+        assert result["ok"] is True
+        with kb.connect(board=board) as conn:
+            assert kb.get_task(conn, result["task_id"]) is not None
 
 
 class TestRepliedToMediaDispatch:

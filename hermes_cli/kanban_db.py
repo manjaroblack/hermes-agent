@@ -408,6 +408,13 @@ def _relative_age(ts: Optional[int], now: Optional[int] = None) -> str:
 # ---------------------------------------------------------------------------
 
 DEFAULT_BOARD = "default"
+# These boards predate project-first intake and are shared domain queues, not
+# project identities. Gateway-created project work must not select one of them
+# merely because a request sounds like that domain; legacy compatibility can
+# still opt in explicitly with ``legacy_unscoped``.
+GATEWAY_SHARED_DOMAIN_BOARDS = frozenset(
+    {"infra", "coding", "security", "lifeos", "home", "personal"}
+)
 _CURRENT_BOARD_OVERRIDE: ContextVar[str | None] = ContextVar(
     "hermes_kanban_current_board_override",
     default=None,
@@ -1520,6 +1527,37 @@ def resolve_board_for_notification_context(
             if conn is not None:
                 conn.close()
     return next(iter(matches)) if len(matches) == 1 else None
+
+
+def gateway_board_selection_error(
+    board: Optional[str],
+    *,
+    legacy_unscoped: bool = False,
+) -> Optional[str]:
+    """Reject implicit project intake onto a shared legacy domain board.
+
+    Board slugs are deliberately the only signal considered here. No title,
+    body, assignee, or profile name is inspected, so a request cannot be
+    routed to a domain queue by textual similarity. A domain slug is allowed
+    when it already carries a canonical project snapshot, or when the caller
+    explicitly opts into legacy unscoped compatibility.
+    """
+    if not board or legacy_unscoped:
+        return None
+    try:
+        normed = _normalize_board_slug(board)
+    except ValueError:
+        return None
+    if normed not in GATEWAY_SHARED_DOMAIN_BOARDS:
+        return None
+    metadata = read_board_metadata(normed)
+    if metadata.get("project_id"):
+        return None
+    return (
+        f"gateway-created project work cannot use shared legacy board {normed!r}; "
+        "select or create an explicit project board, or pass "
+        "legacy_unscoped=true for compatibility work"
+    )
 
 
 def _audit_board_entries() -> list[tuple[str, Optional[dict[str, Any]], Optional[str]]]:

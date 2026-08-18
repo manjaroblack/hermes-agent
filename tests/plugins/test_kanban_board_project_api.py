@@ -81,6 +81,27 @@ def test_create_board_rejects_unknown_project(client):
     assert r.status_code == 400
 
 
+def test_create_named_board_requires_project_or_explicit_legacy_escape(client):
+    r = client.post(
+        "/api/plugins/kanban/boards",
+        json={"slug": "unscoped", "name": "Unscoped"},
+    )
+    assert r.status_code == 400
+    assert "legacy_unscoped" in r.text
+
+    legacy = client.post(
+        "/api/plugins/kanban/boards",
+        json={"slug": "unscoped", "name": "Unscoped", "legacy_unscoped": True},
+    )
+    assert legacy.status_code == 200, legacy.text
+
+    default = client.post(
+        "/api/plugins/kanban/boards",
+        json={"slug": "default", "name": "Default"},
+    )
+    assert default.status_code == 200, default.text
+
+
 def test_patch_board_set_and_clear_project(client, project):
     client.post(
         "/api/plugins/kanban/boards",
