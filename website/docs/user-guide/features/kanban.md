@@ -94,8 +94,19 @@ Per-board isolation is absolute:
 # See what's on disk. Fresh installs show only "default".
 hermes kanban boards list
 
-# Create a new board.
+# Create a project-first board. A named board must be scoped to a Project.
+hermes project create "ATM10 Server" --primary /srv/atm10 --board atm10-server
+
+# The equivalent two-step flow.
+hermes project create "ATM10 Server" --primary /srv/atm10
+hermes project bind-board atm10-server atm10-server
+
+# Explicit legacy escape (compatibility queues only).
+hermes kanban boards create legacy-queue --legacy-unscoped
+
+# Create a new project-first board directly when the Project already exists.
 hermes kanban boards create atm10-server \
+    --project atm10-server \
     --name "ATM10 Server" \
     --description "Minecraft modded server ops" \
     --icon 🎮 \
@@ -108,6 +119,12 @@ hermes kanban --board atm10-server create "Restart ATM server" --assignee ops
 # Change which board is "current" for subsequent calls.
 hermes kanban boards switch atm10-server
 hermes kanban boards show             # who's active right now?
+
+# Inspect scope health without mutating any database.
+hermes kanban boards audit --json
+
+# Clearing a project binding is also an explicit legacy choice.
+hermes project bind-board atm10-server --legacy-unscoped
 
 # Rename the display name (the slug is immutable — it's the directory name).
 hermes kanban boards rename atm10-server "ATM10 (Prod)"
@@ -133,6 +150,31 @@ Slugs are validated: lowercase alphanumerics + hyphens + underscores, 1-64
 chars, must start with alphanumeric. Uppercase input is auto-downcased.
 Anything else (slashes, spaces, dots, `..`) is rejected at the CLI layer
 so path-traversal tricks can't name a board.
+
+### Project-first scope and legacy compatibility
+
+Each project-first board stores a canonical snapshot of the Project id, slug,
+display name, and absolute primary repository path in its `board.json`. That
+snapshot is the source of truth when a worker runs under another profile, so
+task creation does not depend on the creator's private `projects.db`. New
+tasks inherit the board's Project, use a fresh worktree under the primary
+repository, and receive a deterministic `<project-slug>/<task-id>-<title>`
+branch. A task cannot name a different Project, and a Project can be bound to
+only one board.
+
+The `default` board remains a readable legacy board. New named boards and new
+project-linked tasks must opt into the project-first path; use
+`--legacy-unscoped` only when preserving an intentionally unscoped queue or
+task. Legacy creation emits a warning and the audit reports `UNSCOPED_LEGACY`.
+`boards audit` is read-only and reports per-board status (`scoped`,
+`legacy_unscoped`, `conflict`, or `invalid`) plus stable issue codes such as
+`MISSING_PROJECT_SNAPSHOT`, `INVALID_PRIMARY_PATH`, and
+`TASK_PROJECT_MISMATCH`.
+
+Gateway-created tasks must carry an explicit board slug. This prevents a
+mutable current-board pointer from routing a Discord/Telegram/etc. request to
+the wrong Project; the board is also pinned in the task's notification and
+worker context.
 
 ### Managing boards from the dashboard
 
@@ -324,6 +366,14 @@ kanban_complete(
 ```
 
 An **orchestrator** worker fans out instead:
+
+The orchestrator roster is global to the installation, not limited to the
+currently active profile's private `HERMES_HOME`. Every installed profile is
+listed by name; its human-authored description is supplied to the decomposer
+and shown in the dashboard assignee picker. Profiles with no description stay
+routable, but are marked as undescribed so routing remains explainable. Set a
+description with `hermes profile describe <name>` (or edit it from the
+dashboard profile settings).
 
 ```
 kanban_show()

@@ -97,5 +97,23 @@ sessions still have zero `kanban_*` schema footprint unless configured.
 - **Isolation:** board is the hard boundary (workers get
   `HERMES_KANBAN_BOARD` pinned in env); tenant is a soft namespace
   within a board for workspace-path + memory-key isolation.
+- **Project-first boards:** named boards require an explicit Project by
+  default (`hermes kanban boards create <slug> --project <id-or-slug>` or
+  `hermes project create <name> --primary <absolute-repo> --board <slug>`).
+  `board.json` owns the shared snapshot (`project_id`, `project_slug`,
+  `project_name`, `project_primary_path`) and healthy scoped boards mirror
+  `default_workdir` to the primary path. Existing unscoped/default boards
+  remain readable; use `--legacy-unscoped` only as an explicit compatibility
+  escape. Inspect with `hermes kanban boards show` and audit read-only with
+  `hermes kanban boards audit --json`.
+- **Gateway intake:** durable gateway tasks must carry an explicit board, or
+  resolve one uniquely from the originating chat/thread's existing Kanban
+  notification subscription. The mutable current-board pointer is CLI
+  compatibility only; ambiguous intake is routed to the orchestrator for
+  project-board identification/bootstrap rather than silently using `default`.
+- **Global profiles:** boards do not clone or scope profiles. The decomposer
+  and assignee surfaces enumerate the global fleet from the default Hermes
+  root, including profiles with no tasks, and expose each profile's
+  description/`has_description` state for explainable routing.
 
 User docs: https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban

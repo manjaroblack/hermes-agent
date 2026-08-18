@@ -82,13 +82,19 @@ def test_create_board_rejects_unknown_project(client):
 
 
 def test_patch_board_set_and_clear_project(client, project):
-    client.post("/api/plugins/kanban/boards", json={"slug": "widget", "name": "Widget"})
+    client.post(
+        "/api/plugins/kanban/boards",
+        json={"slug": "widget", "name": "Widget", "legacy_unscoped": True},
+    )
 
     r = client.patch("/api/plugins/kanban/boards/widget", json={"project_id": project["id"]})
     assert r.status_code == 200, r.text
     assert r.json()["board"]["project_id"] == project["id"]
 
-    r = client.patch("/api/plugins/kanban/boards/widget", json={"project_id": ""})
+    r = client.patch(
+        "/api/plugins/kanban/boards/widget",
+        json={"project_id": "", "legacy_unscoped": True},
+    )
     assert r.status_code == 200
     assert r.json()["board"]["project_id"] is None
 
@@ -117,3 +123,27 @@ def test_task_on_scoped_board_inherits_project(client, project):
         assert kb.get_task(conn, task_id).project_id == project["id"]
     finally:
         conn.close()
+
+
+def test_audit_and_global_profile_roster_surfaces_scope_metadata(client, kanban_home):
+    profile = kanban_home / "profiles" / "writer"
+    profile.mkdir(parents=True)
+    (profile / "profile.yaml").write_text(
+        "description: Writes release notes\n",
+        encoding="utf-8",
+    )
+    client.post(
+        "/api/plugins/kanban/boards",
+        json={"slug": "legacy", "legacy_unscoped": True},
+    )
+
+    roster = client.get("/api/plugins/kanban/profiles")
+    assert roster.status_code == 200
+    writer = next(p for p in roster.json()["profiles"] if p["name"] == "writer")
+    assert writer["description"] == "Writes release notes"
+    assert writer["has_description"] is True
+
+    audit = client.get("/api/plugins/kanban/boards/audit")
+    assert audit.status_code == 200
+    legacy = next(b for b in audit.json()["boards"] if b["slug"] == "legacy")
+    assert legacy["status"] == "legacy_unscoped"

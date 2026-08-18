@@ -290,6 +290,15 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
                           help="Switch to the new board after creating it")
     b_create.add_argument("--default-workdir", default=None,
                           help="Default workspace path for tasks created on this board")
+    b_create.add_argument(
+        "--project", default=None, metavar="ID_OR_SLUG",
+        help="Scope the board to a first-class project (id or slug)",
+    )
+    b_create.add_argument(
+        "--legacy-unscoped", action="store_true",
+        help="Explicitly create a named board without a project (legacy escape)",
+    )
+    b_create.add_argument("--json", action="store_true", help="Emit the board as JSON")
 
     b_rm = boards_sub.add_parser(
         "rm", aliases=["remove", "delete"],
@@ -326,6 +335,11 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
     b_set_wd.add_argument("path", nargs="?", default=None,
                           help="Absolute path to use as default workdir. Omit to clear.")
 
+    b_audit = boards_sub.add_parser(
+        "audit", help="Read-only audit of board/project/task scope integrity",
+    )
+    b_audit.add_argument("--json", action="store_true", help="Emit machine-readable issues")
+
     # --- create ---
     p_create = sub.add_parser("create", help="Create a new task")
     p_create.add_argument("title", help="Task title")
@@ -342,6 +356,10 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
                           help="Link to a project (id or slug). Anchors the task's "
                                "worktree under the project's primary repo with a "
                                "deterministic branch. See `hermes project list`.")
+    p_create.add_argument(
+        "--legacy-unscoped", action="store_true",
+        help="On a scoped board, intentionally create an unscoped legacy task",
+    )
     p_create.add_argument("--tenant", default=None, help="Tenant namespace")
     p_create.add_argument("--priority", type=int, default=0, help="Priority tiebreaker")
     p_create.add_argument("--triage", action="store_true",
@@ -1248,6 +1266,8 @@ def _dispatch_boards(args: argparse.Namespace) -> int:
         return _cmd_boards_rename(args)
     if sub == "set-default-workdir":
         return _cmd_boards_set_default_workdir(args)
+    if sub == "audit":
+        return _cmd_boards_audit(args)
     print(f"kanban boards: unknown action {sub!r}", file=sys.stderr)
     return 2
 
@@ -1283,7 +1303,7 @@ def _cmd_boards_list(args: argparse.Namespace) -> int:
     if not boards:
         print("(no boards — create one with `hermes kanban boards create <slug>`)")
         return 0
-    print(f"{'':2s}  {'SLUG':24s}  {'NAME':28s}  COUNTS")
+    print(f"{'':2s}  {'SLUG':24s}  {'NAME':28s}  {'PROJECT':24s}  COUNTS")
     for b in boards:
         marker = "●" if b["is_current"] else " "
         counts = b["counts"] or {}
@@ -1294,7 +1314,8 @@ def _cmd_boards_list(args: argparse.Namespace) -> int:
         name = b.get("name") or ""
         if b.get("archived"):
             name += " [archived]"
-        print(f"{marker:2s}  {b['slug']:24s}  {name:28s}  {counts_str}")
+        project = b.get("project_slug") or b.get("project_name") or "(legacy/unscoped)"
+        print(f"{marker:2s}  {b['slug']:24s}  {name:28s}  {project:24s}  {counts_str}")
     print()
     print(f"Current board: {current}")
     if len(boards) > 1:
@@ -1311,16 +1332,34 @@ def _cmd_boards_create(args: argparse.Namespace) -> int:
     if not normed:
         print("kanban boards create: slug is required", file=sys.stderr)
         return 2
+    if getattr(args, "project", None) and getattr(args, "legacy_unscoped", False):
+        print(
+            "kanban boards create: --project and --legacy-unscoped are mutually exclusive",
+            file=sys.stderr,
+        )
+        return 2
     already = kb.board_exists(normed) and normed != kb.DEFAULT_BOARD
-    meta = kb.create_board(
-        normed,
-        name=args.name,
-        description=args.description,
-        icon=args.icon,
-        color=args.color,
-        default_workdir=args.default_workdir,
-    )
+    try:
+        meta = kb.create_board(
+            normed,
+            name=args.name,
+            description=args.description,
+            icon=args.icon,
+            color=args.color,
+            default_workdir=args.default_workdir,
+            project_id=getattr(args, "project", None),
+            legacy_unscoped=(
+                True if getattr(args, "legacy_unscoped", False)
+                else (False if normed != kb.DEFAULT_BOARD else None)
+            ),
+        )
+    except (ValueError, RuntimeError) as exc:
+        print(f"kanban boards create: {exc}", file=sys.stderr)
+        return 1
     verb = "already exists" if already else "created"
+    if getattr(args, "json", False):
+        print(json.dumps(meta, indent=2, ensure_ascii=False))
+        return 0
     print(f"Board {meta['slug']!r} {verb}.")
     print(f"  Display name: {meta.get('name', '')}")
     print(f"  DB path:      {meta['db_path']}")
@@ -1376,12 +1415,27 @@ def _cmd_boards_switch(args: argparse.Namespace) -> int:
 def _cmd_boards_show(args: argparse.Namespace) -> int:
     current = kb.get_current_board()
     meta = kb.read_board_metadata(current)
+    health = next(
+        (b for b in kb.audit_boards().get("boards", []) if b.get("slug") == current),
+        None,
+    )
     counts = _board_task_counts(current)
     total = sum(counts.values())
     print(f"Current board: {current}")
     print(f"  Display name: {meta.get('name', '')}")
     if meta.get("description"):
         print(f"  Description:  {meta['description']}")
+    if meta.get("project_id"):
+        print(f"  Project id:   {meta['project_id']}")
+        print(f"  Project slug: {meta.get('project_slug') or ''}")
+        print(f"  Project name: {meta.get('project_name') or ''}")
+        print(f"  Primary path: {meta.get('project_primary_path') or ''}")
+    else:
+        print("  Project:      (legacy/unscoped)")
+    if health:
+        print(f"  Scope health: {health.get('status', 'unknown')}")
+        for issue in health.get("issues", []):
+            print(f"    {issue.get('severity', 'warning')}: {issue.get('code')}")
     print(f"  DB path:      {meta['db_path']}")
     print(f"  Tasks:        {total} total"
           + (f" ({', '.join(f'{k}={v}' for k, v in sorted(counts.items()))})"
@@ -1421,6 +1475,27 @@ def _cmd_boards_set_default_workdir(args: argparse.Namespace) -> int:
     else:
         print(f"Board {normed!r} default workdir cleared.")
     return 0
+
+
+def _cmd_boards_audit(args: argparse.Namespace) -> int:
+    report = kb.audit_boards()
+    if getattr(args, "json", False):
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+    else:
+        issues = report.get("issues", [])
+        if not issues:
+            print("Kanban board audit: clean")
+        else:
+            print(f"Kanban board audit: {len(issues)} issue(s)")
+            for issue in issues:
+                target = issue.get("board", "")
+                if issue.get("task_id"):
+                    target += f"/{issue['task_id']}"
+                print(
+                    f"  {issue['severity']:7s} {issue['code']:32s} "
+                    f"{target:24s} {issue['message']}"
+                )
+    return 1 if any(i.get("severity") == "error" for i in report.get("issues", [])) else 0
 
 
 # ---------------------------------------------------------------------------
@@ -1510,12 +1585,13 @@ def _cmd_assignees(args: argparse.Namespace) -> int:
         print("(no assignees — create a profile with `hermes -p <name> setup`)")
         return 0
     # Header
-    print(f"{'NAME':20s}  {'ON DISK':8s}  COUNTS")
+    print(f"{'NAME':20s}  {'ON DISK':8s}  {'DESCRIPTION':42s}  COUNTS")
     for entry in data:
         on_disk = "yes" if entry["on_disk"] else "no"
         counts = entry["counts"] or {}
         count_str = ", ".join(f"{k}={v}" for k, v in sorted(counts.items())) or "(idle)"
-        print(f"{entry['name']:20s}  {on_disk:8s}  {count_str}")
+        description = (entry.get("description") or "").replace("\n", " ")[:42]
+        print(f"{entry['name']:20s}  {on_disk:8s}  {description:42s}  {count_str}")
     return 0
 
 
@@ -1553,6 +1629,8 @@ def _cmd_create(args: argparse.Namespace) -> int:
             workspace_path=ws_path,
             branch_name=branch_name,
             project_id=getattr(args, "project", None),
+            legacy_unscoped=bool(getattr(args, "legacy_unscoped", False)),
+            enforce_project_scope=True,
             tenant=args.tenant,
             priority=args.priority,
             parents=tuple(args.parent or ()),
@@ -1569,9 +1647,19 @@ def _cmd_create(args: argparse.Namespace) -> int:
         )
         task = kb.get_task(conn, task_id)
     if getattr(args, "json", False):
-        print(json.dumps(_task_to_dict(task), indent=2, ensure_ascii=False))
+        rendered = _task_to_dict(task)
+        if task.project_id is None:
+            rendered["scope_warning"] = (
+                "legacy unscoped task; bind/create a project board for new durable work"
+            )
+        print(json.dumps(rendered, indent=2, ensure_ascii=False))
     else:
         print(f"Created {task_id}  ({task.status}, assignee={task.assignee or '-'})")
+        if task.project_id is None:
+            print(
+                "⚠  Legacy unscoped task: bind/create a project board for new durable work.",
+                file=sys.stderr,
+            )
 
         # Warn when the task would sit in `ready` because no dispatcher is
         # present. Only warn on ready+assigned tasks — triage/todo are

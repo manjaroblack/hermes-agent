@@ -136,7 +136,11 @@ export interface BoardMeta {
   default_workspace_kind?: null | string
   /** First-class Project the board is scoped to (id) + resolved name. */
   project_id?: null | string
+  project_slug?: null | string
   project_name?: null | string
+  project_primary_path?: null | string
+  scope_status?: 'conflict' | 'invalid' | 'legacy_unscoped' | 'scoped' | string
+  scope_issues?: Array<{ code: string; message: string; severity: string }>
 }
 
 /** GET /projects — first-class Hermes projects available to scope a board. */
@@ -186,6 +190,7 @@ export interface KanbanProfile {
   is_default: boolean
   description: string
   description_auto: boolean
+  has_description?: boolean
 }
 
 /** Column presentation — codicon + tone only. Labels + help live in i18n

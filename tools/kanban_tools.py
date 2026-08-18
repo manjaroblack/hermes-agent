@@ -1419,7 +1419,37 @@ def _handle_create(args: dict, **kw) -> str:
         return tool_error(
             f"parents must be a list of task ids, got {type(parents).__name__}"
         )
-    board = args.get("board")
+    board = str(args.get("board") or "").strip() or None
+    legacy_unscoped, legacy_bool_error = _parse_bool_arg(args, "legacy_unscoped")
+    if legacy_bool_error:
+        return tool_error(legacy_bool_error)
+    try:
+        from gateway.session_context import get_session_env
+        session_platform = get_session_env("HERMES_SESSION_PLATFORM", "")
+    except Exception:
+        def get_session_env(name: str, default: str = "") -> str:
+            return os.environ.get(name, default)
+
+        session_platform = get_session_env("HERMES_SESSION_PLATFORM", "")
+    if session_platform and not board:
+        try:
+            from hermes_cli import kanban_db as board_kb
+            context_chat = get_session_env("HERMES_SESSION_CHAT_ID", "")
+            context_thread = get_session_env("HERMES_SESSION_THREAD_ID", "")
+            board = board_kb.resolve_board_for_notification_context(
+                platform=session_platform,
+                chat_id=context_chat,
+                thread_id=context_thread,
+            )
+        except Exception:
+            board = None
+        if not board:
+            return tool_error(
+                "gateway-created durable work needs an explicit board/project board; "
+                "no unique board is bound to this chat/thread. Route ambiguous "
+                "intake to the orchestrator to identify or bootstrap a project "
+                "board instead of using the current-board pointer"
+            )
     try:
         kb, conn = _connect(board=board)
         try:
@@ -1445,6 +1475,9 @@ def _handle_create(args: dict, **kw) -> str:
                 workspace_path=workspace_path,
                 project_id=project_id,
                 project_source_task_id=project_source_task_id,
+                legacy_unscoped=legacy_unscoped,
+                enforce_project_scope=True,
+                board=board,
                 triage=triage,
                 idempotency_key=idempotency_key,
                 max_runtime_seconds=(
@@ -1470,6 +1503,7 @@ def _handle_create(args: dict, **kw) -> str:
                 workspace_kind=new_task.workspace_kind if new_task else None,
                 workspace_path=new_task.workspace_path if new_task else None,
                 project_id=new_task.project_id if new_task else None,
+                board=board or kb.get_current_board(),
                 subscribed=subscribed,
             )
         finally:
@@ -1672,12 +1706,11 @@ _DESC_TASK_ID_DEFAULT = (
 )
 
 _DESC_BOARD = (
-    "Kanban board slug to target. When omitted, the call resolves the "
-    "active board the usual way: HERMES_KANBAN_DB env → "
-    "HERMES_KANBAN_BOARD env → the 'current' symlink under the kanban "
-    "home → 'default'. Pass an explicit slug only when the caller (e.g. "
-    "a Telegram routing layer) needs to override the env-pinned active "
-    "board for this one call."
+    "Kanban board slug to target. Gateway-created tasks must pass this "
+    "explicitly; never rely on a mutable current-board pointer. Outside a "
+    "gateway session, omission resolves the active board: HERMES_KANBAN_DB "
+    "env → HERMES_KANBAN_BOARD env → the 'current' symlink under the "
+    "kanban home → 'default'."
 )
 
 
@@ -2297,6 +2330,14 @@ KANBAN_CREATE_SCHEMA = {
                     "provider — a model name alone is resolved against "
                     "the profile's provider and will fail if it belongs "
                     "to a different one. Requires 'model'."
+                ),
+            },
+            "legacy_unscoped": {
+                "type": "boolean",
+                "description": (
+                    "Explicitly create an unscoped legacy task on a scoped board. "
+                    "Use only for compatibility work; gateway calls must also "
+                    "pass an explicit board."
                 ),
             },
             "board": _board_schema_prop(),

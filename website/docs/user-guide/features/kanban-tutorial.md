@@ -16,6 +16,38 @@ This tutorial uses the `default` board throughout. If you want multiple isolated
 
 Throughout the tutorial, **code blocks labelled `bash` are commands *you* run.** Code blocks labelled `# worker tool calls` are what the spawned worker's model emits as tool calls — shown here so you can see the loop end-to-end, not because you'd ever run them yourself.
 
+## Project-first bootstrap (recommended for durable work)
+
+Treat a board as one Project queue. Profiles are shared fleet resources — they
+are not copied or scoped to a board — and a profile can be assigned on any
+board. For a genuinely new app, choose its durable root deterministically,
+create the Project and board before implementation, then let every task get a
+fresh worktree:
+
+```bash
+mkdir -p /root/apps/widget
+hermes project create "Widget" --slug widget \
+  --primary /root/apps/widget --board widget --use
+
+# Verify the reciprocal binding and immutable board snapshot.
+hermes kanban boards show
+hermes kanban boards audit --json
+
+# Existing global profiles can be assigned immediately. A new profile appears
+# in the roster before it has any tasks; add a description for explainable routing.
+hermes profile create routine --clone
+hermes profile describe routine --text "Mechanical docs and low-risk maintenance"
+hermes kanban --board widget create "Write the README" --assignee routine
+```
+
+The task inherits `/root/apps/widget/.worktrees/<task-id>` and a deterministic
+`widget/<task-id>-<title-slug>` branch. To bind already-created objects, use
+`hermes project bind-board widget widget`; to clear a binding, pass the
+explicit compatibility escape `hermes project bind-board widget
+--legacy-unscoped`. Existing `default` or domain/unscoped boards remain
+readable and dispatchable, but new project work should use a project board;
+legacy creation is visible in `boards audit` as `UNSCOPED_LEGACY`.
+
 ## The board at a glance
 
 ![Kanban board overview](/img/kanban-tutorial/01-board-overview.png)

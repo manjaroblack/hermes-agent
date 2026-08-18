@@ -148,7 +148,12 @@ function BoardSettingsDialog({ board, onClose }: { board: BoardMeta | null; onCl
   const save = useMutation({
     // Slug is immutable; send name + project_id ('' clears the scope, which
     // also drops the mirrored default_workdir on the backend).
-    mutationFn: () => updateBoard(board!.slug, { name: name.trim(), project_id: project }),
+    mutationFn: () =>
+      updateBoard(board!.slug, {
+        name: name.trim(),
+        project_id: project,
+        ...(project ? {} : { legacy_unscoped: true })
+      }),
     onError: err => host.notify({ kind: 'error', message: errText(err) }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: BOARDS_KEY })
@@ -215,8 +220,21 @@ export function BoardSwitcher() {
             <DropdownMenuItem
               key={meta.slug}
               onSelect={() => $boardSlug.set(meta.slug === boards.current ? '' : meta.slug)}
+              title={
+                meta.project_primary_path
+                  ? `${meta.project_name || meta.project_slug || meta.project_id} · ${meta.project_primary_path}`
+                  : meta.scope_status === 'legacy_unscoped'
+                    ? k.noProject
+                    : undefined
+              }
             >
               {meta.name || meta.slug}
+              {meta.scope_status === 'legacy_unscoped' && (
+                <span className="text-[0.625rem] text-(--ui-text-quaternary)">{k.noProject}</span>
+              )}
+              {meta.scope_status && meta.scope_status !== 'scoped' && meta.scope_status !== 'legacy_unscoped' && (
+                <span className="text-[0.625rem] text-(--destructive, #f87171)">{meta.scope_status}</span>
+              )}
               {typeof meta.total === 'number' && (
                 <span className="text-[0.625rem] tabular-nums text-(--ui-text-quaternary)">{meta.total}</span>
               )}

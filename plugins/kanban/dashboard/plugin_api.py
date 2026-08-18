@@ -618,6 +618,8 @@ class CreateTaskBody(BaseModel):
     # Explicit project link; when omitted, create_task inherits the board's
     # scoped project (if any) so a project-scoped board anchors every task.
     project_id: Optional[str] = None
+    # Explicit escape for intentionally unscoped legacy work on a scoped board.
+    legacy_unscoped: bool = False
 
 
 @router.post("/tasks")
@@ -646,10 +648,16 @@ def create_task(payload: CreateTaskBody, board: Optional[str] = Query(None)):
             provider_override=payload.provider_override,
             reasoning_effort=payload.reasoning_effort,
             project_id=payload.project_id,
+            legacy_unscoped=payload.legacy_unscoped,
+            enforce_project_scope=True,
             board=board,
         )
         task = kanban_db.get_task(conn, task_id)
         body: dict[str, Any] = {"task": _task_dict(task) if task else None}
+        if task and task.project_id is None:
+            body["scope_warning"] = (
+                "legacy unscoped task; bind/create a project board for new durable work"
+            )
         # Surface a dispatcher-presence warning so the UI can show a
         # banner when a `ready` task would otherwise sit idle because no
         # gateway is running (or dispatch_in_gateway=false). Only emit
@@ -673,6 +681,11 @@ def create_task(payload: CreateTaskBody, board: Optional[str] = Query(None)):
                 # Probe failure must never block the create itself.
                 pass
         return body
+    except kanban_db.BoardProjectError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": e.code, "message": str(e)},
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     finally:
@@ -2338,6 +2351,7 @@ class CreateBoardBody(BaseModel):
     # board's default_workdir mirrors the project's primary repo and new tasks
     # inherit the project (deterministic worktree + branch).
     project_id: Optional[str] = None
+    legacy_unscoped: bool = False
     switch: bool = False
 
 
@@ -2352,6 +2366,7 @@ class RenameBoardBody(BaseModel):
     # Project scope (id or slug). ``None`` = leave unchanged; empty = clear;
     # a value = resolve + set (and mirror default_workdir to its primary repo).
     project_id: Optional[str] = None
+    legacy_unscoped: bool = False
 
 
 def _resolve_project(ref: Optional[str]) -> tuple[Optional[str], Optional[str], Optional[str]]:
@@ -2459,8 +2474,24 @@ def list_boards(include_archived: bool = Query(False)):
         pid = b.get("project_id") or None
         b["project_id"] = pid
         proj = proj_map.get(pid) if pid else None
-        b["project_name"] = proj.name if proj else None
+        if proj is not None:
+            b["project_name"] = proj.name
+            b["project_slug"] = proj.slug
+            b["project_primary_path"] = proj.primary_path or b.get("project_primary_path")
+        else:
+            # A board can be viewed from a profile that cannot see the
+            # creator's private projects.db. The board snapshot remains the
+            # source of truth in that topology.
+            b["project_name"] = b.get("project_name") or None
+            b["project_slug"] = b.get("project_slug") or None
+            b["project_primary_path"] = b.get("project_primary_path") or None
     return {"boards": boards, "current": current}
+
+
+@router.get("/boards/audit")
+def audit_boards():
+    """Return the read-only board/project/task scope integrity report."""
+    return kanban_db.audit_boards()
 
 
 def _validate_workdir(raw: str) -> str:
@@ -2492,7 +2523,12 @@ def create_board_endpoint(payload: CreateBoardBody):
     # A chosen project scopes the board: its primary repo becomes the default
     # workdir (unless one was passed explicitly) and the link is stored.
     project_id, _pname, primary_path = _resolve_project(payload.project_id)
-    if primary_path and not default_workdir:
+    if primary_path:
+        if default_workdir and default_workdir != primary_path:
+            raise HTTPException(
+                status_code=400,
+                detail="default_workdir must match the selected project's primary folder.",
+            )
         default_workdir = primary_path
     try:
         meta = kanban_db.create_board(
@@ -2503,6 +2539,14 @@ def create_board_endpoint(payload: CreateBoardBody):
             color=payload.color,
             default_workdir=default_workdir,
             project_id=project_id,
+            legacy_unscoped=(
+                False if project_id else (payload.legacy_unscoped or None)
+            ),
+        )
+    except kanban_db.BoardProjectError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": exc.code, "message": str(exc)},
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -2512,7 +2556,6 @@ def create_board_endpoint(payload: CreateBoardBody):
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
     meta["default_workspace_kind"] = _default_workspace_kind(meta)
-    _, meta["project_name"], _ = _resolve_project(meta.get("project_id"))
     return {"board": meta, "current": kanban_db.get_current_board()}
 
 
@@ -2531,17 +2574,35 @@ def rename_board(slug: str, payload: RenameBoardBody):
     if payload.default_workdir is not None:
         raw = payload.default_workdir.strip()
         default_workdir = _validate_workdir(raw) if raw else ""
-    # project_id: None = leave; "" = clear; value = resolve + mirror its repo
-    # into default_workdir (unless the caller set default_workdir explicitly).
-    project_id: Optional[str] = None
-    project_name: Optional[str] = None
+    # project_id: None = leave; "" = clear; value = bind and mirror its repo
+    # into the board-owned snapshot.
+    project_changed = False
     if payload.project_id is not None:
         if payload.project_id.strip():
-            project_id, project_name, primary_path = _resolve_project(payload.project_id)
-            if primary_path and default_workdir is None:
-                default_workdir = primary_path
+            project_id, _project_name, primary_path = _resolve_project(payload.project_id)
+            if primary_path and default_workdir and default_workdir != primary_path:
+                raise HTTPException(
+                    status_code=400,
+                    detail="default_workdir must match the selected project's primary folder.",
+                )
+            kanban_db.bind_board_project(normed, project_ref=project_id)
+            project_changed = True
         else:
-            project_id = ""  # clear the scope
+            if not payload.legacy_unscoped:
+                raise HTTPException(
+                    status_code=400,
+                    detail="clearing a board project binding requires legacy_unscoped: true",
+                )
+            kanban_db.unbind_board_project(normed)
+            project_changed = True
+    if not project_changed and default_workdir:
+        current_meta = kanban_db.read_board_metadata(normed)
+        current_project_path = current_meta.get("project_primary_path")
+        if current_project_path and default_workdir != current_project_path:
+            raise HTTPException(
+                status_code=400,
+                detail="default_workdir must match the board project's primary folder.",
+            )
     meta = kanban_db.write_board_metadata(
         normed,
         name=payload.name,
@@ -2549,10 +2610,8 @@ def rename_board(slug: str, payload: RenameBoardBody):
         icon=payload.icon,
         color=payload.color,
         default_workdir=default_workdir,
-        project_id=project_id,
     )
     meta["default_workspace_kind"] = _default_workspace_kind(meta)
-    _, meta["project_name"], _ = _resolve_project(meta.get("project_id"))
     return {"board": meta}
 
 
@@ -2629,6 +2688,7 @@ def list_profile_roster():
                 "provider": p.provider or "",
                 "description": p.description or "",
                 "description_auto": bool(p.description_auto),
+                "has_description": bool((p.description or "").strip()),
                 "skill_count": int(p.skill_count or 0),
             }
             for p in profiles
