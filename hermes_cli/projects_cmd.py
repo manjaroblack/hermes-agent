@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import functools
 import sys
+from typing import Optional
 
 from hermes_cli import projects_db as pdb
 
@@ -99,6 +100,10 @@ def build_parser(
     p_bind.add_argument("project", help="Project id or slug")
     p_bind.add_argument(
         "board", nargs="?", default="", help="Board slug (omit to unbind)"
+    )
+    p_bind.add_argument(
+        "--legacy-unscoped", action="store_true",
+        help="Required when explicitly clearing an existing board binding",
     )
 
     parser.set_defaults(_project_parser=parser)
@@ -189,8 +194,11 @@ def _print_project(proj) -> None:
 
 
 def _cmd_create(args: argparse.Namespace) -> int:
+    board_slug = (getattr(args, "board", None) or "").strip() or None
+    previous_active: Optional[str] = None
     try:
         with pdb.connect_closing() as conn:
+            previous_active = pdb.get_active_id(conn)
             pid = pdb.create_project(
                 conn,
                 name=args.name,
@@ -200,7 +208,10 @@ def _cmd_create(args: argparse.Namespace) -> int:
                 description=args.description,
                 icon=args.icon,
                 color=args.color,
-                board_slug=args.board,
+                # The board-owned snapshot is written by bind_board_project
+                # below. Keeping this transaction unbound lets us roll back a
+                # project if the requested board is missing/conflicting.
+                board_slug=None,
             )
             if args.use:
                 pdb.set_active(conn, pid)
@@ -211,6 +222,32 @@ def _cmd_create(args: argparse.Namespace) -> int:
     if proj is None:
         print("project: vanished after create", file=sys.stderr)
         return 2
+    if board_slug:
+        try:
+            from hermes_cli import kanban_db as kb
+            # A project-bound board is a single lifecycle operation: create
+            # the named board when absent, otherwise bind the existing board
+            # after all collision checks pass.
+            if not kb.board_exists(board_slug):
+                kb.create_board(
+                    board_slug,
+                    project_id=pid,
+                    legacy_unscoped=False,
+                )
+            else:
+                kb.bind_board_project(board_slug, project_ref=pid)
+        except Exception as exc:
+            try:
+                with pdb.connect_closing() as conn:
+                    pdb.delete_project(conn, pid)
+                    if args.use:
+                        pdb.set_active(conn, previous_active)
+            except Exception:
+                pass
+            print(f"project: cannot bind board {board_slug!r}: {exc}", file=sys.stderr)
+            return 2
+        with pdb.connect_closing() as conn:
+            proj = pdb.get_project(conn, pid)
     print(f"Created project {proj.slug} ({pid})")
     _print_project(proj)
     return 0
@@ -305,11 +342,22 @@ def _cmd_restore(args, conn, proj) -> int:
 
 @_with_project
 def _cmd_bind_board(args, conn, proj) -> int:
-    pdb.update_project(conn, proj.id, board_slug=args.board)
-    if args.board.strip():
-        print(f"Bound {proj.slug} -> board {args.board}")
-        _sync_board_default_workdir(proj, args.board)
+    from hermes_cli import kanban_db as kb
+    board_slug = (args.board or "").strip()
+    if board_slug:
+        kb.bind_board_project(board_slug, project_ref=proj.id, sync_project_store=False)
+        pdb.update_project(conn, proj.id, board_slug=board_slug)
+        print(f"Bound {proj.slug} -> board {board_slug}")
     else:
+        if not getattr(args, "legacy_unscoped", False):
+            print(
+                "project bind-board: clearing a binding requires --legacy-unscoped",
+                file=sys.stderr,
+            )
+            return 2
+        if proj.board_slug:
+            kb.unbind_board_project(proj.board_slug, sync_project_store=False)
+        pdb.update_project(conn, proj.id, board_slug="")
         print(f"Unbound board from {proj.slug}")
     return 0
 

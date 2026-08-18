@@ -263,9 +263,20 @@ function AssigneeMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
         {(roster?.profiles ?? []).map(profile => (
-          <DropdownMenuItem key={profile.name} onSelect={() => onReassign(profile.name)}>
+          <DropdownMenuItem
+            key={profile.name}
+            onSelect={() => onReassign(profile.name)}
+            title={profile.description || undefined}
+          >
             <Avatar name={profile.name} size="0.875rem" />
-            {profile.name}
+            <span className="flex min-w-0 flex-col">
+              <span>{profile.name}</span>
+              {profile.description && (
+                <span className="max-w-56 truncate text-[0.625rem] text-(--ui-text-quaternary)">
+                  {profile.description}
+                </span>
+              )}
+            </span>
             {profile.name === current && <Codicon className="ml-auto" name="check" size="0.8rem" />}
           </DropdownMenuItem>
         ))}

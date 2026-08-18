@@ -363,7 +363,7 @@ const en: KanbanMessages = {
   boardNamePlaceholder: 'Board name',
   slug: slug => `slug: ${slug}`,
   project: 'Project',
-  noProject: 'No project (scratch sandboxes)',
+  noProject: 'No project (explicit legacy/unscoped board)',
   projectHintPre:
     'New tasks run in the project’s repo (a worktree per task); each task can still override its workspace at creation. Manage projects with ',
   projectHintCmd: 'hermes project',

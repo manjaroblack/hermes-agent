@@ -221,7 +221,10 @@ export const uploadAttachment = (id: string, upload: { filename: string; content
 export const createBoard = (slug: string, name: string, projectId?: string) =>
   call<{ board: { slug: string } }>('/boards', {
     method: 'POST',
-    body: { slug, name, ...(projectId ? { project_id: projectId } : {}) }
+    // The board dialog's explicit “No project” selection is the documented
+    // legacy escape; never let an omitted project look like an accidental
+    // unscoped board request to the backend.
+    body: { slug, name, legacy_unscoped: !projectId, ...(projectId ? { project_id: projectId } : {}) }
   })
 
 /** Rough auxiliary-model estimate for a task (tokens + complexity). Makes a

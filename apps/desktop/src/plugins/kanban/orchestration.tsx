@@ -58,7 +58,7 @@ function ProfilePicker({
         <SelectContent>
           <SelectItem value={DEFAULT_SENTINEL}>{k.defaultParen}</SelectItem>
           {profiles.map(profile => (
-            <SelectItem key={profile.name} value={profile.name}>
+            <SelectItem key={profile.name} title={profile.description || undefined} value={profile.name}>
               {profile.name}
             </SelectItem>
           ))}

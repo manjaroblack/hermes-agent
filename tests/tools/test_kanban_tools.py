@@ -942,6 +942,7 @@ def test_create_respects_auto_subscribe_on_create_false(monkeypatch, worker_env,
     out = kt._handle_create({
         "title": "no sub gated",
         "assignee": "peer",
+        "board": "default",
     })
     d = json.loads(out)
     assert d["ok"] is True
@@ -969,6 +970,7 @@ def test_maybe_auto_subscribe_swallows_add_notify_sub_failure(monkeypatch, worke
     out = kt._handle_create({
         "title": "auto-sub tolerates add_notify_sub failure",
         "assignee": "peer",
+        "board": "default",
     })
     d = json.loads(out)
     assert d["ok"] is True, d
