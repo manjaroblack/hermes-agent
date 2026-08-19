@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -30,6 +31,14 @@ def _project(root: Path, name: str = "Widget"):
     with pdb.connect_closing() as conn:
         pid = pdb.create_project(conn, name=name, primary_path=str(repo))
         return pdb.get_project(conn, pid)
+
+
+def _filesystem_snapshot(root: Path) -> dict[str, bytes | None]:
+    """Capture tree entries and file bytes without hashing away diagnostics."""
+    return {
+        str(path.relative_to(root)): None if path.is_dir() else path.read_bytes()
+        for path in root.rglob("*")
+    }
 
 
 def test_board_stores_canonical_project_snapshot(isolated_home):
@@ -103,16 +112,29 @@ def test_audit_reports_per_board_status_and_required_codes(isolated_home):
 
 
 def test_binding_rejects_conflicting_existing_legacy_task(isolated_home):
+    (isolated_home / "config.yaml").write_text(
+        "database:\n  journal_mode: delete\n",
+        encoding="utf-8",
+    )
     first = _project(isolated_home, "First")
     second = _project(isolated_home, "Second")
     kb.create_board("legacy", legacy_unscoped=True)
     # A compatibility row created before board binding is allowed to exist.
-    with kb.connect(board="default") as conn:
+    conn = kb.connect(board="default")
+    try:
+        db_path = kb.kanban_db_path("default")
+        assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
+        assert not Path(f"{db_path}-wal").exists()
+        assert not Path(f"{db_path}-shm").exists()
         task_id = kb.create_task(conn, title="old linked work", project_id=first.id)
-    assert task_id
+        assert task_id
+        before = _filesystem_snapshot(isolated_home)
 
-    with pytest.raises(kb.BoardProjectError, match="TASK_PROJECT_MISMATCH"):
-        kb.bind_board_project("default", project_ref=second.id)
+        with pytest.raises(kb.BoardProjectError, match="TASK_PROJECT_MISMATCH"):
+            kb.bind_board_project("default", project_ref=second.id)
+        assert before == _filesystem_snapshot(isolated_home)
+    finally:
+        conn.close()
 
 
 def test_board_project_binding_rejects_duplicate_project(isolated_home):
@@ -129,14 +151,49 @@ def test_boards_audit_is_read_only_and_reports_malformed_metadata(isolated_home)
     metadata = kb.board_metadata_path("broken")
     metadata.parent.mkdir(parents=True, exist_ok=True)
     metadata.write_text("not json", encoding="utf-8")
-    before = sorted(str(p.relative_to(isolated_home)) for p in isolated_home.rglob("*"))
+    # This is intentionally unguarded: DELETE fallback and WAL runtimes must
+    # both leave the isolated home tree and every file byte unchanged.
+    before = _filesystem_snapshot(isolated_home)
 
     report = kb.audit_boards()
 
-    after = sorted(str(p.relative_to(isolated_home)) for p in isolated_home.rglob("*"))
+    after = _filesystem_snapshot(isolated_home)
     assert before == after
     assert any(issue["code"] == "MALFORMED_BOARD_METADATA" for issue in report["issues"])
     assert report["read_only"] is True
+
+
+@pytest.mark.requires_wal
+def test_boards_audit_reads_uncheckpointed_wal_without_source_sidecars(isolated_home):
+    project = _project(isolated_home, "WalAudited")
+    kb.create_board("scoped", project_id=project.id, legacy_unscoped=False)
+    db_path = kb.kanban_db_path("scoped")
+    writer = sqlite3.connect(db_path, isolation_level=None)
+    try:
+        writer.execute("PRAGMA wal_autocheckpoint=0")
+        task_id = kb.create_task(writer, title="WAL task", board="scoped")
+        writer.execute(
+            "UPDATE tasks SET project_id = ? WHERE id = ?",
+            ("different-project", task_id),
+        )
+        shm_path = Path(f"{db_path}-shm")
+        assert shm_path.exists()
+        # Simulate a WAL database copied while its shared-memory index is not
+        # available. The audit must read the WAL through its private snapshot,
+        # not recreate this source-side index.
+        shm_path.unlink()
+        before = _filesystem_snapshot(isolated_home)
+
+        report = kb.audit_boards()
+
+        after = _filesystem_snapshot(isolated_home)
+        assert before == after
+        assert any(
+            issue["code"] == "TASK_PROJECT_MISMATCH" and issue["task_id"] == task_id
+            for issue in report["issues"]
+        )
+    finally:
+        writer.close()
 
 
 def test_known_assignees_include_global_profile_description(isolated_home):
