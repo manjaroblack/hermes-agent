@@ -81,6 +81,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import threading
 import logging
 import time
@@ -1391,39 +1392,152 @@ def _audit_issue(
     issues.append(issue)
 
 
+def _sqlite_header_is_wal(header: bytes) -> bool:
+    """Return whether SQLite's file header declares WAL journal mode."""
+    return len(header) >= 20 and header[18:20] == b"\x02\x02"
+
+
+def _sqlite_file_state(path: Path) -> Optional[tuple[int, int, int, int]]:
+    """Return a cheap identity/size/mtime tuple for a SQLite sidecar."""
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns)
+
+
+def _copy_wal_snapshot(source: Path, destination: Path) -> None:
+    """Copy a WAL database and its WAL frames only after a stable read."""
+    wal_source = Path(f"{source}-wal")
+    wal_destination = Path(f"{destination}-wal")
+    for attempt in range(3):
+        before = (_sqlite_file_state(source), _sqlite_file_state(wal_source))
+        if before[0] is None:
+            raise OSError(f"SQLite database disappeared during snapshot: {source}")
+        try:
+            shutil.copyfile(source, destination)
+            if before[1] is None:
+                wal_destination.unlink(missing_ok=True)
+            else:
+                shutil.copyfile(wal_source, wal_destination)
+        except OSError:
+            if attempt >= 2:
+                raise
+            time.sleep(0.01)
+            continue
+        after = (_sqlite_file_state(source), _sqlite_file_state(wal_source))
+        if before == after:
+            return
+        if attempt < 2:
+            time.sleep(0.01)
+    raise sqlite3.OperationalError(
+        f"SQLite database changed during read-only snapshot: {source}"
+    )
+
+
+@contextlib.contextmanager
+def _read_only_connection(path: Path):
+    """Open *path* without writing SQLite sidecars beside the source DB.
+
+    SQLite's regular ``mode=ro`` URI still creates ``-wal``/``-shm`` files
+    when a WAL database has no existing shared-memory index.  A WAL database
+    is therefore copied to a temporary directory first; the main file and
+    any committed WAL frames are opened from that snapshot, so the source
+    tree remains untouched while WAL visibility is preserved. Databases that
+    are not in WAL mode can use a tracked ordinary ``mode=ro`` connection
+    directly without creating journal sidecars. If a tracked same-process
+    writer already owns the source, a known DELETE-mode connection can be
+    shared directly; a WAL connection is shareable only when both sidecars
+    already exist. Unknown mode refuses raw access rather than guessing.
+    """
+    source = path.resolve()
+    temp_dir = None
+    read_path = source
+    try:
+        from hermes_cli.sqlite_safe_read import (
+            LiveConnectionError,
+            connect_tracked,
+            live_connection_journal_mode,
+            offline_file_access,
+        )
+
+        try:
+            # The lifecycle guard must cover both the header read and the
+            # main/WAL copies. A separate has_live_connection() check would
+            # leave a race where a writer opens between the check and close().
+            with offline_file_access(source, what="snapshot"):
+                with source.open("rb") as handle:
+                    header = handle.read(20)
+                if _sqlite_header_is_wal(header):
+                    temp_dir = tempfile.TemporaryDirectory(prefix="hermes-kanban-read-")
+                    read_path = Path(temp_dir.name) / source.name
+                    _copy_wal_snapshot(source, read_path)
+                    uri = read_path.as_uri() + "?mode=ro"
+                else:
+                    uri = source.as_uri() + "?mode=ro"
+        except LiveConnectionError:
+            # A live same-process writer already owns the source file, so raw
+            # snapshot I/O is forbidden. A tracked DELETE-mode connection can
+            # be shared through mode=ro without creating sidecars; a tracked
+            # WAL connection is shareable only when both sidecars already
+            # exist. Unknown mode fails closed rather than guessing from
+            # missing sidecars.
+            journal_mode = live_connection_journal_mode(source)
+            wal_path = Path(f"{source}-wal")
+            shm_path = Path(f"{source}-shm")
+            if journal_mode == "delete":
+                uri = source.as_uri() + "?mode=ro"
+            elif journal_mode == "wal" and wal_path.is_file() and shm_path.is_file():
+                uri = source.as_uri() + "?mode=ro"
+            else:
+                raise sqlite3.OperationalError(
+                    "cannot safely read a live SQLite database without a "
+                    "known journal mode and, for WAL, both sidecars: "
+                    f"{source}"
+                )
+
+        conn = connect_tracked(
+            uri,
+            uri=True,
+            tracking_path=read_path,
+        )
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+        finally:
+            conn.close()
+    finally:
+        if temp_dir is not None:
+            temp_dir.cleanup()
+
+
 def _read_only_task_rows(path: Path) -> list[dict[str, Any]]:
     """Read task scope columns without initializing or migrating a DB."""
     if not path.is_file():
         return []
-    uri = f"file:{path.resolve()}?mode=ro"
-    conn: Optional[sqlite3.Connection] = None
     try:
-        conn = sqlite3.connect(uri, uri=True)
-        conn.row_factory = sqlite3.Row
-        exists = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tasks'"
-        ).fetchone()
-        if not exists:
-            return []
-        cols = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
-        selected = [field for field in ("id", "project_id", "legacy_unscoped", "status") if field in cols]
-        if "id" not in selected:
-            return []
-        return [dict(row) for row in conn.execute(f"SELECT {', '.join(selected)} FROM tasks")]
+        with _read_only_connection(path) as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tasks'"
+            ).fetchone()
+            if not exists:
+                return []
+            cols = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
+            selected = [field for field in ("id", "project_id", "legacy_unscoped", "status") if field in cols]
+            if "id" not in selected:
+                return []
+            return [dict(row) for row in conn.execute(f"SELECT {', '.join(selected)} FROM tasks")]
     except (OSError, sqlite3.Error):
         return []
-    finally:
-        if conn is not None:
-            conn.close()
 
 
 def audit_boards() -> dict[str, Any]:
     """Run a strictly read-only integrity audit over board/project scope.
 
     This function never calls :func:`connect`, :func:`init_db`, or any project
-    mutator. SQLite databases are opened with ``mode=ro`` and metadata is only
-    parsed in memory, so running it cannot create files, WAL journals, or
-    migration columns.
+    mutator. SQLite databases are opened through a source-tree-safe snapshot
+    helper and metadata is only parsed in memory, so running it cannot create
+    files, WAL journals, or migration columns beside the audited databases.
     """
     issues: list[dict[str, Any]] = []
     boards: list[dict[str, Any]] = []
@@ -1564,38 +1678,33 @@ def audit_boards() -> dict[str, Any]:
     except Exception:
         pass
     if project_db and project_db.is_file():
-        conn = None
         try:
-            conn = sqlite3.connect(f"file:{project_db.resolve()}?mode=ro", uri=True)
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT id, slug, board_slug FROM projects "
-                "WHERE board_slug IS NOT NULL AND trim(board_slug) != ''"
-            ).fetchall()
-            seen_board: dict[str, str] = {}
-            for row in rows:
-                board_slug = str(row["board_slug"]).strip().lower()
-                if board_slug in seen_board and seen_board[board_slug] != str(row["id"]):
-                    _audit_issue(
-                        issues,
-                        "DUPLICATE_PROJECT_BINDING",
-                        f"multiple projects point to board {board_slug!r}",
-                        board=board_slug,
-                    )
-                seen_board[board_slug] = str(row["id"])
-                board_meta = next((m for m in boards if m["slug"] == board_slug), None)
-                if board_meta is None or board_meta.get("project_id") != row["id"]:
-                    _audit_issue(
-                        issues,
-                        "STALE_PROJECT_BOARD_BINDING",
-                        f"project {row['id']!r} points to board {board_slug!r}, but the board snapshot disagrees",
-                        board=board_slug,
-                    )
+            with _read_only_connection(project_db) as conn:
+                rows = conn.execute(
+                    "SELECT id, slug, board_slug FROM projects "
+                    "WHERE board_slug IS NOT NULL AND trim(board_slug) != ''"
+                ).fetchall()
+                seen_board: dict[str, str] = {}
+                for row in rows:
+                    board_slug = str(row["board_slug"]).strip().lower()
+                    if board_slug in seen_board and seen_board[board_slug] != str(row["id"]):
+                        _audit_issue(
+                            issues,
+                            "DUPLICATE_PROJECT_BINDING",
+                            f"multiple projects point to board {board_slug!r}",
+                            board=board_slug,
+                        )
+                    seen_board[board_slug] = str(row["id"])
+                    board_meta = next((m for m in boards if m["slug"] == board_slug), None)
+                    if board_meta is None or board_meta.get("project_id") != row["id"]:
+                        _audit_issue(
+                            issues,
+                            "STALE_PROJECT_BOARD_BINDING",
+                            f"project {row['id']!r} points to board {board_slug!r}, but the board snapshot disagrees",
+                            board=board_slug,
+                        )
         except (OSError, sqlite3.Error):
             pass
-        finally:
-            if conn is not None:
-                conn.close()
     invalid_codes = {
         "MALFORMED_BOARD_METADATA",
         "MISSING_BOARD_METADATA",
@@ -1638,8 +1747,9 @@ def resolve_board_for_notification_context(
     missing or ambiguous match returns ``None`` rather than falling back to
     the mutable current-board pointer.
 
-    This is intentionally read-only. It opens existing board databases with
-    SQLite's ``mode=ro`` URI and never initializes a board or writes a cursor.
+    This is intentionally read-only. It opens existing board databases through
+    the source-tree-safe snapshot helper and never initializes a board or
+    writes a cursor.
     """
     platform = str(platform or "").strip()
     chat_id = str(chat_id or "").strip()
@@ -1652,28 +1762,23 @@ def resolve_board_for_notification_context(
         path = kanban_db_path(slug)
         if not path.is_file():
             continue
-        conn = None
         try:
-            conn = sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True)
-            conn.row_factory = sqlite3.Row
-            columns = {
-                row["name"] for row in conn.execute("PRAGMA table_info(kanban_notify_subs)")
-            }
-            if not {"platform", "chat_id", "thread_id"}.issubset(columns):
-                continue
-            row = conn.execute(
-                "SELECT 1 FROM kanban_notify_subs "
-                "WHERE platform = ? AND chat_id = ? "
-                "AND COALESCE(thread_id, '') = ? LIMIT 1",
-                (platform, chat_id, thread_id),
-            ).fetchone()
-            if row is not None:
-                matches.add(slug)
+            with _read_only_connection(path) as conn:
+                columns = {
+                    row["name"] for row in conn.execute("PRAGMA table_info(kanban_notify_subs)")
+                }
+                if not {"platform", "chat_id", "thread_id"}.issubset(columns):
+                    continue
+                row = conn.execute(
+                    "SELECT 1 FROM kanban_notify_subs "
+                    "WHERE platform = ? AND chat_id = ? "
+                    "AND COALESCE(thread_id, '') = ? LIMIT 1",
+                    (platform, chat_id, thread_id),
+                ).fetchone()
+                if row is not None:
+                    matches.add(slug)
         except (OSError, sqlite3.Error):
             continue
-        finally:
-            if conn is not None:
-                conn.close()
     return next(iter(matches)) if len(matches) == 1 else None
 
 
@@ -3128,7 +3233,11 @@ def connect(
             conn.row_factory = sqlite3.Row
             with _INIT_LOCK:
                 from hermes_state import apply_wal_with_fallback
-                apply_wal_with_fallback(conn, db_label=f"kanban.db ({path.name})")
+                journal_mode = apply_wal_with_fallback(
+                    conn, db_label=f"kanban.db ({path.name})"
+                )
+                from hermes_cli.sqlite_safe_read import set_live_connection_journal_mode
+                set_live_connection_journal_mode(conn, journal_mode)
                 conn.execute("PRAGMA synchronous=FULL")
                 conn.execute("PRAGMA wal_autocheckpoint=100")
                 # Bound the WAL file size now that the periodic explicit
@@ -3188,7 +3297,11 @@ def connect(
                 # falls back to DELETE with one ERROR log so kanban stays usable there.
                 # See hermes_state._WAL_INCOMPAT_MARKERS for detection logic.
                 from hermes_state import apply_wal_with_fallback
-                apply_wal_with_fallback(conn, db_label=f"kanban.db ({path.name})")
+                journal_mode = apply_wal_with_fallback(
+                    conn, db_label=f"kanban.db ({path.name})"
+                )
+                from hermes_cli.sqlite_safe_read import set_live_connection_journal_mode
+                set_live_connection_journal_mode(conn, journal_mode)
                 # FULL (was NORMAL): fsync before each checkpoint to narrow the
                 # crash window that can leave a b-tree page header torn.
                 conn.execute("PRAGMA synchronous=FULL")
@@ -12020,13 +12133,12 @@ def count_notify_subs(
 
     Cheap probe for the gateway notifier's zero-subscription early exit:
     unlike :func:`connect`, this never creates the DB file, never runs
-    schema init/migration, and never opens the database writable (no
-    write locks, no checkpoints — though a read-only open of a WAL
-    database may still create the ``-shm``/``-wal`` sidecars, it cannot
-    write table content). Rows in a not-yet-checkpointed WAL are
-    visible, so a freshly added subscription is never missed. A missing
-    DB, or a legacy DB that predates the subscriptions table, counts as
-    zero. When ``notifier_profiles`` is supplied, only subscriptions owned
+    schema init/migration, and never opens the source database writable (no
+    write locks or checkpoints). WAL rows are read through the same
+    source-tree-safe snapshot helper used by :func:`audit_boards`, so the
+    probe does not create ``-shm``/``-wal`` sidecars beside the source. A
+    missing DB, or a legacy DB that predates the subscriptions table, counts
+    as zero. When ``notifier_profiles`` is supplied, only subscriptions owned
     by those profiles are counted; ``include_unowned`` also includes legacy
     rows without an owner stamp. Optional platform/chat/thread filters narrow
     the probe to one notification owner without changing the unfiltered count.
@@ -12039,8 +12151,7 @@ def count_notify_subs(
     path = db_path if db_path is not None else kanban_db_path(board=board)
     if not path.exists():
         return 0
-    conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
-    try:
+    with _read_only_connection(path) as conn:
         try:
             owner_where, owner_params = _notify_profile_filter(
                 notifier_profiles, include_unowned=include_unowned,
@@ -12068,8 +12179,6 @@ def count_notify_subs(
                 return 0
             raise
         return int(row[0]) if row else 0
-    finally:
-        conn.close()
 
 
 def remove_notify_sub(
