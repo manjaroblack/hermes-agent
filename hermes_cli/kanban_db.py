@@ -91,6 +91,11 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
 
 from hermes_cli.sqlite_util import add_column_if_missing as _add_column_if_missing
+from hermes_cli.kanban_admission import (
+    AdmissionResult,
+    admit_workspace,
+    is_read_only_role,
+)
 from toolsets import get_toolset_names
 
 _log = logging.getLogger(__name__)
@@ -4166,7 +4171,11 @@ def create_task(
     board_slug = _normalize_board_slug(board) or get_current_board()
     board_meta = read_board_metadata(board_slug)
     board_snapshot: Optional[dict[str, str]] = None
-    if board_meta.get("project_id"):
+    if board_meta.get("project_id") and not (
+        project_id is None
+        and workspace_kind == "scratch"
+        and is_read_only_role({"assignee": assignee})
+    ):
         try:
             board_snapshot = validate_board_project_scope(board_meta)
         except BoardProjectError:
@@ -4377,9 +4386,16 @@ def create_task(
         if board_default:
             workspace_path = str(board_default)
 
+    # Project worktrees are admitted before claim, so materialize only the
+    # canonical board-scoped target after its task row is durable. Unsafe or
+    # cross-project rows are deliberately left untouched for admission to
+    # reject with triage evidence.
+    materialize_worktree: Optional[tuple[str, str, str]] = None
+
     # Retry once on the extremely unlikely id collision.
     for attempt in range(2):
         task_id = _new_task_id()
+        materialize_worktree = None
         try:
             # ``allow_nested=True``: graph builders (kanban_swarm.create_swarm)
             # compose create_task calls under one outer commit so the
@@ -4511,6 +4527,39 @@ def create_task(
                     },
                 )
                 _inherit_notify_subs(conn, task_id, parents, created_at=now)
+                board_meta = read_board_metadata(board if board else get_current_board())
+                canonical_target = (
+                    Path(project_repo).expanduser().resolve(strict=False)
+                    / ".worktrees"
+                    / task_id
+                    if project_repo and workspace_path
+                    else None
+                )
+                if (
+                    project_obj is not None
+                    and workspace_kind == "worktree"
+                    and project_repo
+                    and workspace_path
+                    and canonical_target is not None
+                    and Path(workspace_path).expanduser().resolve(strict=False)
+                    == canonical_target
+                    and str(board_meta.get("project_id") or "").strip() == project_id
+                ):
+                    materialize_worktree = (
+                        project_repo,
+                        str(canonical_target),
+                        branch_name or f"wt/{task_id}",
+                    )
+            if materialize_worktree is not None:
+                try:
+                    repo, target, branch = materialize_worktree
+                    _ensure_git_worktree(Path(repo), Path(target), branch)
+                except Exception:
+                    _log.warning(
+                        "failed to materialize canonical worktree for task %s",
+                        task_id,
+                        exc_info=True,
+                    )
             return task_id
         except sqlite3.IntegrityError:
             if attempt == 1:
@@ -5570,12 +5619,74 @@ def _parents_satisfied(conn: sqlite3.Connection, task_id: str) -> bool:
     ).fetchone() is None
 
 
+def _workspace_admission_board(board: Optional[str]) -> dict:
+    """Resolve the immutable board snapshot used by pre-claim admission."""
+    slug = board or get_current_board()
+    metadata = read_board_metadata(slug)
+    metadata["slug"] = slug
+    return metadata
+
+
+def _admit_workspace_snapshot(task: Task, board: Optional[str]) -> AdmissionResult:
+    """Evaluate admission and turn unexpected probes into a safe rejection."""
+    try:
+        return admit_workspace(task, _workspace_admission_board(board))
+    except Exception as exc:
+        return AdmissionResult(
+            admitted=False,
+            reason="admission_error",
+            actual={"error_type": type(exc).__name__},
+            repair={
+                "action": "triage",
+                "owner": "hermes-orchestrator",
+                "detail": "Inspect the board/project/worktree metadata before retrying.",
+                "reason": "admission_error",
+            },
+            code_bearing=True,
+        )
+
+
+def _reject_workspace_admission(
+    conn: sqlite3.Connection,
+    task: Task,
+    result: AdmissionResult,
+) -> bool:
+    """Park an inadmissible dispatch candidate in triage with evidence."""
+    payload = result.event_payload(previous_status=task.status)
+    run_id = _end_run(
+        conn,
+        task.id,
+        outcome="workspace_admission_rejected",
+        status="workspace_admission_rejected",
+        error=result.reason,
+        metadata=payload,
+    )
+    cur = conn.execute(
+        "UPDATE tasks SET status = 'triage', claim_lock = NULL, "
+        "claim_expires = NULL, worker_pid = NULL "
+        "WHERE id = ? AND status IN ('ready', 'review', 'todo') "
+        "AND claim_lock IS NULL",
+        (task.id,),
+    )
+    if cur.rowcount != 1:
+        return False
+    _append_event(
+        conn,
+        task.id,
+        "workspace_admission_rejected",
+        payload,
+        run_id=run_id,
+    )
+    return True
+
+
 def claim_task(
     conn: sqlite3.Connection,
     task_id: str,
     *,
     ttl_seconds: Optional[int] = None,
     claimer: Optional[str] = None,
+    board: Optional[str] = None,
 ) -> Optional[Task]:
     """Atomically transition ``ready -> running``.
 
@@ -5610,6 +5721,18 @@ def claim_task(
                 conn, task_id, "claim_rejected",
                 {"reason": "parents_not_done"},
             )
+            return None
+        candidate_row = conn.execute(
+            "SELECT * FROM tasks WHERE id = ? AND status = 'ready' "
+            "AND claim_lock IS NULL",
+            (task_id,),
+        ).fetchone()
+        if candidate_row is None:
+            return None
+        candidate = Task.from_row(candidate_row)
+        admission = _admit_workspace_snapshot(candidate, board)
+        if not admission.admitted:
+            _reject_workspace_admission(conn, candidate, admission)
             return None
         # Defensive: if a prior run somehow leaked (invariant violation from
         # an unknown code path), close it as 'reclaimed' so we don't strand
@@ -5685,7 +5808,7 @@ def claim_task(
     _fire_kanban_lifecycle_hook(
         "kanban_task_claimed",
         task_id,
-        board=get_current_board(),
+        board=board or get_current_board(),
         assignee=claimed.assignee if claimed else None,
         run_id=run_id,
     )
@@ -5698,6 +5821,7 @@ def claim_review_task(
     *,
     ttl_seconds: Optional[int] = None,
     claimer: Optional[str] = None,
+    board: Optional[str] = None,
 ) -> Optional[Task]:
     """Atomically transition ``review -> running``.
 
@@ -5730,6 +5854,18 @@ def claim_review_task(
                         "source_status": "review",
                     },
                 )
+            return None
+        candidate_row = conn.execute(
+            "SELECT * FROM tasks WHERE id = ? AND status = 'review' "
+            "AND claim_lock IS NULL",
+            (task_id,),
+        ).fetchone()
+        if candidate_row is None:
+            return None
+        candidate = Task.from_row(candidate_row)
+        admission = _admit_workspace_snapshot(candidate, board)
+        if not admission.admitted:
+            _reject_workspace_admission(conn, candidate, admission)
             return None
         cur = conn.execute(
             """
@@ -9066,6 +9202,10 @@ class DispatchResult:
     Reasons: ``"blocker_auth"`` (quota/auth error — also auto-blocked),
     ``"recent_success"`` (completed run within guard window),
     ``"active_pr"`` (GitHub PR URL in a recent comment)."""
+    workspace_admission_rejected: list[tuple[str, str]] = field(default_factory=list)
+    """Task ids rejected before claim because their workspace contract was
+    unsafe. Each entry is ``(task_id, reason)``; rejected cards are parked in
+    ``triage`` with the full expected/actual/repair evidence in an event."""
     rate_limited: list[str] = field(default_factory=list)
     """Task ids whose workers bailed on a provider rate-limit / quota wall
     (EX_TEMPFAIL sentinel exit) and were released back to ``ready`` WITHOUT
@@ -10687,6 +10827,40 @@ def dispatch_once(
     return result
 
 
+def _preclaim_workspace_admission(
+    conn: sqlite3.Connection,
+    task_id: str,
+    *,
+    board: Optional[str],
+    statuses: tuple[str, ...],
+) -> Optional[AdmissionResult]:
+    """Run admission immediately before a dispatcher claim.
+
+    The claim function repeats the check inside its write transaction to close
+    the check-then-claim race. This dispatcher-side check is still required so
+    an unsafe card never reaches workspace resolution or a spawn attempt.
+    """
+    candidate = get_task(conn, task_id)
+    if (
+        candidate is None
+        or candidate.status not in statuses
+        or candidate.claim_lock is not None
+    ):
+        return None
+    result = _admit_workspace_snapshot(candidate, board)
+    if result.admitted:
+        return None
+    with write_txn(conn):
+        current = get_task(conn, task_id)
+        if (
+            current is not None
+            and current.status in statuses
+            and current.claim_lock is None
+        ):
+            _reject_workspace_admission(conn, current, result)
+    return result
+
+
 def _dispatch_once_locked(
     conn: sqlite3.Connection,
     *,
@@ -10945,7 +11119,18 @@ def _dispatch_once_locked(
                     _per_profile_running.get(row_assignee, 0) + 1
                 )
             continue
-        claimed = claim_task(conn, row["id"], ttl_seconds=ttl_seconds)
+        admission = _preclaim_workspace_admission(
+            conn,
+            row["id"],
+            board=board,
+            statuses=("ready",),
+        )
+        if admission is not None:
+            result.workspace_admission_rejected.append(
+                (row["id"], admission.reason or "workspace_admission_rejected")
+            )
+            continue
+        claimed = claim_task(conn, row["id"], ttl_seconds=ttl_seconds, board=board)
         if claimed is None:
             continue
         try:
@@ -11072,7 +11257,18 @@ def _dispatch_once_locked(
                     _per_profile_running.get(row["assignee"], 0) + 1
                 )
             continue
-        claimed = claim_review_task(conn, row["id"], ttl_seconds=ttl_seconds)
+        admission = _preclaim_workspace_admission(
+            conn,
+            row["id"],
+            board=board,
+            statuses=("review",),
+        )
+        if admission is not None:
+            result.workspace_admission_rejected.append(
+                (row["id"], admission.reason or "workspace_admission_rejected")
+            )
+            continue
+        claimed = claim_review_task(conn, row["id"], ttl_seconds=ttl_seconds, board=board)
         if claimed is None:
             continue
         try:
