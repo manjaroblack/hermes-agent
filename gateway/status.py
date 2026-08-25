@@ -13,11 +13,13 @@ concurrently under distinct configurations).
 
 import copy
 import hashlib
+import importlib.util
 import json
 import logging
 import os
 import shlex
 import signal
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -580,6 +582,56 @@ def _build_pid_record() -> dict:
     }
 
 
+def build_runtime_identity_snapshot(pid: Optional[int] = None) -> dict[str, Any]:
+    """Return a bounded, non-secret identity for the live gateway process.
+
+    This probes the running interpreter and import resolver rather than
+    treating a checkout ref as proof of what is executing. Arbitrary
+    environment variables and configuration are intentionally excluded.
+    """
+    process_id = int(pid or os.getpid())
+    executable = str(Path(sys.executable).resolve())
+    cwd: Optional[str] = None
+    proc_root = Path(f"/proc/{process_id}")
+    if proc_root.exists():
+        try:
+            executable = str((proc_root / "exe").resolve())
+        except OSError:
+            pass
+        try:
+            cwd = str((proc_root / "cwd").resolve())
+        except OSError:
+            cwd = None
+    module_origins: dict[str, str] = {}
+    for module_name in ("hermes_constants", "hermes_cli", "gateway"):
+        try:
+            spec = importlib.util.find_spec(module_name)
+        except (ImportError, ModuleNotFoundError, ValueError):
+            spec = None
+        origin = spec.origin if spec is not None else None
+        if origin and origin not in {"built-in", "frozen"}:
+            module_origins[module_name] = str(Path(origin).resolve())
+        else:
+            module_origins[module_name] = str(origin or "unknown")
+    allowed_environment = {
+        key: os.environ[key]
+        for key in ("HERMES_HOME", "VIRTUAL_ENV", "LD_LIBRARY_PATH")
+        if os.environ.get(key)
+    }
+    return {
+        "pid": process_id,
+        "start_time": _get_process_start_time(process_id),
+        "service_interpreter": executable,
+        "python_version": sys.version.split()[0],
+        "sqlite_version": sqlite3.sqlite_version,
+        "cwd": cwd or str(Path.cwd()),
+        "module_origins": module_origins,
+        "environment_paths": allowed_environment,
+        "runtime_source": str(Path(__file__).resolve().parents[1]),
+        "captured_at": _utc_now_iso(),
+    }
+
+
 def _build_runtime_status_record() -> dict[str, Any]:
     payload = _build_pid_record()
     payload.update({
@@ -589,6 +641,7 @@ def _build_runtime_status_record() -> dict[str, Any]:
         "active_agents": 0,
         "platforms": {},
         "updated_at": _utc_now_iso(),
+        "runtime_identity": build_runtime_identity_snapshot(),
     })
     return payload
 
@@ -1002,6 +1055,7 @@ def write_runtime_status(
     payload["argv"] = current_record["argv"]
     payload["start_time"] = current_record["start_time"]
     payload["updated_at"] = _utc_now_iso()
+    payload["runtime_identity"] = build_runtime_identity_snapshot(current_record["pid"])
 
     if gateway_state is not _UNSET:
         payload["gateway_state"] = gateway_state

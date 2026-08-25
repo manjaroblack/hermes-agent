@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from hermes_cli import kanban_db as kb
+from hermes_cli import kanban_delivery as kd
 from hermes_cli import kanban_swarm as ks
 
 
@@ -250,6 +251,7 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
     # --- init ---
     sub.add_parser("init", help="Create kanban.db if missing (idempotent)")
 
+
     # --- boards (new in v2: multi-project support) ---
     p_boards = sub.add_parser(
         "boards",
@@ -325,6 +327,161 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
     b_set_wd.add_argument("slug")
     b_set_wd.add_argument("path", nargs="?", default=None,
                           help="Absolute path to use as default workdir. Omit to clear.")
+
+    # --- delivery (explicit Git/GitHub lifecycle; legacy cards are untouched) ---
+    p_delivery = sub.add_parser(
+        "delivery",
+        help="Resume a guarded Git/GitHub delivery for one task",
+        description=(
+            "Opt-in fork-local Git/GitHub delivery. Merge authorization follows the "
+            "configured risk-tier policy; protected/unknown paths require an "
+            "attributable owner, and runtime cutover remains an externally "
+            "authorized and independently verified handoff."
+        ),
+    )
+    delivery_sub = p_delivery.add_subparsers(dest="delivery_action")
+
+    d_start = delivery_sub.add_parser("start", help="Validate identity and start a delivery")
+    d_start.add_argument("task_id")
+    d_start.add_argument("--project-path", default=None, help="Absolute project repository path")
+    d_start.add_argument("--repository", required=True, help="Canonical fork repository owner/name")
+    d_start.add_argument("--remote", default="origin", dest="remote_name")
+    d_start.add_argument("--base", default="main", dest="base_branch")
+    d_start.add_argument("--branch", default=None)
+    d_start.add_argument("--workspace", default=None, dest="workspace_path")
+    d_start.add_argument("--target", choices=sorted(kd.TARGET_POLICIES), default="fork_only", dest="target_policy")
+    d_start.add_argument("--method", choices=sorted(kd.MERGE_METHODS), default="squash", dest="merge_method")
+    d_start.add_argument("--project-id", default=None)
+    d_start.add_argument("--json", action="store_true")
+
+    d_status = delivery_sub.add_parser("status", help="Show durable delivery/effect state")
+    d_status.add_argument("task_id")
+    d_status.add_argument("--json", action="store_true")
+
+    d_resume = delivery_sub.add_parser("resume", help="Resume only safe recorded local phases")
+    d_resume.add_argument("task_id")
+    d_resume.add_argument("--json", action="store_true")
+
+    d_validate = delivery_sub.add_parser("validate", help="Record a successful validation matrix")
+    d_validate.add_argument("task_id")
+    d_validate.add_argument("--tree-sha", required=True)
+    d_validate.add_argument("--command", action="append", required=True, dest="commands")
+    d_validate.add_argument("--json", action="store_true")
+
+    d_commit = delivery_sub.add_parser("commit", help="Create one clean attributed commit")
+    d_commit.add_argument("task_id")
+    d_commit.add_argument("message")
+    d_commit.add_argument("--path", action="append", required=True, dest="paths")
+    d_commit.add_argument("--json", action="store_true")
+
+    d_push = delivery_sub.add_parser("push", help="Push and verify the configured fork ref")
+    d_push.add_argument("task_id")
+    d_push.add_argument("--json", action="store_true")
+
+    d_pr = delivery_sub.add_parser("open-pr", help="Create or reuse exactly one fork PR")
+    d_pr.add_argument("task_id")
+    d_pr.add_argument("--title", required=True)
+    d_pr.add_argument("--body", default="")
+    d_pr.add_argument("--json", action="store_true")
+
+    d_review = delivery_sub.add_parser("request-review", help="Request one independent review")
+    d_review.add_argument("task_id")
+    d_review.add_argument("--reviewer", required=True)
+    d_review.add_argument("--json", action="store_true")
+
+    d_review_evidence = delivery_sub.add_parser("record-review", help="Record exact-head independent review and checks")
+    d_review_evidence.add_argument("task_id")
+    d_review_evidence.add_argument("--packet", required=True, help="Path to a JSON review packet")
+    d_review_evidence.add_argument("--json", action="store_true")
+
+    d_risk_evidence = delivery_sub.add_parser("record-risk-evidence", help="Record additional automated Tier B evidence")
+    d_risk_evidence.add_argument("task_id")
+    d_risk_evidence.add_argument("--actor", required=True, help="Attributable policy/controller actor")
+    d_risk_evidence.add_argument("--evidence", required=True, help="Path to a JSON evidence object")
+    d_risk_evidence.add_argument("--json", action="store_true")
+
+    d_auth = delivery_sub.add_parser("authorize-merge", help="Record explicit owner merge authorization")
+    d_auth.add_argument("task_id")
+    d_auth.add_argument("--actor", required=True)
+    d_auth.add_argument("--source", choices=("operator_cli", "approved_controller"), default="operator_cli")
+    d_auth.add_argument("--packet-hash", required=True)
+    d_auth.add_argument("--method", choices=sorted(kd.MERGE_METHODS), required=True)
+    d_auth.add_argument("--reason", required=True)
+    d_auth.add_argument("--confirm", action="store_true")
+    d_auth.add_argument("--expires-at", type=int, default=None)
+    d_auth.add_argument("--json", action="store_true")
+
+    d_merge = delivery_sub.add_parser("merge", help="Merge after policy authorization and exact-head read-back")
+    d_merge.add_argument("task_id")
+    d_merge.add_argument("--json", action="store_true")
+
+    d_cleanup = delivery_sub.add_parser("cleanup", help="Clean merged refs/worktree when policy permits")
+    d_cleanup.add_argument("task_id")
+    d_cleanup.add_argument("--delete-remote-branch", action="store_true")
+    d_cleanup.add_argument("--remove-worktree", action="store_true")
+    d_cleanup.add_argument("--json", action="store_true")
+
+    d_sync = delivery_sub.add_parser("sync-upstream", help="Fetch upstream/main read-only")
+    d_sync.add_argument("task_id")
+    d_sync.add_argument("--source", default="upstream/main")
+    d_sync.add_argument("--json", action="store_true")
+
+    d_up_review = delivery_sub.add_parser("record-upstream-review", help="Record exact-head fork-local upstream-sync review/check evidence")
+    d_up_review.add_argument("task_id")
+    d_up_review.add_argument("--packet", required=True, help="Path to a JSON review packet")
+    d_up_review.add_argument("--json", action="store_true")
+
+    d_up_auth = delivery_sub.add_parser("authorize-upstream-sync", help="Authorize a fork-local upstream synchronization merge")
+    d_up_auth.add_argument("task_id")
+    d_up_auth.add_argument("--actor", required=True)
+    d_up_auth.add_argument("--source", choices=("operator_cli", "approved_controller"), default="operator_cli")
+    d_up_auth.add_argument("--packet-hash", required=True)
+    d_up_auth.add_argument("--method", choices=sorted(kd.MERGE_METHODS), required=True)
+    d_up_auth.add_argument("--confirm", action="store_true")
+    d_up_auth.add_argument("--expires-at", type=int, default=None)
+    d_up_auth.add_argument("--json", action="store_true")
+
+    d_up_merge = delivery_sub.add_parser("merge-upstream-sync", help="Merge an authorized fork-local upstream synchronization PR")
+    d_up_merge.add_argument("task_id")
+    d_up_merge.add_argument("--json", action="store_true")
+
+    d_cutover = delivery_sub.add_parser("authorize-cutover", help="Record external runtime release authorization")
+    d_cutover.add_argument("task_id")
+    d_cutover.add_argument("--actor", required=True)
+    d_cutover.add_argument("--source", choices=("operator_cli", "approved_controller"), default="operator_cli")
+    d_cutover.add_argument("--runtime-remote", required=True)
+    d_cutover.add_argument("--runtime-branch", required=True)
+    d_cutover.add_argument("--approved-merge-sha", required=True)
+    d_cutover.add_argument("--confirm", action="store_true")
+    d_cutover.add_argument("--json", action="store_true")
+
+    d_prepare = delivery_sub.add_parser("prepare-cutover", help="Create an external rollback-pack handoff")
+    d_prepare.add_argument("task_id")
+    d_prepare.add_argument("--output", required=True)
+    d_prepare.add_argument("--json", action="store_true")
+
+    d_materialized = delivery_sub.add_parser("mark-materialized", help="Record an external runtime materialization handoff")
+    d_materialized.add_argument("task_id")
+    d_materialized.add_argument("--before-sha", required=True)
+    d_materialized.add_argument("--after-sha", required=True)
+    d_materialized.add_argument("--main-pid", required=True, type=int)
+    d_materialized.add_argument("--service-interpreter", required=True)
+    d_materialized.add_argument("--json", action="store_true")
+
+    d_verify = delivery_sub.add_parser("verify-cutover", help="Verify externally supplied live identity evidence")
+    d_verify.add_argument("task_id")
+    d_verify.add_argument("--evidence", required=True)
+    d_verify.add_argument("--json", action="store_true")
+
+    d_controller = delivery_sub.add_parser("controller", help="Run one external-controller step and exit")
+    d_controller.add_argument("--task", required=True, dest="task_id")
+    d_controller.add_argument("--once", action="store_true", help="Required bounded single-step mode")
+    d_controller.add_argument("--json", action="store_true")
+
+    d_abort = delivery_sub.add_parser("abort", help="Abort without deleting or rewriting external refs")
+    d_abort.add_argument("task_id")
+    d_abort.add_argument("--reason", required=True)
+    d_abort.add_argument("--json", action="store_true")
 
     # --- create ---
     p_create = sub.add_parser("create", help="Create a new task")
@@ -1106,6 +1263,7 @@ def kanban_command(args: argparse.Namespace) -> int:
             return 1
 
         handlers = {
+            "delivery": _dispatch_delivery,
             "init":     _cmd_init,
             "create":   _cmd_create,
             "swarm":    _cmd_swarm,
@@ -1230,6 +1388,12 @@ def _is_delegated_child_cli_mutation(args: argparse.Namespace) -> bool:
         boards_action = getattr(args, "boards_action", None) or "list"
         if boards_action not in _DELEGATED_CHILD_DENIED_BOARD_ACTIONS:
             return False
+    elif action == "delivery":
+        # Status is read-only and remains useful for diagnostics. Every other
+        # delivery action can write durable evidence or invoke an external
+        # effect, so delegated child processes must not run it.
+        if getattr(args, "delivery_action", None) == "status":
+            return False
     elif action not in _DELEGATED_CHILD_DENIED_ACTIONS:
         return False
     try:
@@ -1238,6 +1402,188 @@ def _is_delegated_child_cli_mutation(args: argparse.Namespace) -> bool:
         return is_delegated_child_process_context()
     except Exception:
         return bool(os.environ.get("HERMES_DELEGATED_CHILD_CONTEXT"))
+
+
+# ---------------------------------------------------------------------------
+# Delivery/external controller (hermes kanban delivery …)
+# ---------------------------------------------------------------------------
+
+
+def _delivery_project_path(args: argparse.Namespace, conn: Any, task_id: str) -> Path:
+    explicit = getattr(args, "project_path", None)
+    if explicit:
+        path = Path(explicit).expanduser()
+    else:
+        meta = kb.read_board_metadata()
+        path_value = meta.get("project_primary_path")
+        if path_value:
+            path = Path(str(path_value)).expanduser()
+        else:
+            task = kb.get_task(conn, task_id)
+            path = Path(task.workspace_path).expanduser() if task and task.workspace_path else Path.cwd()
+    if not path.is_absolute():
+        raise kd.DeliveryBlocked("delivery project path must be absolute; pass --project-path")
+    return path
+
+
+def _delivery_output(value: Any, *, as_json: bool) -> None:
+    if as_json:
+        payload = value.as_dict() if isinstance(value, kd.DeliveryRecord) else value
+        print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
+        return
+    if isinstance(value, kd.DeliveryRecord):
+        print(f"Delivery {value.task_id}: {value.state}")
+        print(f"  Repository: {value.repository}")
+        print(f"  Branch:     {value.branch}")
+        print(f"  Base:       {value.base_branch}@{value.base_sha}")
+        if value.reviewed_pr_url:
+            print(f"  PR:         {value.reviewed_pr_url} (head {value.reviewed_head_sha})")
+        if value.merged_commit_sha:
+            print(f"  Merged:     {value.merged_commit_sha} by {value.merge_actor or '(recorded actor)'}")
+        return
+    print(json.dumps(value, indent=2, ensure_ascii=False, sort_keys=True))
+
+
+def _delivery_risk_policy() -> dict[str, Any]:
+    """Load the user-configured delivery classifier without mutating config."""
+    try:
+        from hermes_cli.config import load_config_readonly
+
+        loaded = load_config_readonly()
+        kanban = loaded.get("kanban") if isinstance(loaded, dict) else None
+        delivery = kanban.get("delivery") if isinstance(kanban, dict) else None
+        policy = delivery.get("risk_policy") if isinstance(delivery, dict) else None
+        if isinstance(policy, dict):
+            return policy
+    except Exception:
+        pass
+    return dict(kd.DEFAULT_RISK_POLICY)
+
+
+def _dispatch_delivery(args: argparse.Namespace) -> int:
+    """Dispatch the explicit, human/external-controller delivery surface."""
+    action = getattr(args, "delivery_action", None)
+    if not action:
+        print("usage: hermes kanban delivery <start|status|resume|...>", file=sys.stderr)
+        return 2
+    task_id = getattr(args, "task_id", None)
+    if not isinstance(task_id, str) or not task_id:
+        print("kanban delivery: task_id is required", file=sys.stderr)
+        return 2
+    if action == "controller" and not getattr(args, "once", False):
+        print("kanban delivery: controller requires --once", file=sys.stderr)
+        return 2
+    try:
+        with kb.connect_closing() as conn:
+            coordinator = kd.DeliveryCoordinator(conn, risk_policy=_delivery_risk_policy())
+            if action == "start":
+                result = coordinator.start(
+                    task_id,
+                    project_path=_delivery_project_path(args, conn, task_id),
+                    repository=args.repository,
+                    remote_name=args.remote_name,
+                    base_branch=args.base_branch,
+                    branch=args.branch,
+                    workspace_path=args.workspace_path,
+                    target_policy=args.target_policy,
+                    merge_method=args.merge_method,
+                    project_id=args.project_id,
+                )
+            elif action == "status":
+                result = coordinator.status(task_id)
+            elif action == "resume":
+                result = coordinator.resume(task_id)
+            elif action == "validate":
+                result = coordinator.record_validation(
+                    task_id,
+                    commands=args.commands,
+                    passed=True,
+                    tree_sha=args.tree_sha,
+                )
+            elif action == "commit":
+                result = coordinator.commit(task_id, message=args.message, paths=args.paths)
+            elif action == "push":
+                result = coordinator.push(task_id)
+            elif action == "open-pr":
+                result = coordinator.open_pr(task_id, title=args.title, body=args.body)
+            elif action == "request-review":
+                result = coordinator.request_review(task_id, reviewer=args.reviewer)
+            elif action == "record-review":
+                packet = json.loads(Path(args.packet).read_text(encoding="utf-8"))
+                result = coordinator.record_review_and_checks(task_id, packet)
+            elif action == "record-risk-evidence":
+                evidence = json.loads(Path(args.evidence).read_text(encoding="utf-8"))
+                result = coordinator.record_risk_evidence(task_id, actor=args.actor, evidence=evidence)
+            elif action == "authorize-merge":
+                result = coordinator.authorize_merge(
+                    task_id,
+                    actor=args.actor,
+                    source=args.source,
+                    packet_hash=args.packet_hash,
+                    method=args.method,
+                    reason=args.reason,
+                    confirmation=args.confirm,
+                    expires_at=args.expires_at,
+                )
+            elif action == "merge":
+                result = coordinator.merge(task_id)
+            elif action == "cleanup":
+                result = coordinator.cleanup(
+                    task_id,
+                    delete_remote_branch=args.delete_remote_branch,
+                    remove_worktree=args.remove_worktree,
+                )
+            elif action == "sync-upstream":
+                result = coordinator.sync_upstream(task_id, source=args.source)
+            elif action == "record-upstream-review":
+                packet = json.loads(Path(args.packet).read_text(encoding="utf-8"))
+                result = coordinator.record_upstream_sync_review_and_checks(task_id, packet)
+            elif action == "authorize-upstream-sync":
+                result = coordinator.authorize_upstream_sync(
+                    task_id,
+                    actor=args.actor,
+                    source=args.source,
+                    packet_hash=args.packet_hash,
+                    method=args.method,
+                    confirmation=args.confirm,
+                    expires_at=args.expires_at,
+                )
+            elif action == "merge-upstream-sync":
+                result = coordinator.merge_upstream_sync(task_id)
+            elif action == "authorize-cutover":
+                result = coordinator.authorize_cutover(
+                    task_id,
+                    actor=args.actor,
+                    source=args.source,
+                    runtime_remote=args.runtime_remote,
+                    runtime_branch=args.runtime_branch,
+                    approved_merge_sha=args.approved_merge_sha,
+                    confirmation=args.confirm,
+                )
+            elif action == "prepare-cutover":
+                result = coordinator.prepare_cutover(task_id, output_dir=args.output)
+            elif action == "mark-materialized":
+                result = coordinator.record_runtime_materialized(
+                    task_id,
+                    before_sha=args.before_sha,
+                    after_sha=args.after_sha,
+                    main_pid=args.main_pid,
+                    service_interpreter=args.service_interpreter,
+                )
+            elif action == "verify-cutover":
+                result = coordinator.verify_cutover(task_id, evidence_path=args.evidence)
+            elif action == "controller":
+                result = coordinator.controller_once(task_id)
+            elif action == "abort":
+                result = coordinator.abort(task_id, reason=args.reason)
+            else:
+                print(f"kanban delivery: unknown action {action!r}", file=sys.stderr)
+                return 2
+            _delivery_output(result, as_json=bool(getattr(args, "json", False)))
+            return 0
+    except (kd.DeliveryError, ValueError, OSError) as exc:
+        print(f"kanban delivery: {exc}", file=sys.stderr)
+        return 1
 
 
 # ---------------------------------------------------------------------------
