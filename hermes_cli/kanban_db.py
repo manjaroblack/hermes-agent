@@ -11336,6 +11336,17 @@ def _continuation_identity(candidate: Mapping[str, Any]) -> tuple[Any, ...]:
     )
 
 
+def _continuation_was_consumed(
+    conn: sqlite3.Connection, task_id: str,
+) -> bool:
+    """Return whether this card has already spent its one retry allowance."""
+    return conn.execute(
+        "SELECT 1 FROM task_events "
+        "WHERE task_id = ? AND kind = ? LIMIT 1",
+        (task_id, _RESPAWN_CONTINUATION_EVENT),
+    ).fetchone() is not None
+
+
 def _same_card_continuation_candidate(
     conn: sqlite3.Connection, task_id: str, *, now: int,
 ) -> Optional[dict]:
@@ -11355,6 +11366,10 @@ def _same_card_continuation_candidate(
         or ended_at > now
     ):
         return None
+    # The allowance is per task, not per mutable PR head. A worker may push a
+    # new commit during the retry, but that must not mint a second retry token.
+    if _continuation_was_consumed(conn, task_id):
+        return None
     candidate, _diagnostic = _review_provenance_for_task(conn, task_id)
     if candidate is None:
         return None
@@ -11370,16 +11385,6 @@ def _same_card_continuation_candidate(
         or evidence.get("branch") != task.branch_name
     ):
         return None
-    for row in conn.execute(
-        "SELECT payload FROM task_events WHERE task_id = ? AND kind = ? ORDER BY id DESC",
-        (task_id, _RESPAWN_CONTINUATION_EVENT),
-    ).fetchall():
-        try:
-            payload = json.loads(row["payload"]) if row["payload"] else {}
-        except (TypeError, json.JSONDecodeError):
-            continue
-        if isinstance(payload, Mapping) and tuple(payload.get("identity") or ()) == _continuation_identity(candidate):
-            return None
     return candidate
 
 
@@ -11592,6 +11597,8 @@ def check_respawn_guard(
 
     # A validated same-card continuation is the only ready-lane exception to
     # the PR/recovery guard. claim_task() consumes it atomically.
+    if _continuation_was_consumed(conn, task_id):
+        return "active_pr"
     if _same_card_continuation_candidate(conn, task_id, now=now) is not None:
         return None
     # Structured recovery evidence is stronger than a free-form PR comment and
