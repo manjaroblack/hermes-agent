@@ -2467,6 +2467,55 @@ DEFAULT_CONFIG = {
     # each claimable ready task. One dispatcher per profile is sufficient;
     # running more than one on the same kanban.db will race for claims.
     "kanban": {
+        # Risk-tiered Git/GitHub delivery. Tier A is autonomous only for
+        # explicitly allow-listed fork-local paths; protected and unknown
+        # paths escalate to the attributable approval boundary.
+        "delivery": {
+            "risk_policy": {
+                "policy_id": "hermes-tiered-v1",
+                "mode": "tiered",
+                "auto_merge": True,
+                "auto_cleanup": True,
+                "tier_a_allow_paths": ["*.md", "*.json", "*.yaml", "*.yml", "tests/**", "docs/**"],
+                "tier_b_paths": ["pyproject.toml", "setup.py", "package.json", "package-lock.json", "uv.lock", "*.lock", "Dockerfile", "*.sh"],
+                "protected_paths": [
+                    "*.pem",
+                    "**/*.pem",
+                    "*.key",
+                    "**/*.key",
+                    ".env*",
+                    "auth/**",
+                    "auth.py",
+                    "**/auth.py",
+                    "*credential*.py",
+                    "**/*credential*.py",
+                    "*secret*.py",
+                    "**/*secret*.py",
+                    "secret_scope.py",
+                    "**/secret_scope.py",
+                    "agent/**",
+                    "gateway/**",
+                    "security/**",
+                    "tools/**",
+                    "run_agent.py",
+                    "cli.py",
+                    "model_tools.py",
+                    "toolsets.py",
+                    "*prompt*cache*",
+                    "**/*prompt*cache*",
+                    "*context*compress*.py",
+                    "**/*context*compress*.py",
+                    "deploy/**",
+                    "systemd/**",
+                    "migrations/**",
+                ],
+                "required_tier_b_evidence": ["security_scan", "staged_health", "rollback_artifact"],
+                "branch_protection_required": True,
+                "require_independent_model_family": True,
+                "implementer_model_family": "primary",
+                "implementer_actor": "",
+            }
+        },
         # Auto-subscribe the originating gateway/TUI session to task
         # completion + block events when ``kanban_create`` is called from
         # inside a session that has a persistent delivery channel. The

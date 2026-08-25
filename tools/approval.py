@@ -15,6 +15,7 @@ import functools
 import hashlib
 import logging
 import os
+from pathlib import Path
 import re
 import shlex
 import sys
@@ -4137,9 +4138,53 @@ def _await_gateway_decision(session_key: str, notify_cb, approval_data: dict,
     return {"resolved": resolved, "choice": choice, "reason": entry.reason}
 
 
+_WORKER_HIGH_RISK_COMMAND = re.compile(
+    r"(?:\bgit\s+(?:push|reset\b|clean\b|checkout\s+--|switch\s+--discard-changes)\b|"
+    r"\b(?:rm|rmdir|sudo|systemctl|shutdown|reboot)\b|"
+    r"\b(?:gh\s+pr\s+(?:merge|close|delete)|gh\s+api\b[^\n]*\/(?:merge)(?:\b|[/?])|"
+    r"hermes\s+(?:gateway\s+restart|update)|"
+    r"hermes\s+kanban\s+delivery\s+(?:merge|controller|authorize(?:[-_][A-Za-z0-9_-]+)?)\b)|"
+    r"\benv\b[^\n]*(?:-u\s+|--unset(?:=|\s+))(?:HERMES_KANBAN_TASK|HERMES_DELEGATED_CHILD_CONTEXT)\b)",
+    re.IGNORECASE,
+)
+
+
+def _worker_scope_guard(command: str, cwd: Optional[str]) -> Optional[dict]:
+    """Constrain Kanban workers to their declared worktree and safe actions."""
+    if not (os.environ.get("HERMES_KANBAN_TASK") or os.environ.get("HERMES_DELEGATED_CHILD_CONTEXT")):
+        return None
+    declared = str(os.environ.get("HERMES_KANBAN_WORKSPACE") or "").strip()
+    if not declared or not cwd:
+        return {
+            "approved": False,
+            "message": "BLOCKED: Kanban worker commands require a declared workspace and current working directory",
+            "worker_scope": "missing",
+        }
+    try:
+        workspace_path = Path(declared).expanduser().resolve(strict=True)
+        cwd_path = Path(cwd).expanduser().resolve(strict=True)
+        inside = cwd_path == workspace_path or workspace_path in cwd_path.parents
+    except (OSError, RuntimeError, ValueError):
+        inside = False
+    if not inside:
+        return {
+            "approved": False,
+            "message": "BLOCKED: Kanban worker command is outside the declared workspace",
+            "worker_scope": "outside",
+        }
+    if _WORKER_HIGH_RISK_COMMAND.search(command):
+        return {
+            "approved": False,
+            "message": "BLOCKED: Kanban workers cannot perform high-risk remote, destructive, or service actions",
+            "worker_scope": "high_risk",
+        }
+    return {"approved": True, "message": None, "worker_scope": "bounded"}
+
+
 def check_all_command_guards(command: str, env_type: str,
                              approval_callback=None,
-                             has_host_access: bool = False) -> dict:
+                             has_host_access: bool = False,
+                             cwd: Optional[str] = None) -> dict:
     """Run all pre-exec security checks and return a single approval decision.
 
     Gathers findings from tirith and dangerous-command detection, then
@@ -4151,6 +4196,10 @@ def check_all_command_guards(command: str, env_type: str,
     such a session is no longer isolated, so it goes through the normal flow
     instead of the container fast-path.
     """
+    worker_scope = _worker_scope_guard(command, cwd)
+    if worker_scope is not None:
+        return worker_scope
+
     # Skip isolated container backends for both checks. Docker stops skipping
     # once host paths are bind-mounted into the sandbox.
     if _should_skip_container_guards(env_type, has_host_access=has_host_access):
