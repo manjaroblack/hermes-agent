@@ -233,6 +233,163 @@ def _run_gh_api(endpoint: str) -> tuple[dict[str, Any] | None, str | None]:
     return payload, None
 
 
+def fetch_live_review_identity(evidence: ReviewEvidence) -> dict[str, Any]:
+    """Fetch only the immutable pull-request identity from GitHub.
+
+    Continuation admission needs to know that the worker's repository, PR,
+    branch, and exact head exist and are still an open, non-draft PR.  It does
+    *not* need release CI status; that is deliberately checked by
+    :func:`verify_live_review_state` in the blocked-review release path.
+    Keeping the two queries separate prevents an in-progress retry from being
+    coupled to hosted checks that may legitimately still be pending.
+    """
+    pr, error = _run_gh_api(
+        f"repos/{evidence.repository}/pulls/{evidence.pr_number}"
+    )
+    if error:
+        return {"provider": "github", "state": "unknown", "diagnostic": error}
+    return {"provider": "github", "pr": pr}
+
+
+def verify_review_identity(
+    evidence: ReviewEvidence,
+    state: Mapping[str, Any] | None = None,
+    *,
+    provider: Callable[[ReviewEvidence], Mapping[str, Any]] | None = None,
+) -> tuple[bool, str | None, dict[str, Any]]:
+    """Verify PR identity without requiring exact-head CI to be green.
+
+    The worker supplies the candidate, but GitHub is authoritative for the
+    repository/PR URL, PR number, open/non-draft state, branch, and exact head
+    SHA.  Missing or unreachable fields fail closed.  The returned snapshot is
+    compact and safe to persist in the Kanban event log.
+    """
+    if state is None:
+        provider = provider or fetch_live_review_identity
+        try:
+            supplied = provider(evidence)
+        except Exception:
+            _log.debug("review identity provider query failed", exc_info=True)
+            supplied = {"state": "unknown", "diagnostic": "provider query failed"}
+        state = supplied if isinstance(supplied, Mapping) else {}
+
+    diagnostic = state.get("diagnostic")
+    if diagnostic or str(state.get("state") or "").casefold() == "unknown":
+        return (
+            False,
+            str(diagnostic or "live provider identity is unknown"),
+            {"provider": evidence.provider, "result": "unknown"},
+        )
+
+    pr = _as_mapping(state.get("pr")) or state
+    if str(pr.get("state") or "").casefold() != "open":
+        return (
+            False,
+            "pull request is not open",
+            {"provider": evidence.provider, "result": "closed"},
+        )
+    if pr.get("draft") is not False:
+        return (
+            False,
+            "pull request is draft or provider did not confirm non-draft",
+            {"provider": evidence.provider, "result": "draft"},
+        )
+
+    returned_number = pr.get("number")
+    try:
+        if returned_number is None or int(returned_number) != evidence.pr_number:
+            return (
+                False,
+                "provider pull request number does not match immutable evidence",
+                {"provider": evidence.provider, "result": "diverged"},
+            )
+    except (TypeError, ValueError, OverflowError):
+        return (
+            False,
+            "provider pull request number is unknown",
+            {"provider": evidence.provider, "result": "unknown"},
+        )
+
+    returned_url = pr.get("html_url")
+    if (
+        not isinstance(returned_url, str)
+        or returned_url.rstrip("/").casefold()
+        != evidence.pr_url.rstrip("/").casefold()
+    ):
+        return (
+            False,
+            "provider pull request URL does not match immutable evidence",
+            {"provider": evidence.provider, "result": "diverged"},
+        )
+
+    base = _as_mapping(pr.get("base")) or {}
+    base_repo = _as_mapping(base.get("repo")) or {}
+    returned_repository = base_repo.get("full_name")
+    if (
+        not isinstance(returned_repository, str)
+        or returned_repository.casefold() != evidence.repository.casefold()
+    ):
+        return (
+            False,
+            "provider pull request repository does not match immutable evidence",
+            {"provider": evidence.provider, "result": "diverged"},
+        )
+
+    head = _as_mapping(pr.get("head")) or {}
+    provider_sha = head.get("sha")
+    provider_branch = head.get("ref")
+    if (
+        not isinstance(provider_sha, str)
+        or provider_sha.casefold() != evidence.head_sha.casefold()
+    ):
+        return (
+            False,
+            "pull request head diverged from immutable head_sha",
+            {"provider": evidence.provider, "result": "diverged"},
+        )
+    if not isinstance(provider_branch, str) or provider_branch != evidence.branch:
+        return (
+            False,
+            "pull request branch diverged from immutable branch",
+            {"provider": evidence.provider, "result": "diverged"},
+        )
+
+    returned_base_branch = base.get("ref")
+    if evidence.base_branch and returned_base_branch != evidence.base_branch:
+        return (
+            False,
+            "pull request base branch diverged from immutable evidence",
+            {"provider": evidence.provider, "result": "diverged"},
+        )
+    returned_base_sha = base.get("sha")
+    if evidence.base_sha and (
+        not isinstance(returned_base_sha, str)
+        or returned_base_sha.casefold() != evidence.base_sha.casefold()
+    ):
+        return (
+            False,
+            "pull request base head diverged from immutable evidence",
+            {"provider": evidence.provider, "result": "diverged"},
+        )
+
+    return (
+        True,
+        None,
+        {
+            "provider": evidence.provider,
+            "result": "open_non_draft_exact_identity",
+            "repository": evidence.repository,
+            "pr_number": evidence.pr_number,
+            "pr_url": evidence.pr_url,
+            "head_sha": evidence.head_sha,
+            "branch": evidence.branch,
+            "base_branch": returned_base_branch,
+            "base_sha": returned_base_sha,
+            "checked_at": int(time.time()),
+        },
+    )
+
+
 def fetch_live_review_state(evidence: ReviewEvidence) -> dict[str, Any]:
     """Fetch the PR and exact-head check state from GitHub.
 
