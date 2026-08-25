@@ -11,6 +11,7 @@ from hermes_cli import kanban_db as kb
 
 
 HEAD_SHA = "e4b9de58701f9b90c5e2329b33eec8a9f2229c07"
+NEXT_HEAD_SHA = "f5c0ef69812fa0a1d6f343ac44ffd9b0a3330d18"
 PR_URL = "https://github.com/example/repo/pull/6"
 
 
@@ -34,7 +35,7 @@ def _create_task(conn, *, title="implementation", assignee="builder"):
     )
 
 
-def _handoff(conn, task_id):
+def _handoff(conn, task_id, *, add_pr_comment=True):
     task = kb.claim_task(conn, task_id, claimer="builder:test")
     assert task is not None and task.current_run_id is not None
     run_id = task.current_run_id
@@ -56,7 +57,8 @@ def _handoff(conn, task_id):
     kb.record_review_provenance(
         conn, task_id, metadata, expected_run_id=run_id
     )
-    kb.add_comment(conn, task_id, author="builder", body=f"PR {PR_URL}")
+    if add_pr_comment:
+        kb.add_comment(conn, task_id, author="builder", body=f"PR {PR_URL}")
     return task, run_id
 
 
@@ -196,6 +198,96 @@ def test_owner_requeue_with_stale_identity_does_not_duplicate(conn):
         if event.kind == "respawn_continuation_consumed"
     ]
     assert len(consumed) == 1
+
+
+def test_new_head_after_consumed_continuation_stays_guarded(conn):
+    task_id = _create_task(conn, title="changed-head")
+    task, run_id = _handoff(conn, task_id)
+    _requeue_after_failure(conn, task_id, run_id, "timed_out")
+
+    assert kb.check_respawn_guard(conn, task_id) is None
+    retry = kb.claim_task(conn, task_id, claimer="builder:retry")
+    assert retry is not None and retry.current_run_id is not None
+
+    kb.record_review_provenance(
+        conn,
+        task_id,
+        {
+            "task_id": task_id,
+            "worker_run_id": retry.current_run_id,
+            "worker_profile": task.assignee,
+            "workspace_kind": "worktree",
+            "workspace_path": task.workspace_path,
+            "review_evidence": {
+                "provider": "github",
+                "repository": "example/repo",
+                "branch": task.branch_name,
+                "head_sha": NEXT_HEAD_SHA,
+                "pr_url": PR_URL,
+                "pr_number": 6,
+            },
+        },
+        expected_run_id=retry.current_run_id,
+    )
+    _requeue_after_failure(conn, task_id, retry.current_run_id, "timed_out")
+
+    assert kb.check_respawn_guard(conn, task_id) == "active_pr"
+
+
+def test_review_rework_after_consumed_continuation_stays_allowed(conn):
+    task_id = _create_task(conn, title="retry-review-rework")
+    task, run_id = _handoff(conn, task_id)
+    _requeue_after_failure(conn, task_id, run_id, "timed_out")
+
+    assert kb.check_respawn_guard(conn, task_id) is None
+    retry = kb.claim_task(conn, task_id, claimer="builder:retry")
+    assert retry is not None and retry.current_run_id is not None
+    assert kb.request_review(
+        conn,
+        task_id,
+        summary="retry handoff",
+        reviewer="reviewer",
+        expected_run_id=retry.current_run_id,
+    )
+    review = kb.claim_review_task(conn, task_id, claimer="reviewer:test")
+    assert review is not None and review.current_run_id is not None
+    assert kb.request_changes(
+        conn,
+        task_id,
+        reason="please revise",
+        expected_run_id=review.current_run_id,
+    ) == (True, "builder")
+    timeline_now = int(time.time())
+    comment_id = conn.execute(
+        "SELECT id FROM task_comments WHERE task_id = ? "
+        "ORDER BY id DESC LIMIT 1",
+        (task_id,),
+    ).fetchone()["id"]
+    with kb.write_txn(conn):
+        conn.execute(
+            "UPDATE task_comments SET created_at = ? WHERE id = ?",
+            (timeline_now - 2, comment_id),
+        )
+        conn.execute(
+            "UPDATE task_events SET created_at = ? "
+            "WHERE task_id = ? AND kind = 'changes_requested'",
+            (timeline_now - 1, task_id),
+        )
+
+    assert kb.check_respawn_guard(conn, task_id) is None
+
+
+def test_structured_provenance_without_url_stays_guarded_after_retry(conn):
+    task_id = _create_task(conn, title="structured-only")
+    task, run_id = _handoff(conn, task_id, add_pr_comment=False)
+    _requeue_after_failure(conn, task_id, run_id, "timed_out")
+
+    assert kb.check_respawn_guard(conn, task_id) is None
+    retry = kb.claim_task(conn, task_id, claimer="builder:retry")
+    assert retry is not None and retry.current_run_id != run_id
+    _requeue_after_failure(conn, task_id, retry.current_run_id, "timed_out")
+
+    assert kb.check_respawn_guard(conn, task_id) == "active_pr"
 
 
 def test_dispatcher_second_pass_does_not_spawn_duplicate(conn, monkeypatch):
