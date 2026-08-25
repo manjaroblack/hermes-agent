@@ -4141,7 +4141,10 @@ def _await_gateway_decision(session_key: str, notify_cb, approval_data: dict,
 _WORKER_HIGH_RISK_COMMAND = re.compile(
     r"(?:\bgit\s+(?:push|reset\b|clean\b|checkout\s+--|switch\s+--discard-changes)\b|"
     r"\b(?:rm|rmdir|sudo|systemctl|shutdown|reboot)\b|"
-    r"\b(?:gh\s+pr\s+(?:merge|close|delete)|hermes\s+(?:gateway\s+restart|update))\b)",
+    r"\b(?:gh\s+pr\s+(?:merge|close|delete)|gh\s+api\b[^\n]*\/(?:merge)(?:\b|[/?])|"
+    r"hermes\s+(?:gateway\s+restart|update)|"
+    r"hermes\s+kanban\s+delivery\s+(?:merge|controller|authorize(?:[-_][A-Za-z0-9_-]+)?)\b)|"
+    r"\benv\b[^\n]*(?:-u\s+|--unset(?:=|\s+))(?:HERMES_KANBAN_TASK|HERMES_DELEGATED_CHILD_CONTEXT)\b)",
     re.IGNORECASE,
 )
 

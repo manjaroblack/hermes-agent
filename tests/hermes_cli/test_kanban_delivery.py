@@ -19,6 +19,8 @@ from hermes_cli.kanban_delivery import (
     canonical_json,
     classify_delivery_risk,
     normalize_branch,
+    _live_review_evidence,
+    _review_model_family,
 )
 
 
@@ -133,6 +135,27 @@ class FakeGitHub:
         }
 
 
+class ToggleLiveChecksGitHub(FakeGitHub):
+    def __init__(self):
+        super().__init__()
+        self.fail_live_checks = False
+
+    def get_required_checks(self, repository: str, branch: str, head_sha: str):
+        if self.fail_live_checks:
+            return {
+                "head_sha": head_sha,
+                "runs": [{
+                    "id": 1,
+                    "name": "tests",
+                    "status": "completed",
+                    "conclusion": "failure",
+                    "head_sha": head_sha,
+                }],
+                "checked_at": 1001,
+            }
+        return super().get_required_checks(repository, branch, head_sha)
+
+
 class CrashAfterCreateGitHub(FakeGitHub):
     def __init__(self):
         super().__init__()
@@ -245,6 +268,71 @@ def test_branch_names_cannot_escape_git_ref_or_provider_endpoint(branch: str):
         normalize_branch(branch)
 
 
+def test_review_model_family_requires_independent_durable_provenance():
+    review = {
+        "user": {"login": "reviewer"},
+        "model_family": "primary",
+        "metadata": {"model_family": "primary"},
+        "body": "hermes-model-family: primary",
+    }
+
+    assert _review_model_family(review) is None
+    assert _review_model_family(
+        review,
+        provenance={
+            "reviewer": {
+                "model_family": "reviewer-family",
+                "source": "independent-review-controller",
+                "issuer": "hermes-review",
+                "attestation_id": "attestation-1",
+            }
+        },
+    ) == "reviewer-family"
+    assert _review_model_family(
+        review,
+        provenance={
+            "reviewer": {
+                "model_family": "primary",
+                "source": "independent-review-controller",
+                "issuer": "hermes-review",
+                "attestation_id": "attestation-3",
+            }
+        },
+        implementer_model_family="primary",
+    ) is None
+    assert _review_model_family(
+        review,
+        provenance={
+            "reviewer": {
+                "model_family": "reviewer-family",
+                "source": "review_body",
+                "issuer": "reviewer",
+                "attestation_id": "attestation-2",
+            }
+        },
+    ) is None
+
+
+def test_live_review_blocks_without_durable_model_family_provenance():
+    with pytest.raises(DeliveryBlocked, match="model-family provenance"):
+        _live_review_evidence(
+            {
+                "reviews": [
+                    {
+                        "state": "approved",
+                        "user": {"login": "reviewer"},
+                        "commit_id": "1" * 40,
+                        "model_family": "reviewer-family",
+                    }
+                ]
+            },
+            head_sha="1" * 40,
+            implementer_actor="implementer",
+            model_family_provenance={},
+            implementer_model_family="primary",
+        )
+
+
 def _prepare_delivery(
     tmp_path: Path,
     provider: FakeGitHub,
@@ -253,7 +341,19 @@ def _prepare_delivery(
     record_review: bool = True,
 ):
     conn, repo = _make_task(tmp_path)
-    coordinator = DeliveryCoordinator(conn, git=FakeGit(repo), github=provider, now=lambda: 1000, risk_policy={"mode": "human", "auto_merge": False})
+    coordinator = DeliveryCoordinator(conn, git=FakeGit(repo), github=provider, now=lambda: 1000, risk_policy={
+        "mode": "human",
+        "auto_merge": False,
+        "implementer_model_family": "primary",
+        "independent_model_family_provenance": {
+            "reviewer": {
+                "model_family": "reviewer-family",
+                "source": "independent-review-controller",
+                "issuer": "hermes-review",
+                "attestation_id": "test-attestation",
+            }
+        },
+    })
     task_id = conn.execute("SELECT id FROM tasks").fetchone()["id"]
     coordinator.start(task_id, project_path=repo, repository="example/project", branch="feature/t_test")
     coordinator.resume(task_id)
@@ -297,6 +397,29 @@ class MovingHeadGitHub(FakeGitHub):
 class BrokenLiveEvidenceGitHub(FakeGitHub):
     def get_required_checks(self, repository: str, branch: str, head_sha: str):
         raise RuntimeError("live checks unavailable")
+
+
+def test_human_authorize_merge_reprobes_live_exact_head_gates(tmp_path: Path):
+    provider = ToggleLiveChecksGitHub()
+    conn, coordinator, task_id, packet = _prepare_delivery(
+        tmp_path, provider, authorize=False
+    )
+    provider.fail_live_checks = True
+
+    with pytest.raises(DeliveryBlocked, match="live|required checks|green"):
+        coordinator.authorize_merge(
+            task_id,
+            actor="owner",
+            source="operator_cli",
+            packet_hash=packet.packet_hash,
+            method="squash",
+            reason="live gate regression",
+            confirmation=True,
+        )
+
+    record = coordinator._get(task_id)
+    assert record is not None and record.state == "fork_ci_green"
+    conn.close()
 
 
 class HistoricalReviewGitHub(FakeGitHub):
@@ -677,7 +800,19 @@ def test_upstream_sync_uses_fork_local_review_and_merge_before_admission(tmp_pat
     conn, repo = _make_task(tmp_path)
     github = SyncGitHub()
     git = FakeGit(repo)
-    coordinator = DeliveryCoordinator(conn, git=git, github=github, now=lambda: 1000, risk_policy={"mode": "human", "auto_merge": False})
+    coordinator = DeliveryCoordinator(conn, git=git, github=github, now=lambda: 1000, risk_policy={
+        "mode": "human",
+        "auto_merge": False,
+        "implementer_model_family": "primary",
+        "independent_model_family_provenance": {
+            "reviewer": {
+                "model_family": "reviewer-family",
+                "source": "independent-review-controller",
+                "issuer": "hermes-review",
+                "attestation_id": "test-attestation",
+            }
+        },
+    })
     task_id = conn.execute("SELECT id FROM tasks").fetchone()["id"]
     coordinator.start(
         task_id,

@@ -221,6 +221,7 @@ DEFAULT_RISK_POLICY: dict[str, Any] = {
     "require_independent_model_family": True,
     "implementer_model_family": "primary",
     "implementer_actor": "",
+    "independent_model_family_provenance": {},
 }
 
 
@@ -270,6 +271,48 @@ def normalize_risk_policy(value: Optional[Mapping[str, Any]] = None) -> dict[str
     required = source.get("required_tier_b_evidence", DEFAULT_RISK_POLICY["required_tier_b_evidence"])
     if isinstance(required, str) or not isinstance(required, (list, tuple)):
         raise ValueError("delivery risk policy required_tier_b_evidence must be a list")
+
+    provenance_value = source.get(
+        "independent_model_family_provenance",
+        DEFAULT_RISK_POLICY["independent_model_family_provenance"],
+    )
+    provenance: dict[str, dict[str, str]] = {}
+    if isinstance(provenance_value, Mapping):
+        rejected_sources = {
+            "body",
+            "github_review",
+            "metadata",
+            "review_body",
+            "review_metadata",
+            "self",
+            "self_declared",
+        }
+        for actor_value, entry in provenance_value.items():
+            actor = str(actor_value or "").strip().casefold()
+            if not actor or not isinstance(entry, Mapping):
+                continue
+            family = str(entry.get("model_family") or entry.get("family") or "").strip()
+            source_name = str(entry.get("source") or "").strip()
+            issuer = str(entry.get("issuer") or "").strip()
+            attestation_id = str(
+                entry.get("attestation_id") or entry.get("record_id") or ""
+            ).strip()
+            if (
+                family
+                and source_name
+                and source_name.casefold() not in rejected_sources
+                and issuer
+                and issuer.casefold() != actor
+                and attestation_id
+            ):
+                provenance[actor] = {
+                    "model_family": family[:100],
+                    "source": source_name[:200],
+                    "issuer": issuer[:200],
+                    "attestation_id": attestation_id[:200],
+                }
+    elif provenance_value not in (None, ""):
+        raise ValueError("delivery risk policy independent_model_family_provenance must be an object")
     policy = {
         "policy_id": str(source.get("policy_id") or "hermes-tiered-v1")[:100],
         "mode": mode,
@@ -283,6 +326,7 @@ def normalize_risk_policy(value: Optional[Mapping[str, Any]] = None) -> dict[str
         "require_independent_model_family": bool(source.get("require_independent_model_family", True)),
         "implementer_model_family": str(source.get("implementer_model_family") or "primary")[:100],
         "implementer_actor": str(source.get("implementer_actor") or "")[:200],
+        "independent_model_family_provenance": provenance,
     }
     return policy
 
@@ -353,8 +397,50 @@ def _git_status_paths(status: str) -> list[str]:
             continue
         if line.startswith(("1 ", "2 ", "u ")):
             fields = line.split("\t")
-            paths.extend(field for field in fields[1:] if field)
+            if len(fields) > 1:
+                paths.extend(field for field in fields[1:] if field)
+            else:
+                fields = line.split(maxsplit=8)
+                if len(fields) > 8 and fields[8]:
+                    paths.append(fields[8])
     return paths
+
+
+def _git_status_inventory(status: str) -> dict[str, list[str]]:
+    """Keep path-only dirty state; never persist file contents or raw blobs."""
+    dirty: list[str] = []
+    untracked: list[str] = []
+    for line in str(status or "").splitlines():
+        if line.startswith("? "):
+            untracked.append(line[2:])
+        elif line.startswith(("1 ", "2 ", "u ")):
+            fields = line.split("\t")
+            if len(fields) > 1:
+                dirty.extend(field for field in fields[1:] if field)
+            else:
+                fields = line.split(maxsplit=8)
+                if len(fields) > 8 and fields[8]:
+                    dirty.append(fields[8])
+    return {
+        "dirty_paths": sorted(set(dirty)),
+        "untracked_paths": sorted(set(untracked)),
+    }
+
+
+def _runtime_health_status(evidence: Mapping[str, Any]) -> str:
+    statuses: list[str] = []
+    for key in ("health", "dispatcher", "cron"):
+        statuses.append(str(evidence.get(key) or "").strip().casefold())
+    staged = evidence.get("staged_health")
+    if isinstance(staged, Mapping) and staged.get("status") is not None:
+        statuses.append(str(staged.get("status") or "").strip().casefold())
+    healthy = {"ok", "healthy", "running", "passed", "success", "green"}
+    failed = {"failed", "failure", "unhealthy", "error", "stopped", "red"}
+    if statuses and all(status in healthy for status in statuses):
+        return "healthy"
+    if any(status in failed for status in statuses):
+        return "failed"
+    return "unknown"
 
 
 def normalize_repository(value: Any) -> str:
@@ -616,6 +702,7 @@ class DeliveryRecord:
     release_authorization: Optional[dict[str, Any]] = None
     activation_state: Optional[str] = None
     live_identity: Optional[dict[str, Any]] = None
+    runtime_actions: Optional[list[dict[str, Any]]] = None
     activation_verified_at: Optional[int] = None
     last_error: Optional[dict[str, Any]] = None
     created_at: int = 0
@@ -630,6 +717,16 @@ class DeliveryRecord:
             try:
                 parsed = json.loads(raw) if isinstance(raw, str) else raw
                 return parsed if isinstance(parsed, dict) else None
+            except (TypeError, json.JSONDecodeError):
+                return None
+
+        def array(name: str) -> Optional[list[dict[str, Any]]]:
+            raw = row.get(name) if hasattr(row, "get") else row[name]
+            if not raw:
+                return None
+            try:
+                parsed = json.loads(raw) if isinstance(raw, str) else raw
+                return parsed if isinstance(parsed, list) else None
             except (TypeError, json.JSONDecodeError):
                 return None
 
@@ -686,6 +783,7 @@ class DeliveryRecord:
             release_authorization=obj("release_authorization_json"),
             activation_state=values.get("activation_state"),
             live_identity=obj("live_identity_json"),
+            runtime_actions=array("runtime_actions_json"),
             activation_verified_at=values.get("activation_verified_at"),
             last_error=obj("last_error_json"),
             created_at=int(values.get("created_at") or 0),
@@ -703,6 +801,7 @@ class DeliveryRecord:
             "rollback_manifest",
             "release_authorization",
             "live_identity",
+            "runtime_actions",
             "last_error",
         ):
             result[field] = _safe_value(result[field])
@@ -876,6 +975,74 @@ class SubprocessGitAdapter:
         if status:
             raise DeliveryBlocked("refusing to remove a dirty delivery worktree")
         self._ok(self.run(repository, "worktree", "remove", "--", str(target)), "worktree cleanup")
+
+    def rollback_runtime(self, path: Path, manifest: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Restore a runtime checkout using only the immutable pack commands."""
+        path = Path(path).expanduser().resolve()
+        runtime = manifest.get("runtime") if isinstance(manifest, Mapping) else None
+        restore = manifest.get("restore") if isinstance(manifest, Mapping) else None
+        if not isinstance(runtime, Mapping) or not isinstance(restore, Mapping):
+            raise DeliveryBlocked("rollback pack is missing runtime restore metadata")
+        before_sha = normalize_sha(runtime.get("before_sha"), field="rollback_before_sha")
+        expected_after = runtime.get("after_sha")
+        if expected_after:
+            expected_after = normalize_sha(expected_after, field="rollback_after_sha")
+        current_sha = self.rev_parse(path, "HEAD")
+        if expected_after and current_sha != expected_after:
+            raise DeliveryConflict("runtime checkout head changed after materialization")
+        expected_path = str(runtime.get("path") or "").strip()
+        if expected_path and Path(expected_path).expanduser().resolve() != path:
+            raise DeliveryConflict("runtime checkout path changed after materialization")
+        expected_branch = str(runtime.get("branch") or "").strip()
+        if expected_branch and self.branch_name(path) != expected_branch:
+            raise DeliveryConflict("runtime checkout branch changed after materialization")
+        identity = runtime.get("identity")
+        expected_remote_url = (
+            str(identity.get("remote_url") or "").strip()
+            if isinstance(identity, Mapping)
+            else ""
+        )
+        remote_name = str(runtime.get("remote") or "").strip()
+        if expected_remote_url and remote_name:
+            observed_remote_url = _safe_remote_url(self.remote_url_for(path, remote_name))
+            if observed_remote_url != expected_remote_url:
+                raise DeliveryConflict("runtime checkout remote changed after materialization")
+        commands = restore.get("commands")
+        expected_commands = [
+            ["git", "-C", str(path), "reset", "--hard", before_sha],
+            ["git", "-C", str(path), "clean", "-fd"],
+        ]
+        if commands != expected_commands:
+            raise DeliveryConflict("rollback pack restore command does not match runtime identity")
+        inventory = manifest.get("inventory")
+        if isinstance(inventory, Mapping) and (
+            inventory.get("dirty_paths") or inventory.get("untracked_paths")
+        ):
+            raise DeliveryBlocked(
+                "runtime rollback refuses to discard pre-existing dirty or untracked paths"
+            )
+        results: list[dict[str, Any]] = []
+        for args in (("reset", "--hard", before_sha), ("clean", "-fd")):
+            result = self.run(path, *args)
+            results.append(
+                {
+                    "returncode": result.returncode,
+                    "stderr": _safe_diagnostic(result.stderr) if result.stderr else None,
+                }
+            )
+            if result.returncode != 0:
+                raise DeliveryBlocked("runtime rollback command failed")
+        restored_sha = self.rev_parse(path, "HEAD")
+        if restored_sha != before_sha or self.status_porcelain(path):
+            raise DeliveryBlocked("runtime rollback read-back is not clean at the prepared revision")
+        return {
+            "status": "passed",
+            "commands": expected_commands,
+            "results": results,
+            "before_sha": before_sha,
+            "after_sha": restored_sha,
+            "verified_clean": True,
+        }
 
 
 class GhGitHubAdapter:
@@ -1073,6 +1240,7 @@ CREATE TABLE IF NOT EXISTS kanban_deliveries (
     release_authorization_json TEXT,
     activation_state TEXT,
     live_identity_json TEXT,
+    runtime_actions_json TEXT,
     activation_verified_at INTEGER,
     last_error_json TEXT,
     created_at INTEGER NOT NULL,
@@ -1101,6 +1269,8 @@ def ensure_schema(conn: Any) -> None:
         conn.execute("ALTER TABLE kanban_deliveries ADD COLUMN remote_url TEXT")
     if "project_root" not in columns:
         conn.execute("ALTER TABLE kanban_deliveries ADD COLUMN project_root TEXT")
+    if "runtime_actions_json" not in columns:
+        conn.execute("ALTER TABLE kanban_deliveries ADD COLUMN runtime_actions_json TEXT")
 
 
 def _row_to_dict(row: Any) -> dict[str, Any]:
@@ -1252,20 +1422,49 @@ def _review_actor(item: Mapping[str, Any]) -> str:
     return str(item.get("actor") or item.get("review_actor") or "").strip()
 
 
-def _review_model_family(item: Mapping[str, Any]) -> Optional[str]:
-    value = item.get("model_family")
-    metadata = item.get("metadata")
-    if not value and isinstance(metadata, Mapping):
-        value = metadata.get("model_family")
-    if not value:
-        body = str(item.get("body") or "")
-        match = re.search(
-            r"(?im)^\s*hermes[-_ ]model[-_ ]family\s*[:=]\s*([A-Za-z0-9_.:/-]+)",
-            body,
-        )
-        value = match.group(1) if match else None
-    value = str(value or "").strip()
-    return value or None
+def _review_model_family(
+    item: Mapping[str, Any],
+    *,
+    provenance: Optional[Mapping[str, Any]] = None,
+    implementer_model_family: Optional[str] = None,
+) -> Optional[str]:
+    """Resolve family only from operator-owned durable provenance.
+
+    Review bodies and metadata are writable by the implementer and therefore
+    cannot attest to the model that produced an approval.  The provenance map
+    is loaded from the delivery policy before the provider review is read and
+    is keyed by the provider's reviewer identity.
+    """
+    actor = _review_actor(item).casefold()
+    if not actor or not isinstance(provenance, Mapping):
+        return None
+    entry = provenance.get(actor)
+    if not isinstance(entry, Mapping):
+        for key, candidate in provenance.items():
+            if str(key).casefold() == actor and isinstance(candidate, Mapping):
+                entry = candidate
+                break
+    if not isinstance(entry, Mapping):
+        return None
+    family = str(entry.get("model_family") or entry.get("family") or "").strip()
+    source = str(entry.get("source") or "").strip().casefold()
+    issuer = str(entry.get("issuer") or "").strip()
+    attestation_id = str(entry.get("attestation_id") or entry.get("record_id") or "").strip()
+    if (
+        not family
+        or not source
+        or source in {"body", "github_review", "metadata", "review_body", "review_metadata", "self", "self_declared"}
+        or not issuer
+        or issuer.casefold() == actor
+        or not attestation_id
+    ):
+        return None
+    if (
+        implementer_model_family
+        and family.casefold() == str(implementer_model_family).strip().casefold()
+    ):
+        return None
+    return family[:100]
 
 
 def _live_review_evidence(
@@ -1273,6 +1472,8 @@ def _live_review_evidence(
     *,
     head_sha: str,
     implementer_actor: str,
+    model_family_provenance: Optional[Mapping[str, Any]] = None,
+    implementer_model_family: Optional[str] = None,
 ) -> dict[str, Any]:
     reviews = _payload_items(payload, "reviews")
     if not reviews:
@@ -1293,13 +1494,22 @@ def _live_review_evidence(
         if state in {"changes_requested", "changes-requested", "request_changes"}:
             raise DeliveryBlocked("live review has requested changes on the immutable head")
         if state == "approved" and actor and actor.casefold() != implementer_actor.casefold():
+            model_family = _review_model_family(
+                item,
+                provenance=model_family_provenance,
+                implementer_model_family=implementer_model_family,
+            )
+            if not model_family:
+                raise DeliveryBlocked(
+                    "live independent review lacks durable independent model-family provenance"
+                )
             approved.append(
                 {
                     "decision": "approved",
                     "actor": actor,
                     "commit_id": head_sha,
                     "reviewed_at": item.get("submitted_at") or item.get("reviewed_at") or int(time.time()),
-                    "model_family": _review_model_family(item),
+                    "model_family": model_family,
                     "review_id": item.get("id"),
                 }
             )
@@ -1322,6 +1532,8 @@ def _read_live_review_checks(
     packet: ReviewPacket,
     *,
     implementer_actor: str,
+    model_family_provenance: Optional[Mapping[str, Any]] = None,
+    implementer_model_family: Optional[str] = None,
 ) -> dict[str, Any]:
     probes = (
         ("required checks", "get_required_checks", (packet.repository, packet.base_branch, packet.head_sha)),
@@ -1349,6 +1561,8 @@ def _read_live_review_checks(
         values["get_reviews"],
         head_sha=packet.head_sha,
         implementer_actor=implementer_actor,
+        model_family_provenance=model_family_provenance,
+        implementer_model_family=implementer_model_family,
     )
     return {
         "checks": checks,
@@ -1457,7 +1671,7 @@ class DeliveryCoordinator:
                     "upstream_source_sha", "upstream_sync_disposition", "runtime_remote", "runtime_branch",
                     "runtime_before_sha", "runtime_after_sha", "runtime_integration_mode", "rollback_pack_path",
                     "rollback_pack_sha256", "rollback_manifest_json", "release_authorization_json", "activation_state",
-                    "live_identity_json", "activation_verified_at", "last_error_json",
+                    "live_identity_json", "runtime_actions_json", "activation_verified_at", "last_error_json",
                 }:
                     raise ValueError(f"unknown delivery field {name!r}")
                 assignments.append(f"{name} = ?")
@@ -1951,6 +2165,12 @@ class DeliveryCoordinator:
             self.github,
             packet,
             implementer_actor=str(task.assignee or ""),
+            model_family_provenance=self.risk_policy.get(
+                "independent_model_family_provenance"
+            ),
+            implementer_model_family=str(
+                self.risk_policy.get("implementer_model_family") or ""
+            ),
         )
         snapshot = packet.as_dict()
         snapshot["live_review"] = live_evidence["review"]
@@ -2101,6 +2321,95 @@ class DeliveryCoordinator:
             },
         )
 
+    def _rollback_failed_runtime_health(
+        self,
+        task_id: str,
+        record: DeliveryRecord,
+        health: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Rollback from the durable pack after failed staged health."""
+        actions = list(record.runtime_actions or [])
+        manifest: Optional[dict[str, Any]] = None
+        command: Optional[Sequence[Any]] = None
+        try:
+            manifest = self._load_rollback_pack(record)
+            restore = manifest.get("restore")
+            if isinstance(restore, Mapping):
+                candidate = restore.get("exact_restore_command") or restore.get("commands")
+                if isinstance(candidate, list):
+                    command = candidate
+            rollback = getattr(self.git, "rollback_runtime", None)
+            if not callable(rollback):
+                raise DeliveryBlocked("Git adapter cannot execute the durable runtime rollback pack")
+            rollback_result = rollback(Path(record.project_root), manifest)
+            if not isinstance(rollback_result, Mapping):
+                raise DeliveryBlocked("runtime rollback returned no durable result")
+            status = str(rollback_result.get("status") or "").casefold()
+            if status not in {"passed", "success", "ok", "healthy"}:
+                raise DeliveryBlocked("runtime rollback did not verify successfully")
+            action = self._runtime_action(
+                action="rollback",
+                command=command,
+                result=rollback_result,
+                recorded_at=int(self.now()),
+            )
+            actions.append(action)
+            current = self._set_state(
+                task_id,
+                "blocked",
+                expected={"activation_pending"},
+                fields={
+                    "activation_state": "rolled_back",
+                    "runtime_actions_json": actions,
+                    "last_error_json": {
+                        "reason": "staged runtime health failed; rollback completed",
+                        "health": _safe_value(dict(health)),
+                        "rollback": _safe_value(dict(rollback_result)),
+                        "at": int(self.now()),
+                    },
+                },
+                event={
+                    "controller_action": "runtime_rollback_completed",
+                    "health": _safe_value(dict(health)),
+                    "rollback": _safe_value(dict(rollback_result)),
+                },
+            )
+            result = current.as_dict()
+            result["controller_action"] = "runtime_rollback_completed"
+            return result
+        except Exception as exc:
+            failure = {"status": "failed", "diagnostic": _safe_diagnostic(exc)}
+            action = self._runtime_action(
+                action="rollback",
+                command=command,
+                result=failure,
+                recorded_at=int(self.now()),
+            )
+            actions.append(action)
+            current = self._set_state(
+                task_id,
+                "blocked",
+                expected={"activation_pending"},
+                fields={
+                    "activation_state": "rollback_failed",
+                    "runtime_actions_json": actions,
+                    "last_error_json": {
+                        "reason": "staged runtime health failed; rollback did not complete",
+                        "health": _safe_value(dict(health)),
+                        "rollback": failure,
+                        "at": int(self.now()),
+                    },
+                },
+                event={
+                    "controller_action": "runtime_rollback_failed",
+                    "health": _safe_value(dict(health)),
+                    "rollback": failure,
+                },
+            )
+            result = current.as_dict()
+            result["controller_action"] = "runtime_rollback_failed"
+            return result
+
     def controller_once(self, task_id: str) -> dict[str, Any]:
         """Advance one durable delivery step from an external controller.
 
@@ -2148,6 +2457,23 @@ class DeliveryCoordinator:
             if record is None:
                 raise DeliveryError("delivery disappeared after controller merge")
 
+        if record.state == "activation_pending":
+            health = record.live_identity.get("health_evidence") if record.live_identity else None
+            if not isinstance(health, Mapping):
+                result = record.as_dict()
+                result["controller_action"] = "awaiting_staged_health"
+                return result
+            health_status = _runtime_health_status(health)
+            if health_status == "failed":
+                return self._rollback_failed_runtime_health(task_id, record, health)
+            result = record.as_dict()
+            result["controller_action"] = (
+                "awaiting_activation_verification"
+                if health_status == "healthy"
+                else "awaiting_staged_health"
+            )
+            return result
+
         result = record.as_dict()
         if record.target_policy != "fork_only" and record.state in {
             "fork_merge_verified",
@@ -2183,6 +2509,12 @@ class DeliveryCoordinator:
             self.github,
             packet,
             implementer_actor=implementer_actor,
+            model_family_provenance=self.risk_policy.get(
+                "independent_model_family_provenance"
+            ),
+            implementer_model_family=str(
+                self.risk_policy.get("implementer_model_family") or ""
+            ),
         )
         checks = live_evidence["checks"]
         review = live_evidence["review"]
@@ -2304,6 +2636,18 @@ class DeliveryCoordinator:
         packet = ReviewPacket.from_mapping(record.review_snapshot)
         if packet_hash != packet.packet_hash:
             raise DeliveryConflict("authorization packet hash does not match the current immutable packet")
+        task = self._task(task_id)
+        live_evidence = _read_live_review_checks(
+            self.github,
+            packet,
+            implementer_actor=str(task.assignee or ""),
+            model_family_provenance=self.risk_policy.get(
+                "independent_model_family_provenance"
+            ),
+            implementer_model_family=str(
+                self.risk_policy.get("implementer_model_family") or ""
+            ),
+        )
         if (
             record.state == "merge_authorization_pending"
             and record.merge_authorization
@@ -2335,7 +2679,34 @@ class DeliveryCoordinator:
             "created_at": now,
             "expires_at": expiry,
         }
-        self._set_state(task_id, "merge_authorization_pending", expected={"fork_ci_green", "merge_authorization_pending"}, fields={"merge_authorization_json": auth, "merge_attempt_key": f"merge:{record.repository}:{record.reviewed_pr_number}:{record.reviewed_head_sha}:{method}"}, event={"authorization_event_id": auth["authorization_event_id"], "actor": actor, "source": source, "packet_hash": packet_hash, "method": method, "expires_at": expiry})
+        evidence = dict(record.checks_snapshot or {})
+        evidence.update(
+            {
+                "head_sha": packet.head_sha,
+                "checks": live_evidence["checks"],
+                "branch_protection": live_evidence["branch_protection"],
+                "live_review": live_evidence["review"],
+            }
+        )
+        self._set_state(
+            task_id,
+            "merge_authorization_pending",
+            expected={"fork_ci_green", "merge_authorization_pending"},
+            fields={
+                "merge_authorization_json": auth,
+                "merge_attempt_key": f"merge:{record.repository}:{record.reviewed_pr_number}:{record.reviewed_head_sha}:{method}",
+                "checks_snapshot_json": evidence,
+            },
+            event={
+                "authorization_event_id": auth["authorization_event_id"],
+                "actor": actor,
+                "source": source,
+                "packet_hash": packet_hash,
+                "method": method,
+                "expires_at": expiry,
+                "live_head_sha": packet.head_sha,
+            },
+        )
         return auth
 
     def merge(self, task_id: str) -> dict[str, Any]:
@@ -2508,6 +2879,12 @@ class DeliveryCoordinator:
             self.github,
             packet,
             implementer_actor=str(task.assignee or ""),
+            model_family_provenance=self.risk_policy.get(
+                "independent_model_family_provenance"
+            ),
+            implementer_model_family=str(
+                self.risk_policy.get("implementer_model_family") or ""
+            ),
         )
         live_snapshot = packet.as_dict()
         live_snapshot["live_review"] = live_evidence["review"]
@@ -2643,20 +3020,163 @@ class DeliveryCoordinator:
         if not output.is_absolute():
             raise DeliveryBlocked("rollback pack output must be an absolute path")
         output.mkdir(parents=True, exist_ok=True)
-        root = Path(record.workspace_path).resolve()
+        root = Path(record.project_root or record.workspace_path).resolve()
+        if not root.is_dir():
+            raise DeliveryBlocked("runtime project root is not an existing directory")
+
+        status_probe = getattr(self.git, "status_porcelain", None)
+        branch_probe = getattr(self.git, "branch_name", None)
+        remote_probe = getattr(self.git, "remote_url_for", None)
+        if callable(status_probe):
+            status = str(status_probe(root) or "")
+            before_sha = normalize_sha(
+                self.git.rev_parse(root, "HEAD"), field="runtime_before_sha"
+            )
+            inventory = _git_status_inventory(status)
+        else:
+            # Minimal test/dry-run adapters do not expose live inventory.  The
+            # durable base identity is still safer than inventing a checkout.
+            before_sha = normalize_sha(record.base_sha, field="runtime_before_sha")
+            inventory = {"dirty_paths": [], "untracked_paths": []}
+        actual_branch = ""
+        if callable(branch_probe):
+            actual_branch = str(branch_probe(root) or "").strip()
+        runtime_branch = str(record.runtime_branch or actual_branch or "").strip()
+        if actual_branch and runtime_branch and actual_branch != runtime_branch:
+            raise DeliveryConflict("runtime checkout branch does not match cutover authorization")
+        runtime_remote_url = ""
+        if callable(remote_probe) and record.runtime_remote:
+            runtime_remote_url = _safe_remote_url(
+                remote_probe(root, record.runtime_remote)
+            )
+            remote_repository = _repository_from_remote(runtime_remote_url)
+            if remote_repository and remote_repository.casefold() != record.repository.casefold():
+                raise DeliveryConflict("runtime remote does not match delivery repository")
+
+        restore_commands = [
+            ["git", "-C", str(root), "reset", "--hard", before_sha],
+            ["git", "-C", str(root), "clean", "-fd"],
+        ]
+        identity = {
+            "path": str(root),
+            "repository": record.repository,
+            "remote": record.runtime_remote,
+            "remote_url": runtime_remote_url or None,
+            "branch": runtime_branch or None,
+            "before_sha": before_sha,
+        }
         manifest = {
-            "delivery": {"task_id": task_id, "repository": record.repository, "branch": record.branch, "merged_commit_sha": record.merged_commit_sha, "target_policy": record.target_policy},
-            "runtime": {"remote": record.runtime_remote, "branch": record.runtime_branch, "before_sha": record.runtime_before_sha},
+            "delivery": {
+                "task_id": task_id,
+                "repository": record.repository,
+                "branch": record.branch,
+                "merged_commit_sha": record.merged_commit_sha,
+                "target_policy": record.target_policy,
+            },
+            "runtime": {
+                "path": str(root),
+                "remote": record.runtime_remote,
+                "branch": runtime_branch or None,
+                "before_sha": before_sha,
+                "after_sha": None,
+                "identity": identity,
+            },
+            "inventory": inventory,
+            "restore": {
+                "commands": restore_commands,
+                "exact_restore_command": restore_commands,
+                "working_directory": str(root),
+                "strategy": "reset_and_clean",
+            },
+            # Kept as a compatibility alias for older operators that called
+            # this field checkout rather than runtime.
             "checkout": str(root),
             "created_at": int(self.now()),
         }
-        status = getattr(self.git, "status_porcelain", None)
-        if status is not None and root.exists():
-            manifest["git_status_porcelain_v2"] = _safe_diagnostic(status(root))
         manifest_path = output / "manifest.json"
         manifest_path.write_text(safe_json(manifest) + "\n", encoding="utf-8")
         pack_sha = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
-        return self._set_state(task_id, "rollback_pack_ready", expected={"runtime_cutover_pending"}, fields={"rollback_pack_path": str(manifest_path), "rollback_pack_sha256": pack_sha, "rollback_manifest_json": manifest, "activation_state": "pending"}, event={"rollback_pack_path": str(manifest_path), "rollback_pack_sha256": pack_sha})
+        return self._set_state(
+            task_id,
+            "rollback_pack_ready",
+            expected={"runtime_cutover_pending"},
+            fields={
+                "runtime_before_sha": before_sha,
+                "rollback_pack_path": str(manifest_path),
+                "rollback_pack_sha256": pack_sha,
+                "rollback_manifest_json": manifest,
+                "activation_state": "pending",
+            },
+            event={
+                "rollback_pack_path": str(manifest_path),
+                "rollback_pack_sha256": pack_sha,
+                "runtime_identity": identity,
+                "inventory": inventory,
+            },
+        )
+
+    def _load_rollback_pack(self, record: DeliveryRecord) -> dict[str, Any]:
+        path = Path(str(record.rollback_pack_path or "")).expanduser()
+        if not path.is_absolute() or not path.is_file():
+            raise DeliveryBlocked("durable rollback pack is missing")
+        actual_sha = hashlib.sha256(path.read_bytes()).hexdigest()
+        if record.rollback_pack_sha256 and actual_sha != record.rollback_pack_sha256:
+            raise DeliveryConflict("durable rollback pack hash does not match the delivery record")
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            raise DeliveryBlocked("durable rollback pack is unreadable") from None
+        if not isinstance(payload, Mapping):
+            raise DeliveryBlocked("durable rollback pack must contain an object")
+        delivery = payload.get("delivery")
+        if not isinstance(delivery, Mapping) or str(delivery.get("task_id") or "") != record.task_id:
+            raise DeliveryConflict("rollback pack task identity does not match the delivery record")
+        if str(delivery.get("repository") or "").casefold() != record.repository.casefold():
+            raise DeliveryConflict("rollback pack repository does not match the delivery record")
+        return dict(payload)
+
+    def _persist_rollback_pack(
+        self, record: DeliveryRecord, manifest: Mapping[str, Any]
+    ) -> tuple[str, dict[str, Any]]:
+        path = Path(str(record.rollback_pack_path or "")).expanduser()
+        if not path.is_absolute():
+            raise DeliveryBlocked("durable rollback pack path must be absolute")
+        payload = dict(manifest)
+        path.write_text(safe_json(payload) + "\n", encoding="utf-8")
+        return hashlib.sha256(path.read_bytes()).hexdigest(), payload
+
+    @staticmethod
+    def _runtime_action(
+        *,
+        action: str,
+        command: Optional[Sequence[Any]],
+        result: Mapping[str, Any],
+        recorded_at: int,
+    ) -> dict[str, Any]:
+        if not action or not isinstance(result, Mapping):
+            raise DeliveryBlocked("runtime action requires an action name and result object")
+        normalized_command = None
+        if command is not None:
+            if isinstance(command, (str, bytes)):
+                raise DeliveryBlocked("runtime action commands must be an argv list")
+            if any(isinstance(part, (list, tuple)) for part in command):
+                normalized_command = [
+                    [str(part)[:300] for part in argv]
+                    for argv in command
+                    if isinstance(argv, (list, tuple)) and argv
+                ]
+            else:
+                if not all(str(part).strip() for part in command):
+                    raise DeliveryBlocked("runtime action commands must be a non-empty argv list")
+                normalized_command = [str(part)[:300] for part in command]
+            if not normalized_command:
+                raise DeliveryBlocked("runtime action commands must be a non-empty argv list")
+        return {
+            "action": str(action)[:100],
+            "command": normalized_command,
+            "result": _safe_value(dict(result)),
+            "recorded_at": int(recorded_at),
+        }
 
     def record_runtime_materialized(
         self,
@@ -2666,6 +3186,8 @@ class DeliveryCoordinator:
         after_sha: str,
         main_pid: int,
         service_interpreter: str,
+        restart_command: Optional[Sequence[str]] = None,
+        restart_result: Optional[Mapping[str, Any]] = None,
     ) -> DeliveryRecord:
         """Record an external controller's materialization handoff.
 
@@ -2683,11 +3205,26 @@ class DeliveryCoordinator:
         after_sha = normalize_sha(after_sha, field="runtime_after_sha")
         if after_sha != record.merged_commit_sha:
             raise DeliveryConflict("runtime materialization does not identify the approved merged commit")
+        if record.runtime_before_sha and before_sha != record.runtime_before_sha:
+            raise DeliveryConflict("runtime materialization before revision differs from the rollback pack")
         if int(main_pid) <= 0:
             raise DeliveryBlocked("runtime materialization requires a positive main process id")
         interpreter = str(service_interpreter or "").strip()
         if not interpreter or len(interpreter) > 500:
             raise DeliveryBlocked("runtime materialization requires a bounded service interpreter identity")
+
+        manifest = self._load_rollback_pack(record)
+        runtime = manifest.get("runtime")
+        if not isinstance(runtime, Mapping):
+            raise DeliveryBlocked("rollback pack is missing runtime identity")
+        if str(runtime.get("before_sha") or "").lower() != before_sha:
+            raise DeliveryConflict("runtime materialization before revision differs from the rollback pack")
+        manifest["runtime"] = {
+            **dict(runtime),
+            "before_sha": before_sha,
+            "after_sha": after_sha,
+        }
+        pack_sha, manifest = self._persist_rollback_pack(record, manifest)
         snapshot = {
             "before_sha": before_sha,
             "after_sha": after_sha,
@@ -2695,20 +3232,89 @@ class DeliveryCoordinator:
             "service_interpreter": interpreter,
             "materialized_at": int(self.now()),
         }
+        actions = list(record.runtime_actions or [])
+        if restart_command is not None:
+            actions.append(
+                self._runtime_action(
+                    action="restart",
+                    command=restart_command,
+                    result=restart_result or {"status": "recorded_external"},
+                    recorded_at=int(self.now()),
+                )
+            )
+        fields = {
+            "runtime_before_sha": before_sha,
+            "runtime_after_sha": after_sha,
+            "runtime_integration_mode": "external_controller",
+            "activation_state": "pending",
+            "live_identity_json": snapshot,
+            "rollback_pack_sha256": pack_sha,
+            "rollback_manifest_json": manifest,
+            "runtime_actions_json": actions,
+        }
         if record.state == "rollback_pack_ready":
             self._set_state(
                 task_id,
                 "runtime_materialized",
                 expected={"rollback_pack_ready"},
-                fields={"runtime_before_sha": before_sha, "runtime_after_sha": after_sha, "runtime_integration_mode": "external_controller", "activation_state": "pending"},
+                fields=fields,
                 event=snapshot,
             )
         return self._set_state(
             task_id,
             "activation_pending",
             expected={"runtime_materialized", "activation_pending"},
-            fields={"runtime_before_sha": before_sha, "runtime_after_sha": after_sha, "activation_state": "pending"},
+            fields=fields,
             event=snapshot,
+        )
+
+    def record_runtime_health(
+        self,
+        task_id: str,
+        *,
+        evidence: Mapping[str, Any],
+    ) -> DeliveryRecord:
+        """Persist staged health evidence without restarting or finalizing."""
+        record = self._get(task_id)
+        if record is None or record.state != "activation_pending":
+            raise DeliveryStateError("runtime health requires activation_pending state")
+        if os.environ.get("HERMES_KANBAN_TASK") or os.environ.get("HERMES_DELEGATED_CHILD_CONTEXT"):
+            raise DeliveryBlocked("gateway/delegated workers cannot attest staged runtime health")
+        if not isinstance(evidence, Mapping) or _SECRET_RE.search(canonical_json(evidence)):
+            raise DeliveryBlocked("runtime health evidence is invalid or contains a credential-shaped value")
+        expected_sha = str(record.runtime_after_sha or record.merged_commit_sha or "").lower()
+        observed_sha = str(evidence.get("runtime_after_sha") or "").lower()
+        if observed_sha != expected_sha:
+            raise DeliveryConflict("runtime health evidence does not identify the materialized commit")
+        required = (
+            "main_pid",
+            "start_time",
+            "service_interpreter",
+            "hermes_cli_import",
+            "sqlite_version",
+            "health",
+            "dispatcher",
+            "cron",
+        )
+        missing = [key for key in required if not evidence.get(key)]
+        if missing:
+            raise DeliveryBlocked("runtime health evidence is missing: " + ", ".join(missing))
+        health = _safe_value(dict(evidence))
+        live_identity = dict(record.live_identity or {})
+        live_identity.update(health)
+        live_identity["health_evidence"] = health
+        live_identity["health_recorded_at"] = int(self.now())
+        return self._set_state(
+            task_id,
+            "activation_pending",
+            expected={"activation_pending"},
+            fields={"live_identity_json": live_identity},
+            event={
+                "runtime_after_sha": observed_sha,
+                "health": str(evidence.get("health"))[:100],
+                "dispatcher": str(evidence.get("dispatcher"))[:100],
+                "cron": str(evidence.get("cron"))[:100],
+            },
         )
 
     def verify_cutover(self, task_id: str, *, evidence_path: Path | str) -> DeliveryRecord:
@@ -2726,14 +3332,27 @@ class DeliveryCoordinator:
             raise DeliveryBlocked("cutover evidence must be an object")
         if _SECRET_RE.search(canonical_json(evidence)):
             raise DeliveryBlocked("cutover evidence contains a credential-shaped value")
-        if str(evidence.get("runtime_after_sha") or "").lower() != str(record.merged_commit_sha or "").lower():
-            raise DeliveryBlocked("cutover evidence does not identify the approved merged commit")
-        required = ("main_pid", "start_time", "service_interpreter", "hermes_cli_import", "sqlite_version", "health", "dispatcher", "cron")
-        missing = [key for key in required if not evidence.get(key)]
-        if missing or str(evidence.get("health")).casefold() not in {"ok", "healthy", "running"} or str(evidence.get("dispatcher")).casefold() not in {"ok", "healthy", "running"} or str(evidence.get("cron")).casefold() not in {"ok", "healthy", "running"}:
+        health_record = self.record_runtime_health(task_id, evidence=evidence)
+        status = _runtime_health_status(evidence)
+        if status != "healthy":
             raise DeliveryBlocked("cutover evidence is incomplete or not healthy")
-        snapshot = _safe_value(dict(evidence))
-        return self._set_state(task_id, "activation_verified", expected={record.state}, fields={"live_identity_json": snapshot, "activation_verified_at": int(self.now()), "activation_state": "verified"}, event={"activation_verified_at": int(self.now()), "runtime_after_sha": evidence.get("runtime_after_sha"), "main_pid": evidence.get("main_pid")})
+        snapshot = dict(health_record.live_identity or {})
+        return self._set_state(
+            task_id,
+            "activation_verified",
+            expected={"activation_pending"},
+            fields={
+                "live_identity_json": snapshot,
+                "runtime_actions_json": health_record.runtime_actions or [],
+                "activation_verified_at": int(self.now()),
+                "activation_state": "verified",
+            },
+            event={
+                "activation_verified_at": int(self.now()),
+                "runtime_after_sha": evidence.get("runtime_after_sha"),
+                "main_pid": evidence.get("main_pid"),
+            },
+        )
 
     def finalize_verified_activation(self, task_id: str) -> DeliveryRecord:
         return self._set_state(task_id, "completed", expected={"activation_verified"}, event={"final": True, "activation_verified": True})

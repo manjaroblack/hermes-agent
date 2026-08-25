@@ -13,7 +13,7 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import subprocess
-from typing import Any, Iterator
+from typing import Any, Iterator, Mapping
 
 import pytest
 
@@ -73,6 +73,30 @@ class RecordingGit(SubprocessGitAdapter):
     def remove_worktree(self, repository: Path, target: Path) -> None:
         self.calls["remove_worktree"] += 1
         super().remove_worktree(repository, target)
+
+
+class ControllerRuntimeGit(RecordingGit):
+    """External-controller seam that records rollback without restarting Hermes."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.rollback_calls = 0
+        self.restart_calls = 0
+
+    def rollback_runtime(self, path: Path, manifest: Mapping[str, Any]):
+        self.rollback_calls += 1
+        restore = manifest["restore"]
+        return {
+            "status": "passed",
+            "commands": restore["commands"],
+            "results": [{"returncode": 0}, {"returncode": 0}],
+            "before_sha": manifest["runtime"]["before_sha"],
+            "after_sha": manifest["runtime"]["before_sha"],
+        }
+
+    def restart_runtime(self, *args, **kwargs):
+        self.restart_calls += 1
+        raise AssertionError("delivery controller must not restart the gateway")
 
 
 class DeterministicGitHub:
@@ -311,6 +335,7 @@ def _new_context(
     now=None,
     risk_policy: dict[str, Any] | None = None,
     change_paths: tuple[str, ...] = ("change.py",),
+    git: RecordingGit | None = None,
 ) -> dict[str, Any]:
     repo, origin, upstream, base_sha = _create_local_repositories(tmp_path)
     conn = kb.connect()
@@ -323,7 +348,7 @@ def _new_context(
         initial_status="running",
     )
     workspace = tmp_path / "delivery-worktrees" / (workspace_name or task_id)
-    git = RecordingGit()
+    git = git or RecordingGit()
     provider = github or DeterministicGitHub()
     clock = now or (lambda: 1_000)
     coordinator = DeliveryCoordinator(
@@ -331,7 +356,21 @@ def _new_context(
         git=git,
         github=provider,
         now=clock,
-        risk_policy=risk_policy if risk_policy is not None else {"mode": "human", "auto_merge": False},
+        risk_policy=risk_policy
+            if risk_policy is not None
+            else {
+                "mode": "human",
+                "auto_merge": False,
+                "implementer_model_family": "primary",
+                "independent_model_family_provenance": {
+                    "reviewer": {
+                        "model_family": "reviewer-family",
+                        "source": "independent-review-controller",
+                        "issuer": "hermes-review",
+                        "attestation_id": "test-attestation",
+                    }
+                },
+            },
     )
     started = coordinator.start(
         task_id,
@@ -918,6 +957,14 @@ def _tiered_policy(**overrides: Any) -> dict[str, Any]:
         "protected_paths": ["gateway/**", ".env*", "**/*.pem", "**/*.key"],
         "branch_protection_required": True,
         "require_independent_model_family": True,
+        "independent_model_family_provenance": {
+            "reviewer": {
+                "model_family": "reviewer-family",
+                "source": "independent-review-controller",
+                "issuer": "hermes-review",
+                "attestation_id": "integration-attestation-1",
+            }
+        },
         "required_tier_b_evidence": ["security_scan", "staged_health", "rollback_artifact"],
     }
     policy.update(overrides)
@@ -1314,4 +1361,124 @@ def test_merged_closed_pr_is_normalized_only_with_explicit_merged_flag(
     )
     merged = coordinator.merge(context["task_id"])
     assert merged["merged_commit_sha"] == MERGED_SHA
+    context["conn"].close()
+
+
+def _authorize_runtime_cutover(context: dict[str, Any]) -> DeliveryCoordinator:
+    coordinator: DeliveryCoordinator = context["coordinator"]
+    task_id = context["task_id"]
+    packet = ReviewPacket.from_mapping(context["packet"])
+    coordinator.authorize_merge(
+        task_id,
+        actor="owner",
+        source="operator_cli",
+        packet_hash=packet.packet_hash,
+        method="squash",
+        reason="prepare runtime cutover",
+        confirmation=True,
+    )
+    coordinator.merge(task_id)
+    coordinator.authorize_cutover(
+        task_id,
+        actor="owner",
+        source="operator_cli",
+        runtime_remote="origin",
+        runtime_branch="main",
+        approved_merge_sha=MERGED_SHA,
+        confirmation=True,
+    )
+    return coordinator
+
+
+def _runtime_health(after_sha: str, status: str) -> dict[str, Any]:
+    return {
+        "runtime_after_sha": after_sha,
+        "main_pid": 100,
+        "start_time": "2026-08-25T00:00:00Z",
+        "service_interpreter": "/usr/bin/python3",
+        "hermes_cli_import": "ok",
+        "sqlite_version": "3.45",
+        "health": status,
+        "dispatcher": status,
+        "cron": status,
+        "staged_health": {"status": status},
+    }
+
+
+def test_controller_stops_at_activation_pending_without_gateway_restart(
+    isolated_delivery_home: Path, tmp_path: Path
+):
+    runtime_git = ControllerRuntimeGit()
+    context = _advance_to_ci_green(
+        _advance_to_review(_new_context(tmp_path, git=runtime_git))
+    )
+    coordinator = _authorize_runtime_cutover(context)
+    repo = context["repo"]
+    (repo / "README.md").write_text("dirty tracked\n", encoding="utf-8")
+    (repo / "untracked.txt").write_text("untracked\n", encoding="utf-8")
+    prepared = coordinator.prepare_cutover(
+        context["task_id"], output_dir=tmp_path / "rollback-pack"
+    )
+
+    manifest = json.loads(Path(prepared.rollback_pack_path).read_text(encoding="utf-8"))
+    assert manifest["runtime"]["before_sha"] == context["base_sha"]
+    assert "README.md" in manifest["inventory"]["dirty_paths"]
+    assert "untracked.txt" in manifest["inventory"]["untracked_paths"]
+    assert manifest["restore"]["exact_restore_command"] == manifest["restore"]["commands"]
+
+    coordinator.record_runtime_materialized(
+        context["task_id"],
+        before_sha=context["base_sha"],
+        after_sha=MERGED_SHA,
+        main_pid=100,
+        service_interpreter="/usr/bin/python3",
+        restart_command=["systemctl", "restart", "hermes-gateway"],
+        restart_result={"status": "passed", "returncode": 0},
+    )
+    coordinator.record_runtime_health(
+        context["task_id"], evidence=_runtime_health(MERGED_SHA, "ok")
+    )
+
+    result = coordinator.controller_once(context["task_id"])
+
+    assert result["state"] == "activation_pending"
+    assert result["controller_action"] == "awaiting_activation_verification"
+    assert runtime_git.rollback_calls == 0
+    assert runtime_git.restart_calls == 0
+    assert result["runtime_actions"][0]["action"] == "restart"
+    assert result["runtime_actions"][0]["result"]["returncode"] == 0
+    context["conn"].close()
+
+
+def test_controller_rolls_back_failed_staged_health_from_durable_pack(
+    isolated_delivery_home: Path, tmp_path: Path
+):
+    runtime_git = ControllerRuntimeGit()
+    context = _advance_to_ci_green(
+        _advance_to_review(_new_context(tmp_path, git=runtime_git))
+    )
+    coordinator = _authorize_runtime_cutover(context)
+    coordinator.prepare_cutover(
+        context["task_id"], output_dir=tmp_path / "rollback-pack"
+    )
+    coordinator.record_runtime_materialized(
+        context["task_id"],
+        before_sha=context["base_sha"],
+        after_sha=MERGED_SHA,
+        main_pid=100,
+        service_interpreter="/usr/bin/python3",
+    )
+    coordinator.record_runtime_health(
+        context["task_id"], evidence=_runtime_health(MERGED_SHA, "failed")
+    )
+
+    result = coordinator.controller_once(context["task_id"])
+
+    assert result["state"] == "blocked"
+    assert result["activation_state"] == "rolled_back"
+    assert runtime_git.rollback_calls == 1
+    assert runtime_git.restart_calls == 0
+    assert result["runtime_actions"][-1]["action"] == "rollback"
+    assert result["runtime_actions"][-1]["result"]["status"] == "passed"
+    assert "failed" in json.dumps(result["last_error"])
     context["conn"].close()

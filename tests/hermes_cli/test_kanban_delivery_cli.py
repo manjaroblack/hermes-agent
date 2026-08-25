@@ -33,3 +33,17 @@ def test_delivery_controller_dispatch_refuses_unbounded_mode(capsys) -> None:
 
     assert kanban._dispatch_delivery(args) == 2
     assert "requires --once" in capsys.readouterr().err
+
+
+def test_delivery_health_parser_accepts_durable_evidence_path() -> None:
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="kanban_action")
+    kanban.build_parser(subparsers)
+
+    args = parser.parse_args(
+        ["kanban", "delivery", "record-health", "task-123", "--evidence", "/tmp/health.json"]
+    )
+
+    assert args.delivery_action == "record-health"
+    assert args.task_id == "task-123"
+    assert args.evidence == "/tmp/health.json"

@@ -466,7 +466,25 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
     d_materialized.add_argument("--after-sha", required=True)
     d_materialized.add_argument("--main-pid", required=True, type=int)
     d_materialized.add_argument("--service-interpreter", required=True)
+    d_materialized.add_argument(
+        "--restart-command",
+        action="append",
+        default=None,
+        help="One argv token from the external restart command (repeatable)",
+    )
+    d_materialized.add_argument(
+        "--restart-result",
+        default=None,
+        help="Path to a JSON restart result object",
+    )
     d_materialized.add_argument("--json", action="store_true")
+
+    d_health = delivery_sub.add_parser(
+        "record-health", help="Persist staged external runtime health evidence"
+    )
+    d_health.add_argument("task_id")
+    d_health.add_argument("--evidence", required=True)
+    d_health.add_argument("--json", action="store_true")
 
     d_verify = delivery_sub.add_parser("verify-cutover", help="Verify externally supplied live identity evidence")
     d_verify.add_argument("task_id")
@@ -1563,13 +1581,23 @@ def _dispatch_delivery(args: argparse.Namespace) -> int:
             elif action == "prepare-cutover":
                 result = coordinator.prepare_cutover(task_id, output_dir=args.output)
             elif action == "mark-materialized":
+                restart_result = None
+                if args.restart_result:
+                    restart_result = json.loads(
+                        Path(args.restart_result).read_text(encoding="utf-8")
+                    )
                 result = coordinator.record_runtime_materialized(
                     task_id,
                     before_sha=args.before_sha,
                     after_sha=args.after_sha,
                     main_pid=args.main_pid,
                     service_interpreter=args.service_interpreter,
+                    restart_command=args.restart_command,
+                    restart_result=restart_result,
                 )
+            elif action == "record-health":
+                evidence = json.loads(Path(args.evidence).read_text(encoding="utf-8"))
+                result = coordinator.record_runtime_health(task_id, evidence=evidence)
             elif action == "verify-cutover":
                 result = coordinator.verify_cutover(task_id, evidence_path=args.evidence)
             elif action == "controller":
