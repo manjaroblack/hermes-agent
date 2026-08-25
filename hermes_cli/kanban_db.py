@@ -5688,15 +5688,29 @@ def claim_task(
     ttl_seconds: Optional[int] = None,
     claimer: Optional[str] = None,
     board: Optional[str] = None,
+    claim_authorization: Optional[str] = None,
 ) -> Optional[Task]:
     """Atomically transition ``ready -> running``.
 
     Returns the claimed ``Task`` on success, ``None`` if the task was
     already claimed (or is not in ``ready`` status).
+
+    ``claim_authorization='review_rework'`` is an internal, explicitly
+    recorded authorization used only after a reviewer requested changes on a
+    prior PR handoff.  The default claim path never bypasses the one-shot
+    same-card continuation cap.
     """
+    if claim_authorization not in {None, "review_rework"}:
+        raise ValueError("unsupported claim authorization")
     now = int(time.time())
     lock = claimer or _claimer_id()
     expires = now + _resolve_claim_ttl_seconds(ttl_seconds)
+    snapshot = get_task(conn, task_id)
+    preflight_continuation = None
+    if snapshot is not None and snapshot.status == "ready":
+        preflight_continuation = _same_card_continuation_candidate(
+            conn, task_id, now=now, verify_identity=True,
+        )
     with write_txn(conn):
         continuation = None
         # Structural invariant: never transition ready -> running while any
@@ -5736,7 +5750,63 @@ def claim_task(
         if not admission.admitted:
             _reject_workspace_admission(conn, candidate, admission)
             return None
-        continuation = _same_card_continuation_candidate(conn, task_id, now=now)
+        consumed = _continuation_was_consumed(conn, task_id)
+        if consumed and claim_authorization != "review_rework":
+            _append_event(
+                conn,
+                task_id,
+                "claim_rejected",
+                {"reason": "continuation_consumed"},
+            )
+            return None
+        if claim_authorization == "review_rework" and not consumed:
+            _append_event(
+                conn,
+                task_id,
+                "claim_rejected",
+                {"reason": "review_rework_requires_consumed_continuation"},
+            )
+            return None
+        if consumed and not _review_rework_claim_authorized(
+            conn, task_id, now=now,
+        ):
+            _append_event(
+                conn,
+                task_id,
+                "claim_rejected",
+                {"reason": "review_rework_not_authorized"},
+            )
+            return None
+        persisted_continuation = _same_card_continuation_candidate(
+            conn, task_id, now=now, verify_identity=False,
+        )
+        if claim_authorization is None:
+            if preflight_continuation is None:
+                if persisted_continuation is not None or _review_provenance_requires_guard(
+                    conn, task_id,
+                ):
+                    _append_event(
+                        conn,
+                        task_id,
+                        "claim_rejected",
+                        {"reason": "review_identity_unverified"},
+                    )
+                    return None
+            elif (
+                persisted_continuation is None
+                or _continuation_identity(preflight_continuation)
+                != _continuation_identity(persisted_continuation)
+            ):
+                _append_event(
+                    conn,
+                    task_id,
+                    "claim_rejected",
+                    {"reason": "review_identity_changed"},
+                )
+                return None
+            continuation = preflight_continuation
+        else:
+            continuation = persisted_continuation
         # Defensive: if a prior run somehow leaked (invariant violation from
         # an unknown code path), close it as 'reclaimed' so we don't strand
         # it when the CAS resets the pointer below. No-op when the invariant
@@ -5804,7 +5874,16 @@ def claim_task(
         )
         _append_event(
             conn, task_id, "claimed",
-            {"lock": lock, "expires": expires, "run_id": run_id},
+            {
+                "lock": lock,
+                "expires": expires,
+                "run_id": run_id,
+                **(
+                    {"claim_authorization": claim_authorization}
+                    if claim_authorization is not None
+                    else {}
+                ),
+            },
             run_id=run_id,
         )
         if continuation is not None:
@@ -9719,6 +9798,7 @@ _RESPAWN_CONTINUATION_FAILURE_OUTCOMES = frozenset({
 })
 _RESPAWN_CONTINUATION_EVENT = "respawn_continuation_consumed"
 _REVIEW_PROVENANCE_EVENT = "review_provenance"
+_REVIEW_PROVENANCE_REJECTED_EVENT = "review_provenance_rejected"
 
 
 @dataclass
@@ -11170,8 +11250,17 @@ def _review_rework_follows_pr_handoff(
     return event_at > pr_handoff_at
 
 
-def _review_provenance_candidate(metadata: Any) -> tuple[Optional[dict], Optional[str], bool]:
-    """Normalize trusted worker/run/PR/worktree handoff metadata."""
+def _review_provenance_candidate(
+    metadata: Any,
+    *,
+    require_identity: bool = True,
+) -> tuple[Optional[dict], Optional[str], bool]:
+    """Normalize trusted worker/run/PR/worktree handoff metadata.
+
+    ``require_identity=False`` is used only while validating a new worker
+    handoff before the live provider snapshot is attached. Persisted events
+    and retry candidates always require the snapshot.
+    """
     if not isinstance(metadata, Mapping):
         return None, "review provenance must be a mapping", False
     root = dict(metadata)
@@ -11201,6 +11290,25 @@ def _review_provenance_candidate(metadata: Any) -> tuple[Optional[dict], Optiona
     branch = _text("branch", "head_branch") or evidence_dict.get("branch")
     if branch and not evidence_dict.get("branch"):
         evidence_dict["branch"] = branch
+    identity = merged.get("identity_verification")
+    if require_identity:
+        if not isinstance(identity, Mapping):
+            return None, "review provenance identity verification is missing", True
+        if identity.get("result") != "open_non_draft_exact_identity":
+            return None, "review provenance identity verification is not authoritative", True
+        for key in ("repository", "pr_number", "pr_url", "branch", "head_sha"):
+            expected = evidence_dict.get(key)
+            observed = identity.get(key)
+            if key in {"repository", "pr_url", "head_sha"}:
+                matches = (
+                    isinstance(expected, str)
+                    and isinstance(observed, str)
+                    and expected.casefold() == observed.casefold()
+                )
+            else:
+                matches = observed == expected
+            if not matches:
+                return None, f"review provenance identity {key} does not match evidence", True
     return {
         "task_id": _text("task_id"),
         "run_id": run_id,
@@ -11209,6 +11317,7 @@ def _review_provenance_candidate(metadata: Any) -> tuple[Optional[dict], Optiona
         "workspace_path": _text("workspace_path", "worktree_path", "dedicated_worktree"),
         "worker_session_id": _text("worker_session_id", "session_id"),
         "review_evidence": evidence_dict,
+        "identity_verification": dict(identity) if isinstance(identity, Mapping) else None,
     }, None, True
 
 
@@ -11267,40 +11376,92 @@ def record_review_provenance(
     source: str = "worker_handoff",
 ) -> dict:
     """Validate and durably record one worker-owned PR handoff."""
+    task = get_task(conn, task_id)
+    if task is None:
+        raise ValueError("task not found")
+    candidate, diagnostic, present = _review_provenance_candidate(
+        metadata, require_identity=False,
+    )
+    if not present or candidate is None:
+        raise ValueError(diagnostic or "structured review provenance is required")
+    run_id = candidate.get("run_id")
+    current_run_id = task.current_run_id
+    if candidate.get("task_id") not in {None, task_id}:
+        raise ValueError("review provenance task_id does not match the task")
+    if expected_run_id is not None and current_run_id != int(expected_run_id):
+        raise ValueError("worker run is no longer current")
+    if run_id is None or current_run_id is None or int(run_id) != int(current_run_id):
+        raise ValueError("review provenance run_id does not match the current run")
+    if candidate.get("implementer") not in {None, task.assignee}:
+        raise ValueError("review provenance implementer does not match the assignee")
+    if task.workspace_kind != "worktree":
+        raise ValueError("review provenance requires a dedicated worktree")
+    if _canonical_workspace_path(candidate.get("workspace_path")) != _canonical_workspace_path(task.workspace_path):
+        raise ValueError("review provenance worktree does not match the task")
+    if candidate.get("workspace_kind") not in {None, task.workspace_kind}:
+        raise ValueError("review provenance workspace kind does not match the task")
+    evidence = candidate["review_evidence"]
+    if task.branch_name and evidence.get("branch") != task.branch_name:
+        raise ValueError("review provenance branch does not match the task")
+
+    # This is the trust boundary: worker-supplied fields are only durable
+    # after the provider confirms the same repository/PR/URL/branch/head is an
+    # open, non-draft PR.  Do this before the write transaction so provider
+    # latency never holds the Kanban writer lock.  CI status is intentionally
+    # not part of this in-progress continuation identity check.
+    from hermes_cli import kanban_review_recovery as recovery
+
+    evidence_obj = recovery.ReviewEvidence(**evidence)
+    try:
+        identity_ok, identity_diagnostic, identity_snapshot = (
+            recovery.verify_review_identity(evidence_obj)
+        )
+    except Exception:
+        _log.debug("review identity verification failed", exc_info=True)
+        identity_ok, identity_diagnostic, identity_snapshot = (
+            False,
+            "live provider identity verification failed",
+            {},
+        )
+    if not identity_ok or not isinstance(identity_snapshot, Mapping):
+        rejection_reason = str(
+            identity_diagnostic or "live provider identity is unverified"
+        )
+        with write_txn(conn, allow_nested=True):
+            current = get_task(conn, task_id)
+            if current is not None and current.current_run_id == int(run_id):
+                _append_event(
+                    conn,
+                    task_id,
+                    _REVIEW_PROVENANCE_REJECTED_EVENT,
+                    {"diagnostic": rejection_reason[:300]},
+                    run_id=int(run_id),
+                )
+        raise ValueError(rejection_reason)
+
+    candidate["identity_verification"] = dict(identity_snapshot)
+    candidate.update({
+        "task_id": task_id,
+        "run_id": int(run_id),
+        "implementer": task.assignee,
+        "workspace_kind": task.workspace_kind,
+        "workspace_path": _canonical_workspace_path(task.workspace_path),
+        "source": str(source or "worker_handoff"),
+    })
     with write_txn(conn, allow_nested=True):
-        task = get_task(conn, task_id)
-        if task is None:
+        # Re-read mutable ownership fields after the provider call. A worker
+        # that lost its run during verification must not write stale evidence.
+        current = get_task(conn, task_id)
+        if current is None:
             raise ValueError("task not found")
-        candidate, diagnostic, present = _review_provenance_candidate(metadata)
-        if not present or candidate is None:
-            raise ValueError(diagnostic or "structured review provenance is required")
-        run_id = candidate.get("run_id")
-        current_run_id = task.current_run_id
-        if candidate.get("task_id") not in {None, task_id}:
-            raise ValueError("review provenance task_id does not match the task")
-        if expected_run_id is not None and current_run_id != int(expected_run_id):
+        if expected_run_id is not None and current.current_run_id != int(expected_run_id):
             raise ValueError("worker run is no longer current")
-        if run_id is None or current_run_id is None or int(run_id) != int(current_run_id):
+        if current.current_run_id != int(run_id):
             raise ValueError("review provenance run_id does not match the current run")
-        if candidate.get("implementer") not in {None, task.assignee}:
-            raise ValueError("review provenance implementer does not match the assignee")
-        if task.workspace_kind != "worktree":
+        if current.workspace_kind != "worktree":
             raise ValueError("review provenance requires a dedicated worktree")
-        if _canonical_workspace_path(candidate.get("workspace_path")) != _canonical_workspace_path(task.workspace_path):
-            raise ValueError("review provenance worktree does not match the task")
-        if candidate.get("workspace_kind") not in {None, task.workspace_kind}:
-            raise ValueError("review provenance workspace kind does not match the task")
-        evidence = candidate["review_evidence"]
-        if task.branch_name and evidence.get("branch") != task.branch_name:
+        if current.branch_name and evidence.get("branch") != current.branch_name:
             raise ValueError("review provenance branch does not match the task")
-        candidate.update({
-            "task_id": task_id,
-            "run_id": int(run_id),
-            "implementer": task.assignee,
-            "workspace_kind": task.workspace_kind,
-            "workspace_path": _canonical_workspace_path(task.workspace_path),
-            "source": str(source or "worker_handoff"),
-        })
         row = conn.execute(
             "SELECT metadata FROM task_runs WHERE id = ? AND task_id = ?",
             (int(run_id), task_id),
@@ -11330,8 +11491,10 @@ def _continuation_identity(candidate: Mapping[str, Any]) -> tuple[Any, ...]:
     evidence = evidence if isinstance(evidence, Mapping) else {}
     return (
         evidence.get("provider"), evidence.get("repository"),
-        evidence.get("pr_number"), evidence.get("head_sha"),
-        evidence.get("branch"), candidate.get("implementer"),
+        evidence.get("pr_number"), evidence.get("pr_url"),
+        evidence.get("head_sha"), evidence.get("branch"),
+        evidence.get("base_branch"), evidence.get("base_sha"),
+        candidate.get("implementer"),
         candidate.get("workspace_path"),
     )
 
@@ -11347,8 +11510,79 @@ def _continuation_was_consumed(
     ).fetchone() is not None
 
 
+def _verify_continuation_identity(candidate: Mapping[str, Any]) -> bool:
+    """Re-check the candidate's PR identity before admitting a retry."""
+    evidence = candidate.get("review_evidence")
+    if not isinstance(evidence, Mapping):
+        return False
+    try:
+        from hermes_cli import kanban_review_recovery as recovery
+
+        evidence_obj = recovery.ReviewEvidence(**dict(evidence))
+        ok, _diagnostic, _snapshot = recovery.verify_review_identity(evidence_obj)
+        return bool(ok)
+    except Exception:
+        _log.debug("continuation identity verification failed", exc_info=True)
+        return False
+
+
+def _review_provenance_requires_guard(
+    conn: sqlite3.Connection, task_id: str,
+) -> bool:
+    """Return whether unverified review provenance must fail closed."""
+    candidate, diagnostic = _review_provenance_for_task(conn, task_id)
+    if candidate is not None or diagnostic is not None:
+        return True
+    return conn.execute(
+        "SELECT 1 FROM task_events WHERE task_id = ? AND kind = ? LIMIT 1",
+        (task_id, _REVIEW_PROVENANCE_REJECTED_EVENT),
+    ).fetchone() is not None
+
+
+def _review_rework_claim_authorized(
+    conn: sqlite3.Connection,
+    task_id: str,
+    *,
+    now: int,
+) -> bool:
+    """Return whether reviewer rework explicitly authorizes a post-cap claim."""
+    task = get_task(conn, task_id)
+    if task is None or not _continuation_was_consumed(conn, task_id):
+        return False
+    pr_cutoff = now - _RESPAWN_GUARD_PR_WINDOW
+    latest_pr_handoff_at: Optional[int] = None
+    for comment in conn.execute(
+        "SELECT body, created_at FROM task_comments "
+        "WHERE task_id = ? AND ("
+        "created_at IS NULL OR typeof(created_at) != 'integer' "
+        "OR created_at >= ?) ORDER BY id ASC",
+        (task_id, pr_cutoff),
+    ).fetchall():
+        if not comment["body"] or not _RESPAWN_GUARD_PR_URL_RE.search(comment["body"]):
+            continue
+        comment_at = _parse_finite_int_timestamp(comment["created_at"])
+        if comment_at is None or comment_at > now:
+            return False
+        if comment_at >= pr_cutoff:
+            if latest_pr_handoff_at is None or comment_at > latest_pr_handoff_at:
+                latest_pr_handoff_at = comment_at
+    if latest_pr_handoff_at is None:
+        return False
+    return _review_rework_follows_pr_handoff(
+        conn,
+        task_id,
+        assignee=task.assignee,
+        pr_handoff_at=latest_pr_handoff_at,
+        now=now,
+    )
+
+
 def _same_card_continuation_candidate(
-    conn: sqlite3.Connection, task_id: str, *, now: int,
+    conn: sqlite3.Connection,
+    task_id: str,
+    *,
+    now: int,
+    verify_identity: bool = True,
 ) -> Optional[dict]:
     """Return one exact worker/PR/worktree handoff eligible for one retry."""
     task = get_task(conn, task_id)
@@ -11384,6 +11618,14 @@ def _same_card_continuation_candidate(
         or not isinstance(evidence, Mapping)
         or evidence.get("branch") != task.branch_name
     ):
+        return None
+    identity = candidate.get("identity_verification")
+    if (
+        not isinstance(identity, Mapping)
+        or identity.get("result") != "open_non_draft_exact_identity"
+    ):
+        return None
+    if verify_identity and not _verify_continuation_identity(candidate):
         return None
     return candidate
 
@@ -11601,6 +11843,8 @@ def check_respawn_guard(
         return "active_pr"
     if _same_card_continuation_candidate(conn, task_id, now=now) is not None:
         return None
+    if _review_provenance_requires_guard(conn, task_id):
+        return "active_pr"
     # Structured recovery evidence is stronger than a free-form PR comment and
     # must keep protecting the implementation lane even if an operator
     # unblocks the card without copying the URL into a comment. The only
@@ -12144,7 +12388,18 @@ def _dispatch_once_locked(
                 (row["id"], admission.reason or "workspace_admission_rejected")
             )
             continue
-        claimed = claim_task(conn, row["id"], ttl_seconds=ttl_seconds, board=board)
+        claim_authorization = (
+            "review_rework"
+            if _continuation_was_consumed(conn, row["id"])
+            else None
+        )
+        claimed = claim_task(
+            conn,
+            row["id"],
+            ttl_seconds=ttl_seconds,
+            board=board,
+            claim_authorization=claim_authorization,
+        )
         if claimed is None:
             continue
         try:
