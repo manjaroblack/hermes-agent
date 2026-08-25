@@ -5698,6 +5698,7 @@ def claim_task(
     lock = claimer or _claimer_id()
     expires = now + _resolve_claim_ttl_seconds(ttl_seconds)
     with write_txn(conn):
+        continuation = None
         # Structural invariant: never transition ready -> running while any
         # parent is not yet 'done'. This is the single enforcement point
         # regardless of which writer (create_task, link_tasks, unblock_task,
@@ -5735,6 +5736,7 @@ def claim_task(
         if not admission.admitted:
             _reject_workspace_admission(conn, candidate, admission)
             return None
+        continuation = _same_card_continuation_candidate(conn, task_id, now=now)
         # Defensive: if a prior run somehow leaked (invariant violation from
         # an unknown code path), close it as 'reclaimed' so we don't strand
         # it when the CAS resets the pointer below. No-op when the invariant
@@ -5805,6 +5807,17 @@ def claim_task(
             {"lock": lock, "expires": expires, "run_id": run_id},
             run_id=run_id,
         )
+        if continuation is not None:
+            _append_event(
+                conn,
+                task_id,
+                _RESPAWN_CONTINUATION_EVENT,
+                {
+                    "prior_run_id": continuation.get("run_id"),
+                    "identity": list(_continuation_identity(continuation)),
+                },
+                run_id=run_id,
+            )
         claimed = get_task(conn, task_id)
     _fire_kanban_lifecycle_hook(
         "kanban_task_claimed",
@@ -9699,6 +9712,14 @@ _RESPAWN_GUARD_PR_URL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# A worker that already opened a PR may get one same-card retry after a
+# non-terminal failure, but only for one exact worker/PR/worktree handoff.
+_RESPAWN_CONTINUATION_FAILURE_OUTCOMES = frozenset({
+    "blocked", "crashed", "gave_up", "spawn_failed", "timed_out", "reclaimed",
+})
+_RESPAWN_CONTINUATION_EVENT = "respawn_continuation_consumed"
+_REVIEW_PROVENANCE_EVENT = "review_provenance"
+
 
 @dataclass
 class DispatchResult:
@@ -11149,6 +11170,219 @@ def _review_rework_follows_pr_handoff(
     return event_at > pr_handoff_at
 
 
+def _review_provenance_candidate(metadata: Any) -> tuple[Optional[dict], Optional[str], bool]:
+    """Normalize trusted worker/run/PR/worktree handoff metadata."""
+    if not isinstance(metadata, Mapping):
+        return None, "review provenance must be a mapping", False
+    root = dict(metadata)
+    nested = root.get("review_provenance")
+    merged = dict(nested) if isinstance(nested, Mapping) else root
+    if isinstance(nested, Mapping):
+        merged.update({key: value for key, value in root.items() if key not in merged})
+    evidence, diagnostic, present = _review_evidence_from_metadata(merged)
+    if not present:
+        return None, None, False
+    if evidence is None:
+        return None, diagnostic or "review evidence is malformed", True
+
+    def _text(*keys: str) -> Optional[str]:
+        for key in keys:
+            value = merged.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+
+    raw_run_id = merged.get("worker_run_id", merged.get("run_id"))
+    try:
+        run_id = int(raw_run_id) if raw_run_id is not None else None
+    except (TypeError, ValueError):
+        return None, "review provenance run_id is malformed", True
+    evidence_dict = evidence.as_dict()
+    branch = _text("branch", "head_branch") or evidence_dict.get("branch")
+    if branch and not evidence_dict.get("branch"):
+        evidence_dict["branch"] = branch
+    return {
+        "task_id": _text("task_id"),
+        "run_id": run_id,
+        "implementer": _text("implementer", "worker_profile", "profile"),
+        "workspace_kind": _text("workspace_kind"),
+        "workspace_path": _text("workspace_path", "worktree_path", "dedicated_worktree"),
+        "worker_session_id": _text("worker_session_id", "session_id"),
+        "review_evidence": evidence_dict,
+    }, None, True
+
+
+def _canonical_workspace_path(value: Any) -> Optional[str]:
+    if not isinstance(value, str) or not value.strip() or not Path(value).is_absolute():
+        return None
+    try:
+        return str(Path(value).expanduser().resolve())
+    except OSError:
+        return str(Path(value).expanduser().absolute())
+
+
+def _review_provenance_for_task(
+    conn: sqlite3.Connection, task_id: str,
+) -> tuple[Optional[dict], Optional[str]]:
+    """Return the newest structured PR handoff for ``task_id``."""
+    rows = conn.execute(
+        "SELECT payload FROM task_events WHERE task_id = ? AND kind = ? ORDER BY id DESC",
+        (task_id, _REVIEW_PROVENANCE_EVENT),
+    ).fetchall()
+    for row in rows:
+        try:
+            payload = json.loads(row["payload"]) if row["payload"] else {}
+        except (TypeError, json.JSONDecodeError):
+            continue
+        candidate = payload.get("review_provenance") if isinstance(payload, Mapping) else None
+        if isinstance(payload, Mapping) and "review_provenance" in payload:
+            normalized, diagnostic, _present = _review_provenance_candidate(
+                candidate if isinstance(candidate, Mapping) else payload
+            )
+            return normalized, diagnostic or "review provenance event is malformed"
+        normalized, diagnostic, present = _review_provenance_candidate(candidate or payload)
+        if present:
+            return normalized, diagnostic
+    rows = conn.execute(
+        "SELECT metadata FROM task_runs WHERE task_id = ? ORDER BY id DESC",
+        (task_id,),
+    ).fetchall()
+    for row in rows:
+        try:
+            metadata = json.loads(row["metadata"]) if row["metadata"] else {}
+        except (TypeError, json.JSONDecodeError):
+            continue
+        normalized, diagnostic, present = _review_provenance_candidate(metadata)
+        if present:
+            return normalized, diagnostic
+    return None, None
+
+
+def record_review_provenance(
+    conn: sqlite3.Connection,
+    task_id: str,
+    metadata: Any,
+    *,
+    expected_run_id: Optional[int] = None,
+    source: str = "worker_handoff",
+) -> dict:
+    """Validate and durably record one worker-owned PR handoff."""
+    with write_txn(conn, allow_nested=True):
+        task = get_task(conn, task_id)
+        if task is None:
+            raise ValueError("task not found")
+        candidate, diagnostic, present = _review_provenance_candidate(metadata)
+        if not present or candidate is None:
+            raise ValueError(diagnostic or "structured review provenance is required")
+        run_id = candidate.get("run_id")
+        current_run_id = task.current_run_id
+        if candidate.get("task_id") not in {None, task_id}:
+            raise ValueError("review provenance task_id does not match the task")
+        if expected_run_id is not None and current_run_id != int(expected_run_id):
+            raise ValueError("worker run is no longer current")
+        if run_id is None or current_run_id is None or int(run_id) != int(current_run_id):
+            raise ValueError("review provenance run_id does not match the current run")
+        if candidate.get("implementer") not in {None, task.assignee}:
+            raise ValueError("review provenance implementer does not match the assignee")
+        if task.workspace_kind != "worktree":
+            raise ValueError("review provenance requires a dedicated worktree")
+        if _canonical_workspace_path(candidate.get("workspace_path")) != _canonical_workspace_path(task.workspace_path):
+            raise ValueError("review provenance worktree does not match the task")
+        if candidate.get("workspace_kind") not in {None, task.workspace_kind}:
+            raise ValueError("review provenance workspace kind does not match the task")
+        evidence = candidate["review_evidence"]
+        if task.branch_name and evidence.get("branch") != task.branch_name:
+            raise ValueError("review provenance branch does not match the task")
+        candidate.update({
+            "task_id": task_id,
+            "run_id": int(run_id),
+            "implementer": task.assignee,
+            "workspace_kind": task.workspace_kind,
+            "workspace_path": _canonical_workspace_path(task.workspace_path),
+            "source": str(source or "worker_handoff"),
+        })
+        row = conn.execute(
+            "SELECT metadata FROM task_runs WHERE id = ? AND task_id = ?",
+            (int(run_id), task_id),
+        ).fetchone()
+        run_metadata = {}
+        if row is not None and row["metadata"]:
+            try:
+                parsed = json.loads(row["metadata"])
+                if isinstance(parsed, Mapping):
+                    run_metadata = dict(parsed)
+            except (TypeError, json.JSONDecodeError):
+                pass
+        run_metadata["review_provenance"] = candidate
+        conn.execute(
+            "UPDATE task_runs SET metadata = ? WHERE id = ? AND task_id = ?",
+            (json.dumps(run_metadata, sort_keys=True), int(run_id), task_id),
+        )
+        _append_event(
+            conn, task_id, _REVIEW_PROVENANCE_EVENT,
+            {"review_provenance": candidate}, run_id=int(run_id),
+        )
+        return candidate
+
+
+def _continuation_identity(candidate: Mapping[str, Any]) -> tuple[Any, ...]:
+    evidence = candidate.get("review_evidence")
+    evidence = evidence if isinstance(evidence, Mapping) else {}
+    return (
+        evidence.get("provider"), evidence.get("repository"),
+        evidence.get("pr_number"), evidence.get("head_sha"),
+        evidence.get("branch"), candidate.get("implementer"),
+        candidate.get("workspace_path"),
+    )
+
+
+def _same_card_continuation_candidate(
+    conn: sqlite3.Connection, task_id: str, *, now: int,
+) -> Optional[dict]:
+    """Return one exact worker/PR/worktree handoff eligible for one retry."""
+    task = get_task(conn, task_id)
+    if task is None or task.status not in {"ready", "todo"}:
+        return None
+    latest = conn.execute(
+        "SELECT id, outcome, ended_at FROM task_runs WHERE task_id = ? ORDER BY id DESC LIMIT 1",
+        (task_id,),
+    ).fetchone()
+    ended_at = _parse_finite_int_timestamp(latest["ended_at"]) if latest else None
+    if (
+        latest is None
+        or latest["outcome"] not in _RESPAWN_CONTINUATION_FAILURE_OUTCOMES
+        or ended_at is None
+        or ended_at > now
+    ):
+        return None
+    candidate, _diagnostic = _review_provenance_for_task(conn, task_id)
+    if candidate is None:
+        return None
+    evidence = candidate.get("review_evidence")
+    if (
+        candidate.get("task_id") not in {None, task_id}
+        or candidate.get("run_id") != int(latest["id"])
+        or candidate.get("implementer") != task.assignee
+        or task.workspace_kind != "worktree"
+        or _canonical_workspace_path(candidate.get("workspace_path")) != _canonical_workspace_path(task.workspace_path)
+        or candidate.get("workspace_kind") not in {None, task.workspace_kind}
+        or not isinstance(evidence, Mapping)
+        or evidence.get("branch") != task.branch_name
+    ):
+        return None
+    for row in conn.execute(
+        "SELECT payload FROM task_events WHERE task_id = ? AND kind = ? ORDER BY id DESC",
+        (task_id, _RESPAWN_CONTINUATION_EVENT),
+    ).fetchall():
+        try:
+            payload = json.loads(row["payload"]) if row["payload"] else {}
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, Mapping) and tuple(payload.get("identity") or ()) == _continuation_identity(candidate):
+            return None
+    return candidate
+
+
 def check_respawn_guard(
     conn: sqlite3.Connection, task_id: str, *, lane: str = "ready",
 ) -> Optional[str]:
@@ -11344,6 +11578,8 @@ def check_respawn_guard(
                 latest_pr_handoff_at = comment_at
 
     if latest_pr_handoff_at is not None:
+        if _same_card_continuation_candidate(conn, task_id, now=now) is not None:
+            return None
         if _review_rework_follows_pr_handoff(
             conn,
             task_id,
@@ -11354,6 +11590,10 @@ def check_respawn_guard(
             return None
         return "active_pr"
 
+    # A validated same-card continuation is the only ready-lane exception to
+    # the PR/recovery guard. claim_task() consumes it atomically.
+    if _same_card_continuation_candidate(conn, task_id, now=now) is not None:
+        return None
     # Structured recovery evidence is stronger than a free-form PR comment and
     # must keep protecting the implementation lane even if an operator
     # unblocks the card without copying the URL into a comment. The only

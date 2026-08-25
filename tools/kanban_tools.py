@@ -170,14 +170,27 @@ def _worker_run_id(task_id: str) -> Optional[int]:
 def _stamp_worker_session_metadata(
     task_id: str, metadata: Optional[dict]
 ) -> Optional[dict]:
-    """Add trusted worker session id metadata for this worker's own task."""
+    """Add trusted worker/run/worktree provenance for review handoffs."""
     if os.environ.get("HERMES_KANBAN_TASK") != task_id:
         return metadata
-    session_id = os.environ.get("HERMES_SESSION_ID")
-    if not session_id:
+    if not isinstance(metadata, dict) or not (
+        "review_evidence" in metadata or "review_provenance" in metadata
+    ):
         return metadata
-    stamped = dict(metadata or {})
-    stamped["worker_session_id"] = session_id
+    stamped = dict(metadata)
+    trusted_fields = {
+        "task_id": task_id,
+        "worker_run_id": _worker_run_id(task_id),
+        "worker_profile": os.environ.get("HERMES_PROFILE"),
+        "workspace_path": os.environ.get("HERMES_KANBAN_WORKSPACE"),
+        "branch": os.environ.get("HERMES_KANBAN_BRANCH"),
+    }
+    session_id = os.environ.get("HERMES_SESSION_ID")
+    if session_id:
+        trusted_fields["worker_session_id"] = session_id
+    for key, value in trusted_fields.items():
+        if value not in (None, ""):
+            stamped[key] = value
     return stamped
 
 
@@ -905,6 +918,13 @@ def _handle_block(args: dict, **kw) -> str:
         return tool_error(
             f"metadata must be an object/dict, got {type(metadata).__name__}"
         )
+    if metadata is not None:
+        metadata_json = redact_sensitive_text(json.dumps(metadata), force=True)
+        try:
+            metadata = json.loads(metadata_json)
+        except json.JSONDecodeError:
+            return tool_error("metadata could not be safely serialized")
+    metadata = _stamp_worker_session_metadata(tid, metadata)
     board = args.get("board")
     try:
         kb, conn = _connect(board=board)
@@ -938,6 +958,21 @@ def _handle_block(args: dict, **kw) -> str:
                 f"completion judge will evaluate it."
             )
         try:
+            if isinstance(metadata, dict) and (
+                "review_evidence" in metadata or "review_provenance" in metadata
+            ):
+                try:
+                    kb.record_review_provenance(
+                        conn,
+                        tid,
+                        metadata,
+                        expected_run_id=_worker_run_id(tid),
+                        source="block",
+                    )
+                except ValueError as exc:
+                    return tool_error(
+                        f"kanban_block requires complete exact-head provenance: {exc}"
+                    )
             ok = kb.block_task(
                 conn, tid,
                 reason=reason,
@@ -1018,6 +1053,22 @@ def _handle_request_review(args: dict, **kw) -> str:
                     "Provide acceptance evidence matching the card before "
                     "requesting review."
                 )
+            if isinstance(metadata, dict) and (
+                "review_evidence" in metadata or "review_provenance" in metadata
+            ):
+                try:
+                    kb.record_review_provenance(
+                        conn,
+                        tid,
+                        metadata,
+                        expected_run_id=_worker_run_id(tid),
+                        source="request_review",
+                    )
+                except ValueError as exc:
+                    return tool_error(
+                        f"kanban_request_review requires complete exact-head "
+                        f"provenance: {exc}"
+                    )
             ok, fail_reason = kb.request_review(
                 conn, tid,
                 summary=summary,
@@ -1164,6 +1215,19 @@ def _handle_comment(args: dict, **kw) -> str:
     if not body or not str(body).strip():
         return tool_error("body is required")
     body = redact_sensitive_text(str(body), force=True)
+    metadata = args.get("metadata")
+    if metadata is not None and not isinstance(metadata, dict):
+        return tool_error(
+            f"metadata must be an object/dict, got {type(metadata).__name__}"
+        )
+    if metadata is not None:
+        try:
+            metadata = json.loads(
+                redact_sensitive_text(json.dumps(metadata), force=True)
+            )
+        except (TypeError, json.JSONDecodeError):
+            return tool_error("metadata could not be safely serialized")
+    metadata = _stamp_worker_session_metadata(tid, metadata)
     # Author is intentionally derived from the worker's own runtime
     # identity, NOT from caller-supplied args. Comments are injected
     # into the next worker's system prompt by ``build_worker_context``
@@ -1178,6 +1242,25 @@ def _handle_comment(args: dict, **kw) -> str:
     try:
         kb, conn = _connect(board=board)
         try:
+            if (
+                os.environ.get("HERMES_KANBAN_TASK") == tid
+                and isinstance(metadata, dict)
+                and (
+                    "review_evidence" in metadata or "review_provenance" in metadata
+                )
+            ):
+                try:
+                    kb.record_review_provenance(
+                        conn,
+                        tid,
+                        metadata,
+                        expected_run_id=_worker_run_id(tid),
+                        source="comment",
+                    )
+                except ValueError as exc:
+                    return tool_error(
+                        f"kanban_comment requires complete exact-head provenance: {exc}"
+                    )
             cid = kb.add_comment(conn, tid, author=author, body=str(body))
             return _ok(task_id=tid, comment_id=cid)
         finally:
@@ -2163,6 +2246,14 @@ KANBAN_COMMENT_SCHEMA = {
             "body": {
                 "type": "string",
                 "description": "Markdown-supported comment body.",
+            },
+            "metadata": {
+                "type": "object",
+                "description": (
+                    "Optional structured worker/PR/worktree provenance. "
+                    "When supplied by the task's own worker it is validated "
+                    "and retained as an exact-head continuation handoff."
+                ),
             },
             "board": _board_schema_prop(),
         },
