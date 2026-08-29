@@ -110,6 +110,7 @@ def adapter(monkeypatch):
         "DISCORD_THREAD_REQUIRE_MENTION",
         "DISCORD_FREE_RESPONSE_CHANNELS",
         "DISCORD_AUTO_THREAD",
+        "DISCORD_AUTO_THREAD_FREE_RESPONSE",
         "DISCORD_NO_THREAD_CHANNELS",
         "DISCORD_ALLOWED_CHANNELS",
         "DISCORD_IGNORED_CHANNELS",
@@ -157,6 +158,25 @@ def make_history_message(
         attachments=list(attachments or []),
         type=msg_type if msg_type is not None else discord_platform.discord.MessageType.default,
     )
+
+
+def test_auto_thread_free_response_config_precedes_env_and_parses_boolean_values(adapter, monkeypatch):
+    """Per-adapter config wins over the scoped env fallback for bool values."""
+    monkeypatch.setenv("DISCORD_AUTO_THREAD_FREE_RESPONSE", "true")
+
+    adapter.config.extra["auto_thread_free_response"] = "off"
+    assert adapter._discord_auto_thread_free_response() is False
+
+    adapter.config.extra["auto_thread_free_response"] = "on"
+    assert adapter._discord_auto_thread_free_response() is True
+
+
+def test_auto_thread_free_response_explicit_false_overrides_env(adapter, monkeypatch):
+    """An explicit config false cannot be overridden by a true env fallback."""
+    monkeypatch.setenv("DISCORD_AUTO_THREAD_FREE_RESPONSE", "true")
+    adapter.config.extra["auto_thread_free_response"] = False
+
+    assert adapter._discord_auto_thread_free_response() is False
 
 
 class FakeHistoryChannel(FakeTextChannel):
@@ -305,6 +325,137 @@ async def test_discord_free_response_channel_skips_auto_thread(adapter, monkeypa
     event = adapter.handle_message.await_args.args[0]
     assert event.text == "casual chat in free-response channel"
     assert event.source.chat_type == "group"
+
+
+@pytest.mark.asyncio
+async def test_free_response_channel_can_auto_thread_when_enabled(adapter, monkeypatch):
+    """Opt-in preserves no-mention routing while isolating each new task."""
+    monkeypatch.setenv("DISCORD_REQUIRE_MENTION", "true")
+    monkeypatch.setenv("DISCORD_FREE_RESPONSE_CHANNELS", "789")
+    monkeypatch.setenv("DISCORD_AUTO_THREAD", "true")
+    monkeypatch.setenv("DISCORD_AUTO_THREAD_FREE_RESPONSE", "true")
+
+    parent = FakeTextChannel(channel_id=789)
+    thread = FakeThread(channel_id=790, name="new task", parent=parent)
+    adapter._auto_create_thread = AsyncMock(return_value=thread)
+    message = make_message(channel=parent, content="new task")
+
+    await adapter._handle_message(message)
+
+    adapter._auto_create_thread.assert_awaited_once_with(message)
+    adapter.handle_message.assert_awaited_once()
+    event = adapter.handle_message.await_args.args[0]
+    assert event.source.chat_id == "790"
+    assert event.source.chat_type == "thread"
+
+
+@pytest.mark.asyncio
+async def test_free_response_channel_can_auto_thread_from_config_extra(adapter, monkeypatch):
+    """Config extra enables thread-first routing without requiring a mention."""
+    monkeypatch.setenv("DISCORD_AUTO_THREAD", "true")
+    monkeypatch.delenv("DISCORD_AUTO_THREAD_FREE_RESPONSE", raising=False)
+    adapter.config.extra.update(
+        {
+            "require_mention": True,
+            "free_response_channels": ["789"],
+            "auto_thread_free_response": True,
+        }
+    )
+
+    parent = FakeTextChannel(channel_id=789)
+    thread = FakeThread(channel_id=790, name="new task", parent=parent)
+    adapter._auto_create_thread = AsyncMock(return_value=thread)
+    message = make_message(channel=parent, content="new task")
+
+    await adapter._handle_message(message)
+
+    adapter._auto_create_thread.assert_awaited_once_with(message)
+    adapter.handle_message.assert_awaited_once()
+    event = adapter.handle_message.await_args.args[0]
+    assert event.source.chat_id == "790"
+    assert event.source.chat_type == "thread"
+
+
+@pytest.mark.asyncio
+async def test_auto_threaded_free_response_follow_up_stays_mention_free(adapter, monkeypatch):
+    """A follow-up in the bot's new thread is accepted without a mention."""
+    monkeypatch.setenv("DISCORD_AUTO_THREAD", "true")
+    adapter.config.extra.update(
+        {
+            "require_mention": True,
+            "free_response_channels": ["789"],
+            "auto_thread_free_response": True,
+        }
+    )
+
+    parent = FakeTextChannel(channel_id=789)
+    thread = FakeThread(channel_id=791, name="ongoing task", parent=parent)
+    adapter._auto_create_thread = AsyncMock(return_value=thread)
+
+    await adapter._handle_message(make_message(channel=parent, content="start task"))
+    await adapter._handle_message(make_message(channel=thread, content="continue task"))
+
+    adapter._auto_create_thread.assert_awaited_once()
+    assert adapter.handle_message.await_count == 2
+    follow_up_event = adapter.handle_message.await_args_list[1].args[0]
+    assert follow_up_event.text == "continue task"
+    assert follow_up_event.source.chat_id == "791"
+    assert follow_up_event.source.chat_type == "thread"
+
+
+@pytest.mark.asyncio
+async def test_no_thread_channel_overrides_free_response_auto_thread(adapter, monkeypatch):
+    """Explicit no_thread_channels remains the highest-priority opt-out."""
+    monkeypatch.setenv("DISCORD_AUTO_THREAD", "true")
+    adapter.config.extra.update(
+        {
+            "require_mention": True,
+            "free_response_channels": ["789"],
+            "auto_thread_free_response": True,
+            "no_thread_channels": ["789"],
+        }
+    )
+    adapter._auto_create_thread = AsyncMock()
+
+    message = make_message(channel=FakeTextChannel(channel_id=789), content="inline task")
+    await adapter._handle_message(message)
+
+    adapter._auto_create_thread.assert_not_awaited()
+    adapter.handle_message.assert_awaited_once()
+    event = adapter.handle_message.await_args.args[0]
+    assert event.source.chat_id == "789"
+    assert event.source.chat_type == "group"
+
+
+def test_yaml_bridge_seeds_auto_thread_free_response_config(monkeypatch):
+    """The Discord YAML hook keeps this setting in per-adapter config."""
+    monkeypatch.delenv("DISCORD_AUTO_THREAD_FREE_RESPONSE", raising=False)
+
+    seeded = discord_platform._apply_yaml_config(
+        {},
+        {"auto_thread_free_response": False},
+    )
+
+    assert seeded is not None
+    assert seeded["auto_thread_free_response"] is False
+
+
+def test_load_gateway_config_keeps_auto_thread_free_response_per_adapter(monkeypatch, tmp_path):
+    """The real YAML load path carries the setting into PlatformConfig.extra."""
+    import yaml
+
+    (tmp_path / "config.yaml").write_text(
+        yaml.safe_dump({"discord": {"auto_thread_free_response": True}})
+    )
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.delenv("DISCORD_AUTO_THREAD_FREE_RESPONSE", raising=False)
+
+    from gateway.config import Platform, load_gateway_config
+
+    gateway_config = load_gateway_config()
+    discord_config = gateway_config.platforms[Platform.DISCORD]
+
+    assert discord_config.extra["auto_thread_free_response"] is True
 
 
 @pytest.mark.asyncio

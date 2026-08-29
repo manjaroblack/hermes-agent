@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sqlite3
 from typing import Any, Optional
 
 from agent.redact import redact_sensitive_text
@@ -169,14 +170,27 @@ def _worker_run_id(task_id: str) -> Optional[int]:
 def _stamp_worker_session_metadata(
     task_id: str, metadata: Optional[dict]
 ) -> Optional[dict]:
-    """Add trusted worker session id metadata for this worker's own task."""
+    """Add trusted worker/run/worktree provenance for review handoffs."""
     if os.environ.get("HERMES_KANBAN_TASK") != task_id:
         return metadata
-    session_id = os.environ.get("HERMES_SESSION_ID")
-    if not session_id:
+    if not isinstance(metadata, dict) or not (
+        "review_evidence" in metadata or "review_provenance" in metadata
+    ):
         return metadata
-    stamped = dict(metadata or {})
-    stamped["worker_session_id"] = session_id
+    stamped = dict(metadata)
+    trusted_fields = {
+        "task_id": task_id,
+        "worker_run_id": _worker_run_id(task_id),
+        "worker_profile": os.environ.get("HERMES_PROFILE"),
+        "workspace_path": os.environ.get("HERMES_KANBAN_WORKSPACE"),
+        "branch": os.environ.get("HERMES_KANBAN_BRANCH"),
+    }
+    session_id = os.environ.get("HERMES_SESSION_ID")
+    if session_id:
+        trusted_fields["worker_session_id"] = session_id
+    for key, value in trusted_fields.items():
+        if value not in (None, ""):
+            stamped[key] = value
     return stamped
 
 
@@ -850,8 +864,25 @@ def _handle_complete(args: dict, **kw) -> str:
                     f"created_cards=[] to skip the card-claim check entirely."
                 )
             if not ok:
+                recovery_note = ""
+                try:
+                    recovery_event = conn.execute(
+                        "SELECT payload FROM task_events WHERE task_id = ? "
+                        "AND kind = 'review_recovery_blocked' ORDER BY id DESC LIMIT 1",
+                        (tid,),
+                    ).fetchone()
+                    if recovery_event and recovery_event["payload"]:
+                        recovery_payload = json.loads(recovery_event["payload"])
+                        if isinstance(recovery_payload, dict) and recovery_payload.get("diagnostic"):
+                            recovery_note = (
+                                f"; blocked review recovery: "
+                                f"{recovery_payload['diagnostic']}"
+                            )
+                except (TypeError, json.JSONDecodeError, sqlite3.Error):
+                    pass
                 return tool_error(
-                    f"could not complete {tid} (unknown id or already terminal)"
+                    f"could not complete {tid} (unknown id, already terminal, "
+                    f"or still blocked){recovery_note}"
                 )
             run = kb.latest_run(conn, tid)
             return _ok(task_id=tid, run_id=run.id if run else None)
@@ -882,6 +913,18 @@ def _handle_block(args: dict, **kw) -> str:
         return tool_error("reason is required — explain what input you need")
     reason = redact_sensitive_text(str(reason), force=True)
     kind = args.get("kind")
+    metadata = args.get("metadata")
+    if metadata is not None and not isinstance(metadata, dict):
+        return tool_error(
+            f"metadata must be an object/dict, got {type(metadata).__name__}"
+        )
+    if metadata is not None:
+        metadata_json = redact_sensitive_text(json.dumps(metadata), force=True)
+        try:
+            metadata = json.loads(metadata_json)
+        except json.JSONDecodeError:
+            return tool_error("metadata could not be safely serialized")
+    metadata = _stamp_worker_session_metadata(tid, metadata)
     board = args.get("board")
     try:
         kb, conn = _connect(board=board)
@@ -915,11 +958,27 @@ def _handle_block(args: dict, **kw) -> str:
                 f"completion judge will evaluate it."
             )
         try:
+            if isinstance(metadata, dict) and (
+                "review_evidence" in metadata or "review_provenance" in metadata
+            ):
+                try:
+                    kb.record_review_provenance(
+                        conn,
+                        tid,
+                        metadata,
+                        expected_run_id=_worker_run_id(tid),
+                        source="block",
+                    )
+                except ValueError as exc:
+                    return tool_error(
+                        f"kanban_block requires complete exact-head provenance: {exc}"
+                    )
             ok = kb.block_task(
                 conn, tid,
                 reason=reason,
                 kind=kind,
                 expected_run_id=_worker_run_id(tid),
+                metadata=metadata,
             )
             if not ok:
                 return tool_error(
@@ -994,6 +1053,22 @@ def _handle_request_review(args: dict, **kw) -> str:
                     "Provide acceptance evidence matching the card before "
                     "requesting review."
                 )
+            if isinstance(metadata, dict) and (
+                "review_evidence" in metadata or "review_provenance" in metadata
+            ):
+                try:
+                    kb.record_review_provenance(
+                        conn,
+                        tid,
+                        metadata,
+                        expected_run_id=_worker_run_id(tid),
+                        source="request_review",
+                    )
+                except ValueError as exc:
+                    return tool_error(
+                        f"kanban_request_review requires complete exact-head "
+                        f"provenance: {exc}"
+                    )
             ok, fail_reason = kb.request_review(
                 conn, tid,
                 summary=summary,
@@ -1140,6 +1215,19 @@ def _handle_comment(args: dict, **kw) -> str:
     if not body or not str(body).strip():
         return tool_error("body is required")
     body = redact_sensitive_text(str(body), force=True)
+    metadata = args.get("metadata")
+    if metadata is not None and not isinstance(metadata, dict):
+        return tool_error(
+            f"metadata must be an object/dict, got {type(metadata).__name__}"
+        )
+    if metadata is not None:
+        try:
+            metadata = json.loads(
+                redact_sensitive_text(json.dumps(metadata), force=True)
+            )
+        except (TypeError, json.JSONDecodeError):
+            return tool_error("metadata could not be safely serialized")
+    metadata = _stamp_worker_session_metadata(tid, metadata)
     # Author is intentionally derived from the worker's own runtime
     # identity, NOT from caller-supplied args. Comments are injected
     # into the next worker's system prompt by ``build_worker_context``
@@ -1154,6 +1242,25 @@ def _handle_comment(args: dict, **kw) -> str:
     try:
         kb, conn = _connect(board=board)
         try:
+            if (
+                os.environ.get("HERMES_KANBAN_TASK") == tid
+                and isinstance(metadata, dict)
+                and (
+                    "review_evidence" in metadata or "review_provenance" in metadata
+                )
+            ):
+                try:
+                    kb.record_review_provenance(
+                        conn,
+                        tid,
+                        metadata,
+                        expected_run_id=_worker_run_id(tid),
+                        source="comment",
+                    )
+                except ValueError as exc:
+                    return tool_error(
+                        f"kanban_comment requires complete exact-head provenance: {exc}"
+                    )
             cid = kb.add_comment(conn, tid, author=author, body=str(body))
             return _ok(task_id=tid, comment_id=cid)
         finally:
@@ -1864,7 +1971,9 @@ KANBAN_COMPLETE_SCHEMA = {
     "name": "kanban_complete",
     "description": (
         "Mark your current task done with a structured handoff for "
-        "downstream workers and humans. Prefer ``summary`` for a "
+        "downstream workers and humans. A task already in ``blocked`` must "
+        "instead carry verified ``review_evidence`` and is routed to review; "
+        "it is never silently marked done. Prefer ``summary`` for a "
         "human-readable 1-3 sentence description of what you did; put "
         "machine-readable facts in ``metadata`` (changed_files, "
         "tests_run, decisions, findings, etc). At least one of "
@@ -1992,6 +2101,18 @@ KANBAN_BLOCK_SCHEMA = {
                     "resumes automatically; the others surface to a human. "
                     "Omit only if none apply."
                 ),
+            },
+            "metadata": {
+                "type": "object",
+                "description": (
+                    "Optional structured recovery evidence. When a blocked "
+                    "implementation later has a pull request, include "
+                    "review_evidence with provider=github, repository, "
+                    "branch, immutable 40-character head_sha, pr_url, and "
+                    "pr_number. The dispatcher verifies live open/non-draft "
+                    "exact-head green checks before routing review."
+                ),
+                "additionalProperties": True,
             },
             "board": _board_schema_prop(),
         },
@@ -2125,6 +2246,14 @@ KANBAN_COMMENT_SCHEMA = {
             "body": {
                 "type": "string",
                 "description": "Markdown-supported comment body.",
+            },
+            "metadata": {
+                "type": "object",
+                "description": (
+                    "Optional structured worker/PR/worktree provenance. "
+                    "When supplied by the task's own worker it is validated "
+                    "and retained as an exact-head continuation handoff."
+                ),
             },
             "board": _board_schema_prop(),
         },
