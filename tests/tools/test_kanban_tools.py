@@ -809,13 +809,28 @@ def test_board_param_none_falls_back_to_env(worker_env):
 #   even when the session has a delivery channel.
 # ---------------------------------------------------------------------------
 
-def _list_subs_for_task(task_id):
+def _list_subs_for_task(task_id, board=None):
     from hermes_cli import kanban_db as kb
-    conn = kb.connect()
+    conn = kb.connect(board=board)
     try:
         return list(kb.list_notify_subs(conn, task_id))
     finally:
         conn.close()
+
+
+def _create_project_board(tmp_path, slug="scoped"):
+    """Named project board for gateway creates that must not guess a domain."""
+    from hermes_cli import kanban_db as kb
+    from hermes_cli import projects_db as pdb
+
+    repo = tmp_path / "auto-sub-repo"
+    repo.mkdir(exist_ok=True)
+    with pdb.connect_closing() as conn:
+        project_id = pdb.create_project(
+            conn, name="Auto Sub Widget", primary_path=str(repo)
+        )
+    kb.create_board(slug, project_id=project_id)
+    return slug
 
 
 def _sub_index(subs):
@@ -838,11 +853,38 @@ def _sub_index(subs):
     return out
 
 
-def test_create_subscribes_gateway_session(monkeypatch, worker_env):
+def test_gateway_create_without_board_returns_ok_false(monkeypatch, worker_env):
+    """Gateway create without board/project must fail closed with ok=false.
+
+    Project-first stands: unscoped durable create is not success. The JSON
+    object still includes ``ok`` so callers never KeyError on the flag.
+    """
+    from tools import kanban_tools as kt
+    monkeypatch.setenv("HERMES_SESSION_PLATFORM", "telegram")
+    monkeypatch.setenv("HERMES_SESSION_CHAT_ID", "chat-42")
+
+    out = kt._handle_create({
+        "title": "auto-sub gateway unscoped",
+        "assignee": "peer",
+    })
+    d = json.loads(out)
+    assert "ok" in d, d
+    assert d["ok"] is False
+    assert "error" in d
+    assert "explicit board" in d["error"]
+    assert "task_id" not in d
+
+
+def test_create_subscribes_gateway_session(monkeypatch, worker_env, tmp_path):
     """A gateway session (platform + chat_id set) gets auto-subscribed
     to its own kanban_create result, and the response surfaces the
-    ``subscribed`` flag so the orchestrator can react."""
+    ``subscribed`` flag so the orchestrator can react.
+
+    Successful gateway create must name an explicit project board rather
+    than guessing a domain board or restoring unscoped durable create.
+    """
     from tools import kanban_tools as kt
+    board = _create_project_board(tmp_path)
     monkeypatch.setenv("HERMES_SESSION_PLATFORM", "telegram")
     monkeypatch.setenv("HERMES_SESSION_CHAT_ID", "chat-42")
     monkeypatch.setenv("HERMES_SESSION_THREAD_ID", "thread-7")
@@ -853,13 +895,15 @@ def test_create_subscribes_gateway_session(monkeypatch, worker_env):
     out = kt._handle_create({
         "title": "auto-sub gateway",
         "assignee": "peer",
+        "board": board,
     })
     d = json.loads(out)
+    assert "ok" in d, d
     assert d["ok"] is True
     new_tid = d["task_id"]
     assert d["subscribed"] is True, d
 
-    subs = _sub_index(_list_subs_for_task(new_tid))
+    subs = _sub_index(_list_subs_for_task(new_tid, board=board))
     assert len(subs) == 1
     s = subs[0]
     assert s["platform"] == "telegram"

@@ -440,6 +440,15 @@ def _ok(**fields: Any) -> str:
     return json.dumps({"ok": True, **fields})
 
 
+def _create_error(message: str, **extra: Any) -> str:
+    """Fail-closed JSON for ``kanban_create``. Always includes ``ok: false``.
+
+    Callers (gateway tests, orchestrators) key on ``ok``; a missing flag is a
+    KeyError, not an honest closed create.
+    """
+    return tool_error(message, ok=False, **extra)
+
+
 def _normalize_profile(value: Any) -> Optional[str]:
     """Normalize CLI-compatible assignee sentinels for the tool surface."""
     if value is None:
@@ -1389,13 +1398,15 @@ def _handle_create(args: dict, **kw) -> str:
     """
     delegated_err = _reject_delegated_child_mutation("kanban_create")
     if delegated_err:
-        return delegated_err
+        payload = json.loads(delegated_err)
+        payload["ok"] = False
+        return json.dumps(payload, ensure_ascii=False)
     title = args.get("title")
     if not title or not str(title).strip():
-        return tool_error("title is required")
+        return _create_error("title is required")
     assignee = args.get("assignee")
     if not assignee:
-        return tool_error(
+        return _create_error(
             "assignee is required — name the profile that should execute this "
             "task (the dispatcher will only spawn tasks with an assignee)"
         )
@@ -1434,7 +1445,7 @@ def _handle_create(args: dict, **kw) -> str:
         workspace_kind = "scratch"
     triage, bool_error = _parse_bool_arg(args, "triage")
     if bool_error:
-        return tool_error(bool_error)
+        return _create_error(bool_error)
     idempotency_key = args.get("idempotency_key")
     max_runtime_seconds = args.get("max_runtime_seconds")
     initial_status = args.get("initial_status") or "running"
@@ -1443,27 +1454,27 @@ def _handle_create(args: dict, **kw) -> str:
         # Accept a single skill name as a string for convenience.
         skills = [skills]
     if skills is not None and not isinstance(skills, (list, tuple)):
-        return tool_error(
+        return _create_error(
             f"skills must be a list of skill names, got {type(skills).__name__}"
         )
     goal_mode, goal_bool_error = _parse_bool_arg(args, "goal_mode")
     if goal_bool_error:
-        return tool_error(goal_bool_error)
+        return _create_error(goal_bool_error)
     goal_max_turns = args.get("goal_max_turns")
     model_override = args.get("model")
     provider_override = args.get("provider")
     if provider_override and not model_override:
-        return tool_error("'provider' requires 'model' to be set as well")
+        return _create_error("'provider' requires 'model' to be set as well")
     if isinstance(parents, str):
         parents = [parents]
     if not isinstance(parents, (list, tuple)):
-        return tool_error(
+        return _create_error(
             f"parents must be a list of task ids, got {type(parents).__name__}"
         )
     board = str(args.get("board") or "").strip() or None
     legacy_unscoped, legacy_bool_error = _parse_bool_arg(args, "legacy_unscoped")
     if legacy_bool_error:
-        return tool_error(legacy_bool_error)
+        return _create_error(legacy_bool_error)
     try:
         from gateway.session_context import get_session_env
         session_platform = _gateway_session_platform(get_session_env)
@@ -1485,7 +1496,7 @@ def _handle_create(args: dict, **kw) -> str:
         except Exception:
             board = None
         if not board:
-            return tool_error(
+            return _create_error(
                 "gateway-created durable work needs an explicit board/project board; "
                 "no unique board is bound to this chat/thread. Route ambiguous "
                 "intake to the orchestrator to identify or bootstrap a project "
@@ -1499,11 +1510,11 @@ def _handle_create(args: dict, **kw) -> str:
                 legacy_unscoped=legacy_unscoped,
             )
         except Exception as exc:
-            return tool_error(
+            return _create_error(
                 f"could not validate gateway board {board!r}: {exc}"
             )
         if selection_error:
-            return tool_error(selection_error)
+            return _create_error(selection_error)
     try:
         kb, conn = _connect(board=board)
         try:
@@ -1563,10 +1574,10 @@ def _handle_create(args: dict, **kw) -> str:
         finally:
             conn.close()
     except ValueError as e:
-        return tool_error(f"kanban_create: {e}")
+        return _create_error(f"kanban_create: {e}")
     except Exception as e:
         logger.exception("kanban_create failed")
-        return tool_error(f"kanban_create: {e}")
+        return _create_error(f"kanban_create: {e}")
 
 
 def _maybe_auto_subscribe(conn: Any, task_id: str) -> bool:

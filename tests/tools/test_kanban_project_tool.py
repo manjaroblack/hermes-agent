@@ -42,6 +42,8 @@ def test_gateway_create_requires_explicit_board_and_writes_requested_board(
     missing = json.loads(
         kanban_tools._handle_create({"title": "missing board", "assignee": "worker"})
     )
+    assert "ok" in missing
+    assert missing["ok"] is False
     assert "error" in missing
     assert "explicit board" in missing["error"]
 
@@ -99,6 +101,8 @@ def test_gateway_create_rejects_shared_domain_board_without_project(
         )
     )
 
+    assert "ok" in result
+    assert result["ok"] is False
     assert "error" in result
     assert domain_board in result["error"]
     assert "project board" in result["error"]
@@ -123,6 +127,8 @@ def test_gateway_default_assignee_does_not_infer_current_domain_board(
         )
     )
 
+    assert "ok" in result
+    assert result["ok"] is False
     assert "error" in result
     assert "explicit board/project board" in result["error"]
 
