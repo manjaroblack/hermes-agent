@@ -4,16 +4,60 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
 
 from hermes_cli import kanban_db as kb
+from hermes_cli import projects_db as pdb
 
 
 HEAD_SHA = "e4b9de58701f9b90c5e2329b33eec8a9f2229c07"
 OTHER_SHA = "1111111111111111111111111111111111111111"
+
+
+def _git(cwd: Path, *args: str) -> None:
+    cwd.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(cwd),
+            "-c",
+            "user.name=Lifecycle Test",
+            "-c",
+            "user.email=lifecycle@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            *args,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _materialize_task_worktree(conn, task_id: str) -> kb.Task:
+    task = kb.get_task(conn, task_id)
+    assert task is not None
+    if not task.workspace_path or not task.branch_name:
+        return task
+    if not Path(task.workspace_path).exists():
+        repo = Path(
+            kb.read_board_metadata(kb.get_current_board())["default_workdir"]
+        )
+        _git(
+            repo,
+            "worktree",
+            "add",
+            str(Path(task.workspace_path)),
+            "-b",
+            task.branch_name,
+            "HEAD",
+        )
+    return kb.get_task(conn, task_id)
 
 
 @pytest.fixture
@@ -21,17 +65,45 @@ def kanban_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home = tmp_path / ".hermes"
     home.mkdir()
     monkeypatch.setenv("HERMES_HOME", str(home))
-    monkeypatch.setenv("HERMES_KANBAN_DB", str(home / "kanban.db"))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    repo = tmp_path / "repo"
+    _git(repo, "init", "-b", "main")
+    (repo / "README.md").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "-m", "init")
+    with pdb.connect_closing() as pconn:
+        project_id = pdb.create_project(
+            pconn,
+            name="Recovery project",
+            primary_path=str(repo),
+        )
+    kb.create_board(
+        "recovery",
+        name="Recovery",
+        default_workdir=str(repo),
+        project_id=project_id,
+    )
+    kb.set_current_board("recovery")
     kb.init_db()
     return home
 
 
-def evidence(*, reviewer: str | None = "hermes-review") -> dict:
+def _branch_of(task_or_evidence=None) -> str:
+    return (
+        getattr(task_or_evidence, "branch_name", None)
+        or getattr(task_or_evidence, "branch", None)
+        or "wt/blocked-fix"
+    )
+
+
+def evidence(task=None, *, reviewer: str | None = "hermes-review") -> dict:
+    branch = _branch_of(task)
     value: dict = {
         "review_evidence": {
             "provider": "github",
             "repository": "example/repo",
-            "branch": "wt/blocked-fix",
+            "branch": branch,
             "head_sha": HEAD_SHA,
             "pr_url": "https://github.com/example/repo/pull/6",
             "pr_number": 6,
@@ -43,12 +115,13 @@ def evidence(*, reviewer: str | None = "hermes-review") -> dict:
     return value
 
 
-def provider_state(expected_head: str = HEAD_SHA, **pr_overrides):
+def provider_state(task_or_evidence=None, expected_head: str = HEAD_SHA, **pr_overrides):
+    branch = _branch_of(task_or_evidence)
     pr = {
         "state": "open",
         "draft": False,
         "number": 6,
-        "head": {"sha": expected_head, "ref": "wt/blocked-fix"},
+        "head": {"sha": expected_head, "ref": branch},
         "base": {"ref": "main"},
     }
     pr.update(pr_overrides)
@@ -59,17 +132,35 @@ def provider_state(expected_head: str = HEAD_SHA, **pr_overrides):
     }
 
 
+def _align_provider_branch(state: dict, task) -> dict:
+    if not isinstance(state, dict) or "pr" not in state:
+        return state
+    pr = dict(state["pr"])
+    head = dict(pr.get("head") or {})
+    head["ref"] = task.branch_name
+    pr["head"] = head
+    return {**state, "pr": pr}
+
+
 def _blocked_task(conn, metadata: dict | None = None) -> tuple[str, int]:
     task_id = kb.create_task(
         conn, title="blocked implementation", assignee="hermes-coding"
     )
+    task = _materialize_task_worktree(conn, task_id)
     claimed = kb.claim_task(conn, task_id, claimer="hermes-coding:test")
     assert claimed is not None and claimed.current_run_id is not None
+    if metadata is None:
+        payload = None
+    else:
+        payload = dict(metadata)
+        blob = payload.get("review_evidence")
+        if isinstance(blob, dict) and blob.get("branch") == "wt/blocked-fix":
+            payload["review_evidence"] = {**blob, "branch": task.branch_name}
     assert kb.block_task(
         conn,
         task_id,
         reason="initial worker run stopped before handoff",
-        metadata=metadata,
+        metadata=payload,
         expected_run_id=claimed.current_run_id,
     )
     return task_id, int(claimed.current_run_id)
@@ -88,6 +179,7 @@ def test_blocked_completion_routes_same_card_and_dispatches_only_reviewer(
     )
     with kb.connect() as conn:
         task_id, run_id = _blocked_task(conn, evidence())
+        task = kb.get_task(conn, task_id)
         spawned: list[tuple[str, str]] = []
 
         def spawn(task, _workspace):
@@ -95,7 +187,7 @@ def test_blocked_completion_routes_same_card_and_dispatches_only_reviewer(
             return None
 
         def live_provider(_candidate):
-            return provider_state()
+            return provider_state(task)
 
         monkeypatch.setattr(
             "hermes_cli.kanban_review_recovery.fetch_live_review_state",
@@ -108,7 +200,7 @@ def test_blocked_completion_routes_same_card_and_dispatches_only_reviewer(
             conn,
             task_id,
             summary="PR is ready for independent review",
-            metadata=evidence(),
+            metadata=evidence(task),
             expected_run_id=run_id,
         )
         task = kb.get_task(conn, task_id)
@@ -161,7 +253,7 @@ def test_dispatcher_recovers_durable_blocked_evidence_and_spawns_review(
         result = kb.dispatch_once(
             conn,
             spawn_fn=spawn,
-            review_provider=lambda _candidate: provider_state(),
+            review_provider=provider_state,
         )
         assert result.review_recovered == [(task_id, "same_card")]
         assert result.review_recovery_blocked == []
@@ -190,15 +282,17 @@ def test_negative_provider_states_remain_blocked_with_deduplicated_diagnostic(
     for name, live_state in cases.items():
         with kb.connect() as conn:
             task_id, _run_id = _blocked_task(conn, evidence())
+            task = kb.get_task(conn, task_id)
+            aligned = _align_provider_branch(live_state, task)
             first = kb.recover_blocked_completion(
                 conn,
                 task_id,
-                provider=lambda _candidate, state=live_state: state,
+                provider=lambda _candidate, state=aligned: state,
             )
             second = kb.recover_blocked_completion(
                 conn,
                 task_id,
-                provider=lambda _candidate, state=live_state: state,
+                provider=lambda _candidate, state=aligned: state,
             )
             assert first[0] is False, name
             assert second[0] is False, name
@@ -270,7 +364,7 @@ def test_downstream_review_child_is_the_only_review_lane(
         recovered, lane = kb.recover_blocked_completion(
             conn,
             task_id,
-            provider=lambda _candidate: provider_state(),
+            provider=provider_state,
         )
         assert (recovered, lane) == (True, "downstream")
         parent = kb.get_task(conn, task_id)
@@ -319,7 +413,7 @@ def test_conflicting_review_graph_stays_blocked(
         ok, diagnostic = kb.recover_blocked_completion(
             conn,
             task_id,
-            provider=lambda _candidate: provider_state(),
+            provider=provider_state,
         )
         assert ok is False
         assert diagnostic and "both" in diagnostic
@@ -338,7 +432,7 @@ def test_recovery_is_idempotent_across_concurrent_callers_and_reopen(
             return kb.recover_blocked_completion(
                 connection,
                 task_id,
-                provider=lambda _candidate: provider_state(),
+                provider=provider_state,
             )
 
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -381,6 +475,7 @@ def test_active_pr_guard_still_blocks_fresh_ready_work_but_allows_rework(
         assert kb.check_respawn_guard(conn, fresh) == "active_pr"
 
         rework = kb.create_task(conn, title="same PR rework", assignee="hermes-coding")
+        _materialize_task_worktree(conn, rework)
         comment_id = kb.add_comment(
             conn,
             rework,
@@ -436,18 +531,19 @@ def test_cli_complete_uses_persisted_recovery_route(
     """The human CLI path shares the blocked-completion safety gate."""
     import hermes_cli.kanban as cli
 
-    monkeypatch.setattr(
-        "hermes_cli.kanban_review_recovery.fetch_live_review_state",
-        lambda _candidate: provider_state(),
-    )
     with kb.connect() as conn:
         task_id, _run_id = _blocked_task(conn, evidence())
+        task = kb.get_task(conn, task_id)
+    monkeypatch.setattr(
+        "hermes_cli.kanban_review_recovery.fetch_live_review_state",
+        lambda _candidate: provider_state(task),
+    )
 
     args = argparse.Namespace(
         task_ids=[task_id],
         result=None,
         summary="CLI recovered the verified PR for review",
-        metadata=json.dumps(evidence()),
+        metadata=json.dumps(evidence(task)),
     )
     assert cli._cmd_complete(args) == 0
     assert "Completed" in capsys.readouterr().out
@@ -469,7 +565,7 @@ def test_release_notes_child_is_not_a_review_lane(kanban_home: Path) -> None:
         recovered, lane = kb.recover_blocked_completion(
             conn,
             parent_id,
-            provider=lambda _candidate: provider_state(),
+            provider=provider_state,
         )
         assert (recovered, lane) == (True, "same_card")
         parent = kb.get_task(conn, parent_id)

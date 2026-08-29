@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import time
 from pathlib import Path
 
@@ -9,11 +10,54 @@ import pytest
 
 from hermes_cli import kanban_db as kb
 from hermes_cli import kanban_review_recovery as krr
+from hermes_cli import projects_db as pdb
 
 
 HEAD_SHA = "e4b9de58701f9b90c5e2329b33eec8a9f2229c07"
 NEXT_HEAD_SHA = "f5c0ef69812fa0a1d6f343ac44ffd9b0a3330d18"
 PR_URL = "https://github.com/example/repo/pull/6"
+
+
+def _git(cwd: Path, *args: str) -> None:
+    cwd.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(cwd),
+            "-c",
+            "user.name=Lifecycle Test",
+            "-c",
+            "user.email=lifecycle@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            *args,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _materialize_task_worktree(conn, task_id: str) -> kb.Task:
+    task = kb.get_task(conn, task_id)
+    assert task is not None
+    assert task.workspace_path
+    assert task.branch_name
+    if not Path(task.workspace_path).exists():
+        repo = Path(
+            kb.read_board_metadata(kb.get_current_board())["default_workdir"]
+        )
+        _git(
+            repo,
+            "worktree",
+            "add",
+            str(Path(task.workspace_path)),
+            "-b",
+            task.branch_name,
+            "HEAD",
+        )
+    return kb.get_task(conn, task_id)
 
 
 @pytest.fixture
@@ -42,24 +86,40 @@ def conn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         identity_state,
         raising=False,
     )
-    db = kb.connect(tmp_path / "kanban.db")
+    home = tmp_path / ".hermes"
+    home.mkdir()
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    repo = tmp_path / "repo"
+    _git(repo, "init", "-b", "main")
+    (repo / "README.md").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "-m", "init")
+    with pdb.connect_closing() as pconn:
+        project_id = pdb.create_project(
+            pconn,
+            name="Lifecycle project",
+            primary_path=str(repo),
+        )
+    kb.create_board(
+        "lifecycle",
+        name="Lifecycle",
+        default_workdir=str(repo),
+        project_id=project_id,
+    )
+    kb.set_current_board("lifecycle")
+    db = kb.connect()
     try:
         yield db
     finally:
         db.close()
 
 
-
-
 def _create_task(conn, *, title="implementation", assignee="builder"):
-    return kb.create_task(
-        conn,
-        title=title,
-        assignee=assignee,
-        workspace_kind="worktree",
-        workspace_path=f"/tmp/{title.replace(' ', '-')}",
-        branch_name=f"wt/{title.replace(' ', '-')}",
-    )
+    task_id = kb.create_task(conn, title=title, assignee=assignee)
+    _materialize_task_worktree(conn, task_id)
+    return task_id
 
 
 def _handoff(conn, task_id, *, add_pr_comment=True):
