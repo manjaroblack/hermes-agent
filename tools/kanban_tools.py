@@ -602,6 +602,7 @@ def _handle_show(args: dict, **kw) -> str:
             def _task_dict(t):
                 return {
                     "id": t.id, "title": t.title, "body": t.body,
+                    "metadata": dict(t.metadata) if t.metadata else {},
                     "assignee": t.assignee, "status": t.status,
                     "tenant": t.tenant, "priority": t.priority,
                     "workspace_kind": t.workspace_kind,
@@ -1518,6 +1519,11 @@ def _handle_create(args: dict, **kw) -> str:
             "task (the dispatcher will only spawn tasks with an assignee)"
         )
     body = args.get("body")
+    metadata = args.get("metadata")
+    if metadata is not None and not isinstance(metadata, dict):
+        return _create_error(
+            f"metadata must be an object, got {type(metadata).__name__}"
+        )
     parents = args.get("parents") or []
     tenant = args.get("tenant") or os.environ.get("HERMES_TENANT")
     # Stamp the originating session id when the agent loop runs under
@@ -1639,6 +1645,7 @@ def _handle_create(args: dict, **kw) -> str:
                 conn,
                 title=str(title).strip(),
                 body=body,
+                metadata=metadata,
                 assignee=str(assignee),
                 parents=tuple(parents),
                 tenant=tenant,
@@ -2389,6 +2396,14 @@ KANBAN_CREATE_SCHEMA = {
                     "Opening post: full spec, acceptance criteria, "
                     "links. The assigned worker reads this as part of "
                     "its context."
+                ),
+            },
+            "metadata": {
+                "type": "object",
+                "description": (
+                    "Durable task metadata. For complex graphs, use role "
+                    "stage names and explicit review contracts instead of "
+                    "burying them in body prose."
                 ),
             },
             "parents": {

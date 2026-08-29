@@ -61,6 +61,7 @@ def _task_to_dict(t: kb.Task) -> dict[str, Any]:
         "id": t.id,
         "title": t.title,
         "body": t.body,
+        "metadata": dict(t.metadata) if t.metadata else {},
         "assignee": t.assignee,
         "status": t.status,
         "priority": t.priority,
@@ -344,6 +345,11 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
     p_create = sub.add_parser("create", help="Create a new task")
     p_create.add_argument("title", help="Task title")
     p_create.add_argument("--body", default=None, help="Optional opening post")
+    p_create.add_argument(
+        "--metadata",
+        default=None,
+        help="Task metadata as a JSON object (graph roles/review contracts)",
+    )
     p_create.add_argument("--assignee", default=None, help="Profile name to assign")
     p_create.add_argument("--parent", action="append", default=[],
                           help="Parent task id (repeatable)")
@@ -1630,6 +1636,17 @@ def _cmd_create(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(f"kanban: --max-runtime: {exc}", file=sys.stderr)
         return 2
+    raw_metadata = getattr(args, "metadata", None)
+    metadata = None
+    if raw_metadata:
+        try:
+            metadata = json.loads(raw_metadata)
+        except (TypeError, ValueError) as exc:
+            print(f"kanban: --metadata must be valid JSON: {exc}", file=sys.stderr)
+            return 2
+        if not isinstance(metadata, dict):
+            print("kanban: --metadata must be a JSON object", file=sys.stderr)
+            return 2
     max_retries = getattr(args, "max_retries", None)
     if max_retries is not None and max_retries < 1:
         print(
@@ -1643,6 +1660,7 @@ def _cmd_create(args: argparse.Namespace) -> int:
             conn,
             title=args.title,
             body=args.body,
+            metadata=metadata,
             assignee=args.assignee,
             created_by=args.created_by or _profile_author(),
             workspace_kind=ws_kind,

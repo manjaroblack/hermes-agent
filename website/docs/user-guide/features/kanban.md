@@ -666,6 +666,21 @@ Config knobs (all under `kanban:` in `~/.hermes/config.yaml`):
 | `auto_subscribe_on_create` | `true` | When `kanban_create` runs inside a persistent gateway/TUI session, terminal events resume that originating agent with a synthetic status turn. Set to `false` for passive completion or to require explicit `kanban_notify-subscribe` calls. Independent of `auto_decompose`. |
 | `done_sub_retention_days` | `30` | Notify subscriptions survive `done` (reopen-safe) and are removed on `archived`. The notifier GC purges subscriptions whose task has been `done` with no new events for this many days, bounding sub-table growth on boards that never archive. `0` disables the sweep. |
 
+Complex graphs also pass through the durable graph validator before a root or
+code-bearing child is promoted. Configure `kanban.graph_validation.enabled`,
+`required_stages` (by default `inventory_design` and `release_acceptance`),
+`max_implementation_nodes`, and the security trigger list in `config.yaml`.
+An incident-response lane is required only when graph metadata explicitly opts
+into it (for example `incident_required: true`); rollback/recovery prose is a
+runtime route, not a decompose-time graph obligation. Complex child metadata
+must use explicit roles such as
+`inventory_design`, `independent_review`, `security_audit`,
+`incident_response`, or `release_acceptance`; body prose such as “stop for
+review” is not an edge. Each code-bearing node uses either
+`reviewer: hermes-review` plus `review_model: same_card`, or one downstream
+review child with an independent review model. Invalid graphs remain in
+`triage` and emit a repairable `graph_validation_rejected` event.
+
 And the two auxiliary LLM slots:
 
 | Key | Purpose |

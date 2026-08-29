@@ -41,7 +41,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Mapping, Optional
 
 from hermes_cli import kanban_db as kb
 from hermes_cli import profiles as profiles_mod
@@ -70,6 +70,7 @@ Output a single JSON object with this exact shape:
         "title": "<concrete task title, imperative voice, <= 80 chars>",
         "body":  "<detailed spec for the worker on this child task>",
         "assignee": "<profile name from the roster, or null for default>",
+        "metadata": {"role": "implementation", "code_bearing": true},
         "parents": [<int>, ...]
       },
       ...
@@ -89,6 +90,16 @@ Rules:
     and the system will route to the default_assignee.
   - Each child task body is what a fresh worker will read with no other
     context — be specific about goal, approach, and acceptance criteria.
+  - For complex work, encode the durable graph role in metadata. Use exactly
+    one inventory_design node, one release_acceptance human_gate node, and a
+    security_audit node when permissions or safety boundaries are involved;
+    add incident_response only when the graph metadata explicitly requires an
+    incident lane (for example incident_required=true); ordinary body prose
+    about outage, rollback, or recovery is not a decompose-time trigger.
+    Every code-bearing implementation node must use either
+    {"reviewer": "hermes-review", "review_model": "same_card"} or one
+    downstream independent_review child with a review_model. Do not put these
+    obligations only in body prose.
 
 When the task is genuinely a single unit of work (no useful decomposition),
 return:
@@ -426,11 +437,40 @@ def decompose_task(
             )
         except ValueError as exc:
             return DecomposeOutcome(task_id, False, f"invalid parents: {exc}")
+        raw_metadata = entry.get("metadata")
+        metadata: dict[str, Any] = (
+            dict(raw_metadata) if isinstance(raw_metadata, Mapping) else {}
+        )
+        # Accept the compact top-level spelling as well as the explicit
+        # metadata object, while persisting one canonical durable shape.
+        for key in (
+            "role",
+            "stage",
+            "workflow_stage",
+            "code_bearing",
+            "implementation",
+            "reviewer",
+            "review_model",
+            "human_gate",
+            "read_only",
+            "touches_security",
+            "security_boundary",
+            "incident_required",
+            "requires_incident_lane",
+            "incident_boundary",
+            "requires_incident_response",
+            "incident_response_required",
+            "subsystem",
+            "subsystems",
+        ):
+            if key in entry:
+                metadata.setdefault(key, entry[key])
         children.append({
             "title": title.strip()[:200],
             "body": body.strip(),
             "assignee": chosen,
             "parents": clean_parents,
+            "metadata": metadata,
         })
 
     try:
