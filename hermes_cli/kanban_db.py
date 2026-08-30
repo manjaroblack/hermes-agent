@@ -4478,7 +4478,15 @@ def create_task(
                     task_id,
                     parents,
                     created_at=now,
-                    board=board_slug,
+                    board=(
+                        _board_for_notify_inheritance(
+                            conn,
+                            requested_board=board,
+                            resolved_board=board_slug,
+                        )
+                        if parents
+                        else None
+                    ),
                 )
             return task_id
         except sqlite3.IntegrityError:
@@ -4669,6 +4677,33 @@ def _connection_db_path(conn: sqlite3.Connection) -> Optional[Path]:
         return Path(str(row[2])).resolve()
     except OSError:
         return Path(str(row[2]))
+
+
+def _board_for_notify_inheritance(
+    conn: sqlite3.Connection,
+    *,
+    requested_board: Optional[str],
+    resolved_board: str,
+) -> Optional[str]:
+    """Return the board label safe to use for child notify inheritance.
+
+    Explicit board labels are validated by the board-pin accessors. Legacy
+    callers may instead provide an arbitrary ``db_path`` without a board; only
+    infer the active board for those callers when the live connection really
+    points at the resolver's path.
+    """
+    if requested_board is not None:
+        return requested_board
+    current_path = _connection_db_path(conn)
+    if current_path is None:
+        return None
+    expected_path = kanban_db_path(board=resolved_board)
+    try:
+        current_path = current_path.resolve()
+        expected_path = expected_path.resolve()
+    except OSError:
+        pass
+    return resolved_board if current_path == expected_path else None
 
 
 def _validate_board_notify_connection(
