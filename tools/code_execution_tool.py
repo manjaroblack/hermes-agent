@@ -58,7 +58,7 @@ logger = logging.getLogger(__name__)
 
 SANDBOX_AVAILABLE = True
 
-# The 7 tools allowed inside the sandbox. The intersection of this list
+# The tools allowed inside the sandbox. The intersection of this list
 # and the session's enabled tools determines which stubs are generated.
 SANDBOX_ALLOWED_TOOLS = frozenset([
     "web_search",
@@ -68,7 +68,46 @@ SANDBOX_ALLOWED_TOOLS = frozenset([
     "search_files",
     "patch",
     "terminal",
+    "kanban_attach",
+    "kanban_attach_url",
+    "kanban_attachments",
 ])
+
+# Attachment tools are useful to a dispatcher-owned worker, but must not be
+# made available to ordinary sessions merely because execute_code was called
+# without an explicit enabled-tools list.
+_KANBAN_ATTACHMENT_TOOLS = frozenset([
+    "kanban_attach",
+    "kanban_attach_url",
+    "kanban_attachments",
+])
+
+
+def _is_kanban_worker_context() -> bool:
+    """Return whether this process owns a dispatcher-scoped Kanban task."""
+    if not os.environ.get("HERMES_KANBAN_TASK"):
+        return False
+    try:
+        from agent.delegation_context import is_dispatcher_owned_worker_context
+
+        return is_dispatcher_owned_worker_context()
+    except Exception:
+        # Do not grant worker-only capabilities when ownership cannot be
+        # verified during startup or after an import failure.
+        return False
+
+
+def _sandbox_tools_for_session(enabled_tools: Optional[List[str]]) -> frozenset:
+    """Resolve the sandbox tool set without widening worker-only access."""
+    session_tools = set(enabled_tools) if enabled_tools else set()
+    sandbox_tools = set(SANDBOX_ALLOWED_TOOLS & session_tools)
+    if not sandbox_tools:
+        # Keep the legacy direct-call fallback for sessions that do not pass
+        # their resolved tool list, while still applying the worker gate below.
+        sandbox_tools = set(SANDBOX_ALLOWED_TOOLS)
+    if not _is_kanban_worker_context():
+        sandbox_tools.difference_update(_KANBAN_ATTACHMENT_TOOLS)
+    return frozenset(sandbox_tools)
 
 # Resource limit defaults (overridable via config.yaml → code_execution.*)
 DEFAULT_TIMEOUT = 300        # 5 minutes
@@ -325,9 +364,9 @@ def check_sandbox_requirements() -> bool:
 # hermes_tools.py code generator
 # ---------------------------------------------------------------------------
 
-# Per-tool stub templates: (function_name, signature, docstring, args_dict_expr)
-# The args_dict_expr builds the JSON payload sent over the RPC socket.
-_TOOL_STUBS = {
+# Per-tool stub specifications: (function_name, signature, docstring,
+# args_dict_expr). The args_dict_expr builds the JSON payload sent over RPC.
+_TOOL_SPECS = {
     "web_search": (
         "web_search",
         "query: str, limit: int = 5",
@@ -370,7 +409,28 @@ _TOOL_STUBS = {
         '"""Run a shell command (foreground only). Returns dict with "output" and "exit_code"."""',
         '{"command": command, "timeout": timeout, "workdir": workdir}',
     ),
+    "kanban_attach": (
+        "kanban_attach",
+        "task_id: str = None, filename: str = None, content_base64: str = None, content_type: str = None, board: str = None",
+        '"""Attach base64-encoded file bytes to a Kanban task."""',
+        '{"task_id": task_id, "filename": filename, "content_base64": content_base64, "content_type": content_type, "board": board}',
+    ),
+    "kanban_attach_url": (
+        "kanban_attach_url",
+        "task_id: str = None, url: str = None, filename: str = None, content_type: str = None, board: str = None",
+        '"""Attach a file fetched from an HTTP(S) URL to a Kanban task."""',
+        '{"task_id": task_id, "url": url, "filename": filename, "content_type": content_type, "board": board}',
+    ),
+    "kanban_attachments": (
+        "kanban_attachments",
+        "task_id: str = None, board: str = None",
+        '"""List files attached to a Kanban task."""',
+        '{"task_id": task_id, "board": board}',
+    ),
 }
+
+# Keep the historical private name available to existing callers and tests.
+_TOOL_STUBS = _TOOL_SPECS
 
 
 def _sandbox_failure_hint(stderr_text: str, enabled_tools=None) -> Optional[str]:
@@ -392,12 +452,19 @@ def _sandbox_failure_hint(stderr_text: str, enabled_tools=None) -> Optional[str]
         )
         if m:
             missing = m.group(1)
-            available = sorted(SANDBOX_ALLOWED_TOOLS & set(enabled_tools or SANDBOX_ALLOWED_TOOLS))
+            available = sorted(_sandbox_tools_for_session(enabled_tools))
             builtin = {"json_parse", "shell_quote", "retry"}
             if missing in builtin:
                 return (
                     f"{missing} is a BUILT-IN helper in the sandbox — no import "
                     f"needed. Remove it from the import line and call {missing}(...) directly."
+                )
+            if missing.startswith("kanban_"):
+                return (
+                    f"'{missing}' is not available inside this execute_code sandbox. "
+                    f"For a Kanban worker, call the native {missing}(...) tool directly. "
+                    "For binary files, use terminal(command=\"hermes kanban attach "
+                    "TASK PATH\") to attach the local path."
                 )
             return (
                 f"'{missing}' is not available inside the execute_code sandbox. "
@@ -445,9 +512,9 @@ def generate_hermes_tools_module(enabled_tools: List[str],
     stub_functions = []
     export_names = []
     for tool_name in tools_to_generate:
-        if tool_name not in _TOOL_STUBS:
+        if tool_name not in _TOOL_SPECS:
             continue
-        func_name, sig, doc, args_expr = _TOOL_STUBS[tool_name]
+        func_name, sig, doc, args_expr = _TOOL_SPECS[tool_name]
         stub_functions.append(
             f"def {func_name}({sig}):\n"
             f"    {doc}\n"
@@ -1076,10 +1143,7 @@ def _execute_remote(
     timeout = _cfg.get("timeout", DEFAULT_TIMEOUT)
     max_tool_calls = _cfg.get("max_tool_calls", DEFAULT_MAX_TOOL_CALLS)
 
-    session_tools = set(enabled_tools) if enabled_tools else set()
-    sandbox_tools = frozenset(SANDBOX_ALLOWED_TOOLS & session_tools)
-    if not sandbox_tools:
-        sandbox_tools = SANDBOX_ALLOWED_TOOLS
+    sandbox_tools = _sandbox_tools_for_session(enabled_tools)
 
     effective_task_id = task_id or "default"
     env, env_type = _get_or_create_env(effective_task_id)
@@ -1334,11 +1398,7 @@ def execute_code(
     max_tool_calls = _cfg.get("max_tool_calls", DEFAULT_MAX_TOOL_CALLS)
 
     # Determine which tools the sandbox can call
-    session_tools = set(enabled_tools) if enabled_tools else set()
-    sandbox_tools = frozenset(SANDBOX_ALLOWED_TOOLS & session_tools)
-
-    if not sandbox_tools:
-        sandbox_tools = SANDBOX_ALLOWED_TOOLS
+    sandbox_tools = _sandbox_tools_for_session(enabled_tools)
 
     # --- Set up temp directory with hermes_tools.py and script.py ---
     tmpdir = tempfile.mkdtemp(prefix="hermes_sandbox_")
@@ -2061,6 +2121,15 @@ _TOOL_DOC_LINES = [
     ("terminal",
      "  terminal(command: str, timeout=None, workdir=None) -> dict\n"
      "    Foreground only (no background/pty). Returns {\"output\": \"...\", \"exit_code\": N}"),
+    ("kanban_attach",
+     "  kanban_attach(task_id=None, filename=None, content_base64=None, content_type=None, board=None) -> dict\n"
+     "    Stores inline base64 file bytes as a real task attachment (up to 25 MB)."),
+    ("kanban_attach_url",
+     "  kanban_attach_url(task_id=None, url=None, filename=None, content_type=None, board=None) -> dict\n"
+     "    Downloads an HTTP(S) URL and stores it as a real task attachment (up to 25 MB)."),
+    ("kanban_attachments",
+     "  kanban_attachments(task_id=None, board=None) -> dict\n"
+     "    Lists the files attached to a task, including their paths and metadata."),
 ]
 
 

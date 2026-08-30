@@ -277,6 +277,7 @@ _check_fn_cache: Dict[tuple[Callable, Optional[str]], tuple[float, bool]] = {}
 _check_fn_last_good: Dict[tuple[Callable, Optional[str]], float] = {}
 _check_fn_cache_lock = threading.Lock()
 CHECK_FN_CACHE_BYPASS = ""
+_NON_DISPATCHER_CACHE_SCOPE = "__hermes_non_dispatcher_owned__"
 
 
 def _prune_check_fn_caches(now: float) -> None:
@@ -297,28 +298,47 @@ def _prune_check_fn_caches(now: float) -> None:
 
 
 def check_fn_cache_scope() -> Optional[str]:
-    """Return the active profile key when availability is profile-scoped.
+    """Return the active profile/context key when availability is scoped.
 
     Single-profile processes intentionally keep the historical process-wide
-    cache. A multiplex gateway installs a Hermes-home override for every
-    profile turn, so the canonical profile key is the stable isolation
-    boundary across repeated turns for that profile.
+    cache for dispatcher-owned turns. A multiplex gateway installs a
+    Hermes-home override for every profile turn, so the canonical profile key
+    is the stable isolation boundary across repeated turns for that profile.
+    Non-dispatcher contexts use a separate key so context-dependent checks do
+    not reuse a worker's verdict. If the context cannot be determined, bypass
+    the cache rather than trusting a verdict from another execution context.
     """
+    try:
+        from agent.delegation_context import is_dispatcher_owned_worker_context
+
+        dispatcher_owned = is_dispatcher_owned_worker_context()
+    except Exception:
+        # Fail closed: a context-dependent check must not inherit a worker's
+        # cached availability when ownership cannot be established.
+        return CHECK_FN_CACHE_BYPASS
+
     try:
         from agent.secret_scope import is_multiplex_active
 
-        if not is_multiplex_active():
-            return None
-        from hermes_constants import get_hermes_home_override
+        if is_multiplex_active():
+            from hermes_constants import get_hermes_home_override
 
-        override = get_hermes_home_override()
-        if not override:
-            return CHECK_FN_CACHE_BYPASS
-        return str(Path(override).expanduser().resolve())
+            override = get_hermes_home_override()
+            if not override:
+                return CHECK_FN_CACHE_BYPASS
+            profile_scope = str(Path(override).expanduser().resolve())
+        else:
+            profile_scope = None
     except Exception:
         # Fail closed: bypass both cache layers rather than aliasing requests
         # whose multiplex profile identity could not be resolved.
         return CHECK_FN_CACHE_BYPASS
+
+    if dispatcher_owned:
+        return profile_scope
+    if profile_scope is None:
+        return _NON_DISPATCHER_CACHE_SCOPE
+    return f"{profile_scope}|{_NON_DISPATCHER_CACHE_SCOPE}"
 
 
 def _check_fn_cached(fn: Callable) -> bool:
