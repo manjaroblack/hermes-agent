@@ -80,7 +80,7 @@ def _is_dispatcher_owned_worker() -> bool:
 
         return is_dispatcher_owned_worker_context()
     except Exception:
-        return True
+        return False
 
 
 def _reject_delegated_child_mutation(tool_name: str) -> Optional[str]:
@@ -115,8 +115,10 @@ def _check_kanban_mode() -> bool:
     """
     if _is_delegated_child_context():
         return False
-    if os.environ.get("HERMES_KANBAN_TASK") and _is_dispatcher_owned_worker():
-        return True
+    if os.environ.get("HERMES_KANBAN_TASK"):
+        # A task marker is not enough on its own. Do not fall through to the
+        # profile opt-in path when the dispatcher-ownership check fails.
+        return _is_dispatcher_owned_worker()
     return _profile_has_kanban_toolset()
 
 
@@ -131,7 +133,7 @@ def _check_kanban_orchestrator_mode() -> bool:
     """
     if _is_delegated_child_context():
         return False
-    if os.environ.get("HERMES_KANBAN_TASK") and _is_dispatcher_owned_worker():
+    if os.environ.get("HERMES_KANBAN_TASK"):
         return False
     return _profile_has_kanban_toolset()
 

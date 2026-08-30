@@ -15,9 +15,11 @@ Run with:  python -m pytest tests/test_code_execution.py -v
 import pytest
 # pytestmark removed — tests run fine (61 pass, ~99s)
 
+import importlib.util
 import json
 import os
 import socket
+import tempfile
 import time
 
 os.environ["TERMINAL_ENV"] = "local"
@@ -115,6 +117,297 @@ class TestHermesToolsGeneration(unittest.TestCase):
         src = generate_hermes_tools_module(["terminal"], transport="file")
         self.assertIn("_seq_lock = threading.Lock()", src)
         self.assertIn("with _seq_lock:", src)
+
+
+class TestKanbanAttachmentSandboxTools(unittest.TestCase):
+    """Kanban workers can use attachment tools from execute_code."""
+
+    _ATTACHMENT_TOOLS = frozenset({
+        "kanban_attach",
+        "kanban_attach_url",
+        "kanban_attachments",
+    })
+
+    def test_attachment_tools_have_sandbox_specs(self):
+        """Attachment tools need both allow-list entries and generated stubs."""
+        from tools.code_execution_tool import _TOOL_SPECS
+
+        self.assertTrue(self._ATTACHMENT_TOOLS <= SANDBOX_ALLOWED_TOOLS)
+        self.assertTrue(self._ATTACHMENT_TOOLS <= set(_TOOL_SPECS))
+
+        src = generate_hermes_tools_module(sorted(self._ATTACHMENT_TOOLS))
+        for tool_name in self._ATTACHMENT_TOOLS:
+            self.assertIn(f"def {tool_name}(", src)
+        self.assertIn(
+            "def kanban_attach(task_id: str = None, filename: str = None, "
+            "content_base64: str = None",
+            src,
+        )
+        self.assertIn(
+            "def kanban_attach_url(task_id: str = None, url: str = None",
+            src,
+        )
+
+    def test_worker_session_exposes_attachment_tools_to_execute_code(self):
+        """A dispatcher-owned worker's session tools reach the sandbox."""
+        from agent.delegation_context import is_dispatcher_owned_worker_context
+        import model_tools
+        from tools.registry import invalidate_check_fn_cache
+
+        self.assertTrue(is_dispatcher_owned_worker_context())
+        previous_task = os.environ.get("HERMES_KANBAN_TASK")
+        try:
+            os.environ["HERMES_KANBAN_TASK"] = "task-attachment-test"
+            invalidate_check_fn_cache()
+            definitions = model_tools.get_tool_definitions(
+                enabled_toolsets=["code_execution", "kanban"],
+                quiet_mode=True,
+            )
+            session_tools = {
+                definition["function"]["name"] for definition in definitions
+            }
+            import_result = json.loads(execute_code(
+                code=(
+                    "from hermes_tools import kanban_attach, "
+                    "kanban_attach_url, kanban_attachments\n"
+                    "print('kanban attachment imports ok')\n"
+                ),
+                task_id="task-attachment-test",
+                enabled_tools=sorted(session_tools),
+            ))
+        finally:
+            if previous_task is None:
+                os.environ.pop("HERMES_KANBAN_TASK", None)
+            else:
+                os.environ["HERMES_KANBAN_TASK"] = previous_task
+            invalidate_check_fn_cache()
+
+        self.assertTrue(self._ATTACHMENT_TOOLS <= session_tools)
+        self.assertEqual(import_result["status"], "success", import_result)
+        self.assertIn("kanban attachment imports ok", import_result["output"])
+        src = generate_hermes_tools_module(sorted(session_tools))
+        for tool_name in self._ATTACHMENT_TOOLS:
+            self.assertIn(f"def {tool_name}(", src)
+
+    def test_non_kanban_session_does_not_expose_attachment_tools(self):
+        """A normal session must not inherit worker-only attachment tools."""
+        import model_tools
+        from tools.registry import invalidate_check_fn_cache
+
+        previous_task = os.environ.pop("HERMES_KANBAN_TASK", None)
+        try:
+            invalidate_check_fn_cache()
+            definitions = model_tools.get_tool_definitions(
+                enabled_toolsets=["code_execution", "kanban"],
+                quiet_mode=True,
+            )
+            session_tools = {
+                definition["function"]["name"] for definition in definitions
+            }
+        finally:
+            if previous_task is not None:
+                os.environ["HERMES_KANBAN_TASK"] = previous_task
+            invalidate_check_fn_cache()
+
+        self.assertTrue(self._ATTACHMENT_TOOLS.isdisjoint(session_tools))
+        src = generate_hermes_tools_module(sorted(session_tools))
+        for tool_name in self._ATTACHMENT_TOOLS:
+            self.assertNotIn(f"def {tool_name}(", src)
+
+    def test_missing_kanban_attachment_suggests_native_or_cli_fallback(self):
+        """Missing kanban imports explain the binary-file CLI fallback."""
+        from tools.code_execution_tool import _sandbox_failure_hint
+
+        hint = _sandbox_failure_hint(
+            "ImportError: cannot import name 'kanban_attach' from 'hermes_tools'",
+            enabled_tools=["terminal"],
+        )
+
+        self.assertIsNotNone(hint)
+        assert hint is not None
+        self.assertIn("kanban_attach", hint)
+        self.assertIn("native", hint.lower())
+        self.assertIn("hermes kanban attach", hint)
+        self.assertIn("terminal(", hint)
+
+    def test_worker_gate_fails_closed_when_context_lookup_errors(self):
+        """A context-check failure must not grant worker-only tools."""
+        from tools.code_execution_tool import (
+            _KANBAN_ATTACHMENT_TOOLS,
+            _sandbox_tools_for_session,
+        )
+        from tools.registry import invalidate_check_fn_cache
+
+        previous_task = os.environ.get("HERMES_KANBAN_TASK")
+        try:
+            os.environ["HERMES_KANBAN_TASK"] = "task-attachment-test"
+            with patch(
+                "agent.delegation_context.is_dispatcher_owned_worker_context",
+                side_effect=RuntimeError("context unavailable"),
+            ):
+                sandbox_tools = _sandbox_tools_for_session(None)
+        finally:
+            if previous_task is None:
+                os.environ.pop("HERMES_KANBAN_TASK", None)
+            else:
+                os.environ["HERMES_KANBAN_TASK"] = previous_task
+            invalidate_check_fn_cache()
+
+        self.assertTrue(_KANBAN_ATTACHMENT_TOOLS.isdisjoint(sandbox_tools))
+
+    def test_worker_schema_gate_fails_closed_when_context_lookup_errors(self):
+        """A failed dispatcher-ownership check must not fall back to config."""
+        import model_tools
+        from tools.registry import invalidate_check_fn_cache
+
+        previous_task = os.environ.get("HERMES_KANBAN_TASK")
+        try:
+            os.environ["HERMES_KANBAN_TASK"] = "task-attachment-test"
+            model_tools._clear_tool_defs_cache()
+            invalidate_check_fn_cache()
+            worker_definitions = model_tools.get_tool_definitions(
+                enabled_toolsets=["code_execution", "kanban"],
+                quiet_mode=True,
+            )
+            self.assertTrue(
+                self._ATTACHMENT_TOOLS
+                <= {
+                    definition["function"]["name"]
+                    for definition in worker_definitions
+                }
+            )
+            with patch(
+                "agent.delegation_context.is_dispatcher_owned_worker_context",
+                side_effect=RuntimeError("context unavailable"),
+            ), patch(
+                "tools.kanban_tools._profile_has_kanban_toolset",
+                return_value=True,
+            ):
+                definitions = model_tools.get_tool_definitions(
+                    enabled_toolsets=["code_execution", "kanban"],
+                    quiet_mode=True,
+                )
+        finally:
+            if previous_task is None:
+                os.environ.pop("HERMES_KANBAN_TASK", None)
+            else:
+                os.environ["HERMES_KANBAN_TASK"] = previous_task
+            invalidate_check_fn_cache()
+
+        session_tools = {
+            definition["function"]["name"] for definition in definitions
+        }
+        self.assertTrue(self._ATTACHMENT_TOOLS.isdisjoint(session_tools))
+
+    def test_worker_and_non_dispatcher_schema_gates_do_not_share_cache(self):
+        """Context-dependent Kanban availability must not reuse a worker result."""
+        import model_tools
+        from agent.delegation_context import non_dispatcher_owned_context
+        from tools.registry import invalidate_check_fn_cache
+
+        previous_task = os.environ.get("HERMES_KANBAN_TASK")
+        try:
+            os.environ["HERMES_KANBAN_TASK"] = "task-attachment-test"
+            model_tools._clear_tool_defs_cache()
+            invalidate_check_fn_cache()
+            worker_tools = {
+                definition["function"]["name"]
+                for definition in model_tools.get_tool_definitions(
+                    enabled_toolsets=["code_execution", "kanban"],
+                    quiet_mode=True,
+                )
+            }
+            with non_dispatcher_owned_context():
+                non_dispatcher_tools = {
+                    definition["function"]["name"]
+                    for definition in model_tools.get_tool_definitions(
+                        enabled_toolsets=["code_execution", "kanban"],
+                        quiet_mode=True,
+                    )
+                }
+        finally:
+            if previous_task is None:
+                os.environ.pop("HERMES_KANBAN_TASK", None)
+            else:
+                os.environ["HERMES_KANBAN_TASK"] = previous_task
+            model_tools._clear_tool_defs_cache()
+            invalidate_check_fn_cache()
+
+        self.assertTrue(self._ATTACHMENT_TOOLS <= worker_tools)
+        self.assertTrue(self._ATTACHMENT_TOOLS.isdisjoint(non_dispatcher_tools))
+
+    def test_attachment_stub_parameter_order_matches_native_schemas(self):
+        """Generated stubs keep the native/documented positional parameter order."""
+        from tools.kanban_tools import (
+            KANBAN_ATTACH_SCHEMA,
+            KANBAN_ATTACH_URL_SCHEMA,
+            KANBAN_ATTACHMENTS_SCHEMA,
+        )
+
+        src = generate_hermes_tools_module(sorted(self._ATTACHMENT_TOOLS))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            module_path = os.path.join(tmpdir, "hermes_tools.py")
+            with open(module_path, "w", encoding="utf-8") as module_file:
+                module_file.write(src)
+            spec = importlib.util.spec_from_file_location(
+                "generated_hermes_tools", module_path
+            )
+            if spec is None or spec.loader is None:
+                self.fail("could not load generated hermes_tools module")
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+            calls = []
+            setattr(module, "_call", lambda name, args: calls.append((name, args)) or args)
+            getattr(module, "kanban_attach")(
+                "task-1", "report.pdf", "cmVwb3J0", "application/pdf", "board-1"
+            )
+            getattr(module, "kanban_attach_url")(
+                "task-1", "https://example.test/report.pdf", "report.pdf",
+                "application/pdf", "board-1"
+            )
+            getattr(module, "kanban_attachments")("task-1", "board-1")
+
+        schemas = {
+            "kanban_attach": KANBAN_ATTACH_SCHEMA,
+            "kanban_attach_url": KANBAN_ATTACH_URL_SCHEMA,
+            "kanban_attachments": KANBAN_ATTACHMENTS_SCHEMA,
+        }
+        self.assertEqual([name for name, _ in calls], list(schemas))
+        self.assertEqual(
+            calls,
+            [
+                (
+                    "kanban_attach",
+                    {
+                        "task_id": "task-1",
+                        "filename": "report.pdf",
+                        "content_base64": "cmVwb3J0",
+                        "content_type": "application/pdf",
+                        "board": "board-1",
+                    },
+                ),
+                (
+                    "kanban_attach_url",
+                    {
+                        "task_id": "task-1",
+                        "url": "https://example.test/report.pdf",
+                        "filename": "report.pdf",
+                        "content_type": "application/pdf",
+                        "board": "board-1",
+                    },
+                ),
+                (
+                    "kanban_attachments",
+                    {"task_id": "task-1", "board": "board-1"},
+                ),
+            ],
+        )
+        for (tool_name, args), schema in zip(calls, schemas.values()):
+            with self.subTest(tool_name=tool_name):
+                self.assertEqual(
+                    list(args), list(schema["parameters"]["properties"])
+                )
 
 
 class TestExecuteCodeRemoteTempDir(unittest.TestCase):
@@ -395,6 +688,7 @@ class TestStubSchemaDrift(unittest.TestCase):
         from tools.registry import registry
         import tools.file_tools  # noqa: F401 - registers read_file, write_file, patch, search_files
         import tools.web_tools  # noqa: F401 - registers web_search, web_extract
+        import tools.kanban_tools  # noqa: F401 - registers Kanban tools
 
         for tool_name, (func_name, sig, doc, args_expr) in _TOOL_STUBS.items():
             entry = registry._tools.get(tool_name)

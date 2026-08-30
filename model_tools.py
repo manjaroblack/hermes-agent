@@ -71,14 +71,18 @@ def _is_delegated_child_context() -> bool:
 
 
 def _is_dispatcher_owned_worker() -> bool:
-    """False when HERMES_KANBAN_* is present but this execution does not own it
-    (delegate_task child, or a cron job fired in-process from a worker)."""
+    """Return dispatcher ownership, failing closed if it cannot be checked.
+
+    ``HERMES_KANBAN_*`` is process-global in a few in-process execution paths,
+    so an import or predicate failure must not turn its mere presence into
+    worker authority.
+    """
     try:
         from agent.delegation_context import is_dispatcher_owned_worker_context
 
         return is_dispatcher_owned_worker_context()
     except Exception:
-        return True
+        return False
 
 
 # =============================================================================
