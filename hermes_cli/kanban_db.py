@@ -4565,9 +4565,12 @@ _BOARD_NOTIFY_THREAD_LOCK = threading.RLock()
 _BOARD_NOTIFY_LOCK_TIMEOUT_SECONDS = 10.0
 
 
-def _board_notify_board_id(board: Optional[str] = None) -> str:
-    """Resolve the board identity used by the board-notify storage seam."""
-    return _normalize_board_slug(board) or get_current_board()
+def _board_notify_board_id(board: Optional[str]) -> str:
+    """Return the explicit board identity used by board-pin operations."""
+    board_id = _normalize_board_slug(board)
+    if board_id is None:
+        raise ValueError("board is required for board notification operations")
+    return board_id
 
 
 def get_board_notify(
@@ -4578,27 +4581,27 @@ def get_board_notify(
 ) -> Optional[dict[str, str]]:
     """Return the validated pin for ``board``.
 
-    ``board`` is the board identity used by
-    :mod:`hermes_cli.kanban_board_notify`. The positional ``"discord"`` form
-    remains accepted for callers written against the earlier platform-keyed
-    adapter; it resolves the active board while the storage module continues
-    to own validation and malformed-row handling.
+    ``board`` is the explicit board identity used by
+    :mod:`hermes_cli.kanban_board_notify`. An omitted board is treated as an
+    absent pin rather than being inferred from the connection or environment.
     """
     normalized_platform = str(platform or "").strip().lower()
-    if board == "discord" and normalized_platform == "discord":
-        board = None
     if normalized_platform != "discord":
         return None
+    if board is None:
+        return None
+    board_id = _board_notify_board_id(board)
+    _validate_board_notify_connection(conn, board_id)
     from hermes_cli import kanban_board_notify as board_notify
 
-    return board_notify.get_board_notify(conn, _board_notify_board_id(board))
+    return board_notify.get_board_notify(conn, board_id)
 
 
 def list_board_notify(
     conn: sqlite3.Connection,
     board: Optional[str] = None,
 ) -> list[dict[str, str]]:
-    """Return the active board's valid pin, if one exists."""
+    """Return the requested board's valid pin, if one exists."""
     pin = get_board_notify(conn, board=board)
     return [pin] if pin is not None else []
 
@@ -4609,12 +4612,14 @@ def remove_board_notify(
     board: Optional[str] = None,
     platform: str = "discord",
 ) -> bool:
-    """Remove the active board's pin without touching card subscriptions."""
+    """Remove the requested board's pin without touching card subscriptions."""
     if str(platform or "").strip().lower() != "discord":
         return False
+    board_id = _board_notify_board_id(board)
+    _validate_board_notify_connection(conn, board_id)
     from hermes_cli import kanban_board_notify as board_notify
 
-    board_notify.clear_board_notify(conn, _board_notify_board_id(board))
+    board_notify.clear_board_notify(conn, board_id)
     return True
 
 
@@ -4665,6 +4670,32 @@ def _connection_db_path(conn: sqlite3.Connection) -> Optional[Path]:
     except OSError:
         return Path(str(row[2]))
 
+
+def _validate_board_notify_connection(
+    conn: sqlite3.Connection,
+    board: str,
+) -> None:
+    """Reject an explicitly labelled board that differs from ``conn``.
+
+    ``kanban_db_path`` is the single path-resolution seam for Kanban, including
+    the ``HERMES_KANBAN_DB`` override. The board-notify conflict scan has a
+    separate path resolver because it must inspect sibling boards, but this
+    validation concerns the live connection itself and must use the normal
+    resolver.
+    """
+    current_path = _connection_db_path(conn)
+    if current_path is None:
+        return
+    expected_path = kanban_db_path(board=board)
+    try:
+        current_path = current_path.resolve()
+        expected_path = expected_path.resolve()
+    except OSError:
+        pass
+    if current_path != expected_path:
+        raise ValueError(
+            f"board {board!r} database does not match the live connection"
+        )
 
 @contextlib.contextmanager
 def _board_notify_destination_lock():
@@ -4725,7 +4756,7 @@ def _board_notify_conflict(
     chat_id: Optional[str] = None,
     thread_id: Optional[str] = None,
     destination: Optional[Mapping[str, object]] = None,
-    board: Optional[str] = None,
+    board: str,
 ) -> Optional[str]:
     """Return the other board that owns ``destination``, if any.
 
@@ -4813,6 +4844,7 @@ def set_board_notify(
             "board notification destination must be a Discord thread"
         )
     board_id = _board_notify_board_id(board)
+    _validate_board_notify_connection(conn, board_id)
     with _board_notify_destination_lock():
         if not replace_existing:
             existing = get_board_notify(conn, board=board_id)
@@ -4933,7 +4965,7 @@ def subscribe_notify_source_on_create(
         )
         return True
 
-    if normalized_platform != "discord":
+    if normalized_platform != "discord" or board is None:
         return subscribe_card()
 
     board_id = _board_notify_board_id(board)

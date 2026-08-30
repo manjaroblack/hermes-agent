@@ -213,3 +213,155 @@ def test_cross_board_conflict_ignores_malformed_pin_but_reserves_valid_pin(
         beta.close()
 
     assert first["chat_id"] == "999"
+
+
+def test_set_board_notify_rejects_board_mismatch_with_live_connection(
+    isolated_kanban_home,
+):
+    kb.create_board("alpha", legacy_unscoped=True)
+    kb.create_board("beta", legacy_unscoped=True)
+    alpha = kb.connect(board="alpha")
+    try:
+        with pytest.raises(ValueError, match="does not match the live connection"):
+            kb.set_board_notify(
+                alpha,
+                platform="discord",
+                chat_id="111",
+                thread_id="222",
+                board="beta",
+            )
+    finally:
+        alpha.close()
+
+
+def test_board_pin_crud_uses_hermes_kanban_db_override(
+    isolated_kanban_home,
+    monkeypatch,
+):
+    custom_db = isolated_kanban_home / "custom" / "kanban.db"
+    monkeypatch.setenv("HERMES_KANBAN_DB", str(custom_db))
+    conn = kb.connect(board="default")
+    try:
+        pin = kb.set_board_notify(
+            conn,
+            platform="discord",
+            chat_id="333",
+            thread_id="444",
+            board="default",
+        )
+        assert kb.get_board_notify(conn, board="default") == pin
+    finally:
+        conn.close()
+
+    assert custom_db.exists()
+    assert not (isolated_kanban_home / "kanban.db").exists()
+
+    conn = kb.connect(board="default")
+    try:
+        assert kb.remove_board_notify(conn, board="default") is True
+        assert kb.get_board_notify(conn, board="default") is None
+    finally:
+        conn.close()
+
+
+def test_board_pin_crud_uses_default_db_without_override(isolated_kanban_home):
+    conn = kb.connect()
+    try:
+        pin = kb.set_board_notify(
+            conn,
+            platform="discord",
+            chat_id="555",
+            thread_id="666",
+            board="default",
+        )
+        assert kb.get_board_notify(conn, board="default") == pin
+        assert kb.remove_board_notify(conn, board="default") is True
+        assert kb.get_board_notify(conn, board="default") is None
+    finally:
+        conn.close()
+
+    assert (isolated_kanban_home / "kanban.db").exists()
+
+
+def test_board_pin_requires_explicit_board_for_custom_connection(
+    isolated_kanban_home,
+):
+    custom_db = isolated_kanban_home / "explicit" / "kanban.db"
+    conn = kb.connect(db_path=custom_db)
+    try:
+        with pytest.raises(ValueError, match="board.*required"):
+            kb.set_board_notify(
+                conn,
+                platform="discord",
+                chat_id="777",
+                thread_id="888",
+                replace_existing=False,
+            )
+        assert kb.get_board_notify(conn) is None
+        with pytest.raises(ValueError, match="board.*required"):
+            kb.remove_board_notify(conn)
+    finally:
+        conn.close()
+
+
+def test_create_source_falls_back_to_card_route_without_board_label(
+    isolated_kanban_home,
+):
+    custom_db = isolated_kanban_home / "explicit-create" / "kanban.db"
+    conn = kb.connect(db_path=custom_db)
+    try:
+        task_id = kb.create_task(conn, title="boardless custom", assignee="worker")
+        subscribed = kb.subscribe_notify_source_on_create(
+            conn,
+            task_id=task_id,
+            platform="discord",
+            chat_id="999",
+            thread_id="000",
+            chat_type="thread",
+        )
+        subscriptions = _discord_subscriptions(conn, task_id)
+    finally:
+        conn.close()
+
+    assert subscribed is True
+    assert [(sub["chat_id"], sub["thread_id"]) for sub in subscriptions] == [
+        ("999", "000")
+    ]
+
+
+def test_create_source_does_not_infer_active_board_for_boardless_connection(
+    isolated_kanban_home,
+    monkeypatch,
+):
+    kb.write_board_metadata(
+        "scoped",
+        project_id="project-1",
+        project_slug="scoped",
+        project_name="Scoped",
+        project_primary_path=str(isolated_kanban_home),
+        default_workdir=str(isolated_kanban_home),
+        legacy_unscoped=False,
+    )
+    monkeypatch.setenv("HERMES_KANBAN_BOARD", "scoped")
+    custom_db = isolated_kanban_home / "explicit-scoped" / "kanban.db"
+    conn = kb.connect(db_path=custom_db)
+    try:
+        task_id = kb.create_task(
+            conn, title="scoped boardless custom", assignee="worker"
+        )
+        subscribed = kb.subscribe_notify_source_on_create(
+            conn,
+            task_id=task_id,
+            platform="discord",
+            chat_id="123",
+            thread_id="456",
+            chat_type="thread",
+        )
+        subscriptions = _discord_subscriptions(conn, task_id)
+    finally:
+        conn.close()
+
+    assert subscribed is True
+    assert [(sub["chat_id"], sub["thread_id"]) for sub in subscriptions] == [
+        ("123", "456")
+    ]
