@@ -97,6 +97,7 @@ from hermes_cli.kanban_admission import (
     admit_workspace,
     is_read_only_role,
 )
+from hermes_cli.kanban_graph import GraphValidationResult, validate_complex_graph
 from toolsets import get_toolset_names
 
 _log = logging.getLogger(__name__)
@@ -2044,6 +2045,10 @@ class Task:
     # Unblock-loop counter. See the column comment in SCHEMA_SQL and
     # ``BLOCK_RECURRENCE_LIMIT``. Reset only on successful completion.
     block_recurrences: int = 0
+    # Durable task-local orchestration metadata. This carries graph roles,
+    # intake classification, and explicit same-card review contracts without
+    # treating ordinary worker prose as a workflow edge.
+    metadata: Optional[dict] = None
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "Task":
@@ -2057,6 +2062,14 @@ class Task:
                     skills_value = [str(s) for s in parsed if s]
             except Exception:
                 skills_value = None
+        metadata_value: Optional[dict] = None
+        if "metadata" in keys and row["metadata"]:
+            try:
+                parsed_metadata = json.loads(row["metadata"])
+                if isinstance(parsed_metadata, dict):
+                    metadata_value = parsed_metadata
+            except Exception:
+                metadata_value = None
         return cls(
             id=row["id"],
             title=row["title"],
@@ -2139,6 +2152,7 @@ class Task:
                 if "block_recurrences" in keys and row["block_recurrences"] is not None
                 else 0
             ),
+            metadata=metadata_value,
         )
 
 
@@ -2238,6 +2252,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     id                   TEXT PRIMARY KEY,
     title                TEXT NOT NULL,
     body                 TEXT,
+    -- JSON task-local orchestration metadata. Unlike free-form body prose,
+    -- this is the durable source for graph roles and review contracts.
+    metadata             TEXT,
     assignee             TEXT,
     status               TEXT NOT NULL,
     priority             INTEGER DEFAULT 0,
@@ -3451,6 +3468,8 @@ def _migrate_add_optional_columns(conn: sqlite3.Connection) -> None:
     cols = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
     if "tenant" not in cols:
         _add_column_if_missing(conn, "tasks", "tenant", "tenant TEXT")
+    if "metadata" not in cols:
+        _add_column_if_missing(conn, "tasks", "metadata", "metadata TEXT")
     if "result" not in cols:
         _add_column_if_missing(conn, "tasks", "result", "result TEXT")
     if "branch_name" not in cols:
@@ -4082,6 +4101,7 @@ def create_task(
     *,
     title: str,
     body: Optional[str] = None,
+    metadata: Optional[Mapping[str, Any]] = None,
     assignee: Optional[str] = None,
     created_by: Optional[str] = None,
     workspace_kind: str = "scratch",
@@ -4147,9 +4167,44 @@ def create_task(
     board can supply the repo and branch convention. Its literal worktree is
     never reused; the new task still gets its own task-id-keyed path.
     """
+    parents = tuple(p for p in (parents or ()) if p)
     model_override = (model_override or "").strip() or None
     provider_override = (provider_override or "").strip() or None
     reasoning_effort = normalize_reasoning_effort(reasoning_effort)
+    if metadata is None:
+        metadata_payload: Optional[dict[str, Any]] = None
+    elif isinstance(metadata, Mapping):
+        metadata_payload = dict(metadata)
+        try:
+            json.dumps(metadata_payload)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"metadata must be JSON-serializable: {exc}") from exc
+    else:
+        raise ValueError("metadata must be a mapping")
+    # Persist the intake decision when the optional intake gate is present.
+    # This keeps later promotion/dispatch checks independent of the surface
+    # that created the task and avoids reclassifying decomposed children.
+    if (metadata_payload is None or "intake" not in metadata_payload) and not parents:
+        try:
+            from importlib import import_module
+
+            intake_module = import_module("hermes_cli.kanban_intake")
+            evaluate_runtime_intake = getattr(
+                intake_module, "evaluate_runtime_intake"
+            )
+
+            intake = evaluate_runtime_intake(title, body)
+            if metadata_payload is None:
+                metadata_payload = {}
+            metadata_payload.setdefault("intake", intake.as_dict())
+            metadata_payload.setdefault(
+                "requires_orchestrator", bool(intake.requires_orchestrator)
+            )
+        except (ImportError, ModuleNotFoundError):
+            # The graph validator also supports installations predating the
+            # intake gate; those callers can set requires_orchestrator
+            # explicitly in metadata.
+            pass
     if provider_override and not model_override:
         raise ValueError("provider_override requires a model_override")
     assignee = _canonical_assignee(assignee)
@@ -4402,6 +4457,21 @@ def create_task(
             # compose create_task calls under one outer commit so the
             # dispatcher can never observe a partially constructed graph.
             with write_txn(conn, allow_nested=True):
+                task_metadata = metadata_payload
+                if (
+                    not parents
+                    and isinstance(metadata_payload, Mapping)
+                    and (
+                        metadata_payload.get("requires_orchestrator")
+                        or metadata_payload.get("complex")
+                        or metadata_payload.get("complex_task")
+                        or metadata_payload.get("orchestrated")
+                        or str(metadata_payload.get("complexity", "")).casefold()
+                        in {"complex", "orchestrated", "orchestration", "triage"}
+                    )
+                ):
+                    task_metadata = dict(metadata_payload)
+                    task_metadata.setdefault("graph_root_id", task_id)
                 # Determine task status from parent status, unless the caller
                 # parks it directly in blocked for human-ops review or in
                 # triage for a specifier.
@@ -4455,19 +4525,20 @@ def create_task(
                 conn.execute(
                     """
                     INSERT INTO tasks (
-                        id, title, body, assignee, status, priority,
+                        id, title, body, metadata, assignee, status, priority,
                         created_by, created_at, workspace_kind, workspace_path,
                         branch_name, project_id, legacy_unscoped, tenant, idempotency_key,
                         max_runtime_seconds,
                         skills, max_retries, model_override, provider_override,
                         reasoning_effort,
                         goal_mode, goal_max_turns, session_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         task_id,
                         title.strip(),
                         body,
+                        json.dumps(task_metadata, sort_keys=True) if task_metadata is not None else None,
                         assignee,
                         task_status,
                         priority,
@@ -5513,6 +5584,206 @@ def _resume_status_from_events(conn: sqlite3.Connection, task_id: str) -> str:
     return "ready"
 
 
+def _graph_validation_config() -> Mapping[str, Any]:
+    """Load the effective graph-validation config without blocking the board."""
+    try:
+        from hermes_cli.config import load_config
+
+        config = load_config()
+        if isinstance(config, Mapping):
+            return config
+    except Exception:
+        pass
+    from hermes_cli.config_defaults import DEFAULT_CONFIG
+
+    return DEFAULT_CONFIG
+
+
+def _task_graph_snapshot(
+    conn: sqlite3.Connection,
+    task_id: str,
+) -> tuple[Optional[Task], list[Task], list[tuple[str, str]]]:
+    """Return one connected task graph component for validation.
+
+    Older decomposition code models the root as a child of its fan-out nodes,
+    while ordinary ``parents=`` creation models the root as their parent. The
+    component walk is intentionally direction-agnostic so both durable shapes
+    receive the same validation policy.
+    """
+    rows = conn.execute("SELECT * FROM tasks").fetchall()
+    tasks = {row["id"]: Task.from_row(row) for row in rows}
+    if task_id not in tasks:
+        return None, [], []
+    links = [
+        (row["parent_id"], row["child_id"])
+        for row in conn.execute("SELECT parent_id, child_id FROM task_links").fetchall()
+    ]
+    adjacency: dict[str, set[str]] = {key: set() for key in tasks}
+    for parent_id, child_id in links:
+        if parent_id in adjacency and child_id in adjacency:
+            adjacency[parent_id].add(child_id)
+            adjacency[child_id].add(parent_id)
+    seen: set[str] = set()
+    pending = [task_id]
+    explicit_root = (tasks[task_id].metadata or {}).get("graph_root_id")
+    if explicit_root and str(explicit_root) in tasks:
+        pending.append(str(explicit_root))
+    while pending:
+        current = pending.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        pending.extend(adjacency.get(current, ()))
+    component_tasks = [tasks[node_id] for node_id in tasks if node_id in seen]
+    component_links = [
+        (parent_id, child_id)
+        for parent_id, child_id in links
+        if parent_id in seen and child_id in seen
+    ]
+    return tasks[task_id], component_tasks, component_links
+
+
+def _graph_root_id(task: Task, nodes: list[Task]) -> str:
+    metadata = task.metadata or {}
+    explicit = metadata.get("graph_root_id")
+    if explicit and any(node.id == str(explicit) for node in nodes):
+        return str(explicit)
+
+    def is_marked(node: Task) -> bool:
+        node_metadata = node.metadata or {}
+        intake = node_metadata.get("intake")
+        return bool(
+            node_metadata.get("requires_orchestrator")
+            or node_metadata.get("complex")
+            or node_metadata.get("complex_task")
+            or node_metadata.get("orchestrated")
+            or str(node_metadata.get("complexity", "")).casefold()
+            in {"complex", "orchestrated", "orchestration", "triage"}
+            or (
+                isinstance(intake, Mapping)
+                and intake.get("requires_orchestrator")
+            )
+        )
+
+    if is_marked(task):
+        return task.id
+    for node in nodes:
+        if is_marked(node):
+            return node.id
+    # A task still in triage is the only safe root inference for legacy rows;
+    # simple ready/todo cards retain the one-card fast path.
+    return task.id
+
+
+def _validate_task_graph_in_txn(
+    conn: sqlite3.Connection,
+    task_id: str,
+    *,
+    config: Optional[Mapping[str, Any]] = None,
+) -> tuple[str, GraphValidationResult]:
+    """Validate the connected graph containing ``task_id`` in the current txn."""
+    task, nodes, edges = _task_graph_snapshot(conn, task_id)
+    if task is None:
+        return task_id, GraphValidationResult(valid=True, skipped=True)
+    root_id = _graph_root_id(task, nodes)
+    root = next((node for node in nodes if node.id == root_id), task)
+    result = validate_complex_graph(
+        root,
+        nodes,
+        edges,
+        config=config or _graph_validation_config(),
+    )
+    return root_id, result
+
+
+def _graph_rejection_fingerprint(result: GraphValidationResult) -> str:
+    payload = json.dumps(result.as_dict(), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _reject_graph_validation(
+    conn: sqlite3.Connection,
+    root_id: str,
+    result: GraphValidationResult,
+    *,
+    candidate_id: Optional[str] = None,
+    phase: str = "promotion",
+) -> bool:
+    """Keep an invalid graph in triage and write one idempotent repair event."""
+    fingerprint = _graph_rejection_fingerprint(result)
+    affected = list(dict.fromkeys(
+        [root_id, *result.implementation_ids, *([candidate_id] if candidate_id else [])]
+    ))
+    for affected_id in affected:
+        conn.execute(
+            "UPDATE tasks SET status = 'triage', claim_lock = NULL, "
+            "claim_expires = NULL, worker_pid = NULL "
+            "WHERE id = ? AND status IN ('todo', 'ready', 'blocked', 'review')",
+            (affected_id,),
+        )
+    latest = conn.execute(
+        "SELECT payload FROM task_events WHERE task_id = ? "
+        "AND kind = 'graph_validation_rejected' ORDER BY id DESC LIMIT 1",
+        (root_id,),
+    ).fetchone()
+    try:
+        latest_payload = json.loads(latest["payload"]) if latest and latest["payload"] else {}
+    except (TypeError, ValueError):
+        latest_payload = {}
+    if isinstance(latest_payload, dict) and latest_payload.get("fingerprint") == fingerprint:
+        return False
+    _append_event(
+        conn,
+        root_id,
+        "graph_validation_rejected",
+        {
+            "root_id": root_id,
+            "candidate_id": candidate_id,
+            "phase": phase,
+            "reason_type": "graph_validation",
+            "schema_version": 1,
+            "fingerprint": fingerprint,
+            **result.as_dict(),
+        },
+    )
+    return True
+
+
+def _proposed_decomposition_graph(
+    root: Task,
+    children: list[dict],
+) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
+    """Build a pure validation snapshot before decomposition writes any rows."""
+    nodes: list[dict[str, Any]] = [{
+        "id": root.id,
+        "title": root.title,
+        "body": root.body,
+        "assignee": root.assignee,
+        "status": root.status,
+        "workspace_kind": root.workspace_kind,
+        "metadata": root.metadata or {},
+    }]
+    child_ids = [f"__proposed_child_{index}" for index in range(len(children))]
+    for index, child in enumerate(children):
+        nodes.append({
+            "id": child_ids[index],
+            "title": child.get("title", ""),
+            "body": child.get("body"),
+            "assignee": child.get("assignee"),
+            "status": "todo",
+            "workspace_kind": child.get("workspace_kind", root.workspace_kind),
+            "metadata": child.get("metadata") or {},
+        })
+    edges: list[tuple[str, str]] = []
+    for index, child in enumerate(children):
+        for parent_index in child.get("parents") or []:
+            edges.append((child_ids[parent_index], child_ids[index]))
+        # ``decompose_triage_task`` makes every fan-out node a parent of the
+        # root so the root wakes only after the whole graph completes.
+        edges.append((child_ids[index], root.id))
+    return nodes, edges
+
+
 def recompute_ready(
     conn: sqlite3.Connection, failure_limit: int = None,
 ) -> int:
@@ -5547,10 +5818,11 @@ def recompute_ready(
     """
     if failure_limit is None:
         failure_limit = DEFAULT_FAILURE_LIMIT
+    graph_config = _graph_validation_config()
     promoted = 0
     with write_txn(conn):
         todo_rows = conn.execute(
-            "SELECT id, status, consecutive_failures, max_retries "
+            "SELECT * "
             "FROM tasks WHERE status IN ('todo', 'blocked')"
         ).fetchall()
         for row in todo_rows:
@@ -5569,6 +5841,20 @@ def recompute_ready(
                 (task_id,),
             ).fetchall()
             if all(p["status"] in ("done", "archived") for p in parents):
+                root_id, graph_result = _validate_task_graph_in_txn(
+                    conn,
+                    task_id,
+                    config=graph_config,
+                )
+                if not graph_result.valid:
+                    _reject_graph_validation(
+                        conn,
+                        root_id,
+                        graph_result,
+                        candidate_id=task_id,
+                        phase="promotion",
+                    )
+                    continue
                 resume_status = _resume_status_from_events(conn, task_id)
                 if cur_status == "blocked":
                     # Don't auto-recover tasks that have hit the
@@ -5746,6 +6032,16 @@ def claim_task(
         if candidate_row is None:
             return None
         candidate = Task.from_row(candidate_row)
+        root_id, graph_result = _validate_task_graph_in_txn(conn, task_id)
+        if not graph_result.valid:
+            _reject_graph_validation(
+                conn,
+                root_id,
+                graph_result,
+                candidate_id=task_id,
+                phase="claim",
+            )
+            return None
         admission = _admit_workspace_snapshot(candidate, board)
         if not admission.admitted:
             _reject_workspace_admission(conn, candidate, admission)
@@ -6161,6 +6457,7 @@ def release_stale_claims(
     """
     now = int(time.time())
     reclaimed = 0
+    graph_config = _graph_validation_config()
     host_prefix = f"{_claimer_id().split(':', 1)[0]}:"
     stale = conn.execute(
         "SELECT id, claim_lock, worker_pid, claim_expires, last_heartbeat_at, "
@@ -6237,6 +6534,13 @@ def release_stale_claims(
             continue
         with write_txn(conn):
             retry_status = _retry_status_for_run(conn, row["id"])
+            graph_root_id, graph_result = _validate_task_graph_in_txn(
+                conn,
+                row["id"],
+                config=graph_config,
+            )
+            if not graph_result.valid:
+                retry_status = "triage"
             cur = conn.execute(
                 "UPDATE tasks SET status = ?, claim_lock = NULL, "
                 "claim_expires = NULL, worker_pid = NULL "
@@ -6267,6 +6571,7 @@ def release_stale_claims(
                 "host_local": host_local,
                 "heartbeat_stale": bool(heartbeat_stale),
                 "retry_status": retry_status,
+                "graph_validation_rejected": not graph_result.valid,
             }
             payload.update(termination)
             _append_event(
@@ -6274,6 +6579,14 @@ def release_stale_claims(
                 payload,
                 run_id=run_id,
             )
+            if not graph_result.valid:
+                _reject_graph_validation(
+                    conn,
+                    graph_root_id,
+                    graph_result,
+                    candidate_id=row["id"],
+                    phase="reclaim",
+                )
             reclaimed += 1
         # Worker-lifecycle observer (RFC #58548): the reclaim txn above has
         # committed. The ``continue`` branches (rowcount mismatch, claim
@@ -6329,6 +6642,9 @@ def reclaim_task(
     )
     with write_txn(conn):
         retry_status = _retry_status_for_run(conn, task_id)
+        graph_root_id, graph_result = _validate_task_graph_in_txn(conn, task_id)
+        if not graph_result.valid:
+            retry_status = "triage"
         cur = conn.execute(
             "UPDATE tasks SET status = ?, claim_lock = NULL, "
             "claim_expires = NULL, worker_pid = NULL "
@@ -6352,6 +6668,7 @@ def reclaim_task(
             "reason": reason,
             "prev_lock": prev_lock,
             "retry_status": retry_status,
+            "graph_validation_rejected": not graph_result.valid,
         }
         payload.update(termination)
         _append_event(
@@ -6359,6 +6676,14 @@ def reclaim_task(
             payload,
             run_id=run_id,
         )
+        if not graph_result.valid:
+            _reject_graph_validation(
+                conn,
+                graph_root_id,
+                graph_result,
+                candidate_id=task_id,
+                phase="reclaim",
+            )
     # Operator intervention — they've looked at the task, so the
     # consecutive-failures counter is now stale. Give the next retry
     # a fresh budget. (_clear_failure_counter opens its own write_txn,
@@ -8896,6 +9221,16 @@ def specify_triage_task(
         )
         if cur.rowcount != 1:
             return False
+        graph_root_id, graph_result = _validate_task_graph_in_txn(conn, task_id)
+        if not graph_result.valid:
+            _reject_graph_validation(
+                conn,
+                graph_root_id,
+                graph_result,
+                candidate_id=task_id,
+                phase="specify",
+            )
+            return False
         if changed_fields and author and author.strip():
             # Inline INSERT (rather than ``add_comment``) because we're
             # already inside this function's write_txn — nested BEGIN
@@ -9131,14 +9466,28 @@ def decompose_triage_task(
     child_ids: list[str] = []
     with write_txn(conn):
         root_row = conn.execute(
-            "SELECT id, status, tenant, workspace_kind, workspace_path, "
-            "project_id, legacy_unscoped "
-            "FROM tasks WHERE id = ?",
+            "SELECT * FROM tasks WHERE id = ?",
             (task_id,),
         ).fetchone()
         if root_row is None:
             return None
         if root_row["status"] != "triage":
+            return None
+        root_task = Task.from_row(root_row)
+        proposed_nodes, proposed_edges = _proposed_decomposition_graph(root_task, children)
+        graph_result = validate_complex_graph(
+            root_task,
+            proposed_nodes,
+            proposed_edges,
+            config=_graph_validation_config(),
+        )
+        if not graph_result.valid:
+            _reject_graph_validation(
+                conn,
+                task_id,
+                graph_result,
+                phase="decompose",
+            )
             return None
         tenant = root_row["tenant"]
         project_id, legacy_unscoped, project_obj = _resolve_decomposition_scope(
@@ -9190,14 +9539,17 @@ def decompose_triage_task(
                 )
             conn.execute(
                 "INSERT INTO tasks "
-                "(id, title, body, assignee, status, workspace_kind, "
+                "(id, title, body, metadata, assignee, status, workspace_kind, "
                 " workspace_path, branch_name, project_id, legacy_unscoped, "
                 " tenant, created_at, created_by) "
-                "VALUES (?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     new_id,
                     title,
                     body if isinstance(body, str) else None,
+                    json.dumps(child.get("metadata"), sort_keys=True)
+                    if isinstance(child.get("metadata"), Mapping)
+                    else None,
                     assignee,
                     child_ws_kind,
                     child_ws_path,
@@ -9860,6 +10212,9 @@ class DispatchResult:
     """Blocked implementation ids routed to ``(same_card|downstream)`` review."""
     review_recovery_blocked: list[tuple[str, str]] = field(default_factory=list)
     """Blocked implementation ids retained with an actionable recovery diagnostic."""
+    graph_validation_rejected: list[tuple[str, str]] = field(default_factory=list)
+    """Ready task ids parked in ``triage`` because their durable complex
+    graph failed validation. Each entry is ``(task_id, reason_type)``."""
     rate_limited: list[str] = field(default_factory=list)
     """Task ids whose workers bailed on a provider rate-limit / quota wall
     (EX_TEMPFAIL sentinel exit) and were released back to ``ready`` WITHOUT
@@ -12308,6 +12663,21 @@ def _dispatch_once_locked(
             else:
                 result.skipped_unassigned.append(row["id"])
                 continue
+        graph_root_id, graph_result = _validate_task_graph_in_txn(conn, row["id"])
+        if not graph_result.valid:
+            result.graph_validation_rejected.append(
+                (row["id"], "graph_validation")
+            )
+            if not dry_run:
+                with write_txn(conn):
+                    _reject_graph_validation(
+                        conn,
+                        graph_root_id,
+                        graph_result,
+                        candidate_id=row["id"],
+                        phase="dispatch",
+                    )
+            continue
         # Skip ready tasks whose assignee is not a real Hermes profile.
         # `_default_spawn` invokes ``hermes -p <assignee>`` which fails
         # with "Profile 'X' does not exist" when the assignee names a

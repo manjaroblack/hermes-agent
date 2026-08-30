@@ -2488,6 +2488,33 @@ DEFAULT_CONFIG = {
         # Independent profile used when a blocked implementation recovers to
         # same-card review and the handoff did not name a reviewer.
         "review_reviewer": "hermes-review",
+        # Fail closed on complex graphs before a root leaves triage or a
+        # code-bearing child enters the dispatch pool.  The validator only
+        # runs for work the intake gate classifies as orchestrated (or for a
+        # graph with multiple implementation/subsystem nodes); simple
+        # one-card work keeps the fast path.
+        "graph_validation": {
+            "enabled": True,
+            "required_stages": ["inventory_design", "release_acceptance"],
+            "security_audit_on_trigger": True,
+            # Incident handling is a runtime route.  A decompose-time lane is
+            # required only when a graph node explicitly opts into one via
+            # incident_required (or an equivalent metadata key), never from
+            # ordinary task prose such as "rollback" or "recovery".
+            "incident_response_on_trigger": True,
+            "security_triggers": [
+                "security",
+                "auth",
+                "authentication",
+                "authorization",
+                "permission",
+                "safety boundary",
+                "public exposure",
+            ],
+            # A bounded fan-out keeps review/release obligations auditable and
+            # prevents a malformed decomposer response from flooding a board.
+            "max_implementation_nodes": 8,
+        },
         # Seconds between dispatcher ticks (idle or not). Lower = snappier
         # pickup of newly-ready tasks; higher = less SQL pressure.
         "dispatch_interval_seconds": 60,
