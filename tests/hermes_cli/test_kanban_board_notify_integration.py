@@ -365,3 +365,32 @@ def test_create_source_does_not_infer_active_board_for_boardless_connection(
     assert [(sub["chat_id"], sub["thread_id"]) for sub in subscriptions] == [
         ("123", "456")
     ]
+
+
+def test_custom_connection_without_board_preserves_parent_card_subscription(
+    isolated_kanban_home,
+):
+    custom_db = isolated_kanban_home / "explicit-parent" / "kanban.db"
+    conn = kb.connect(db_path=custom_db)
+    try:
+        parent_id = kb.create_task(conn, title="custom parent", assignee="worker")
+        kb.add_notify_sub(
+            conn,
+            task_id=parent_id,
+            platform="discord",
+            chat_id="777",
+            thread_id="888",
+        )
+        child_id = kb.create_task(
+            conn,
+            title="custom child",
+            assignee="worker",
+            parents=[parent_id],
+        )
+        subscriptions = _discord_subscriptions(conn, child_id)
+    finally:
+        conn.close()
+
+    assert [(sub["chat_id"], sub["thread_id"]) for sub in subscriptions] == [
+        ("777", "888")
+    ]
