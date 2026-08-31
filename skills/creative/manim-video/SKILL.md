@@ -54,7 +54,7 @@ PLAN --> CODE --> RENDER --> STITCH --> AUDIO (optional) --> REVIEW
 
 1. PLAN: `plan.md` with narrative, scene list, visual elements, palette, voiceover.
 2. CODE: `script.py`, one independently renderable class per scene.
-3. RENDER: `manim -ql` draft; `-qh` production.
+3. RENDER: `manim -ql script.py Scene1 Scene2 ...` draft; `-qh` production.
 4. STITCH: ffmpeg concat to `final.mp4`.
 5. AUDIO: optional voice/music via ffmpeg; `references/rendering.md`.
 6. REVIEW: preview stills vs plan; adjust.

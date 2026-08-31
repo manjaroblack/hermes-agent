@@ -135,7 +135,7 @@ terminal(command="gh pr comment 86 --body '<review>'", workdir="~/project")
 ## Procedure
 
 1. Read the request; choose one-shot `codex exec` vs background interactive.
-2. Verify `op`? No: verify git repo, Codex install/auth, and explicit `workdir`.
+2. Verify git repo, Codex install/auth, and explicit `workdir`.
 3. Launch with `pty=true`; use `--sandbox workspace-write` for builds unless gateway bubblewrap requires `danger-full-access`.
 4. Monitor background IDs with `process(action="poll"|"log")`; answer prompts with `submit`; do not kill slow work without evidence.
 5. Inspect diff, run targeted tests, and report concrete files/results.
@@ -144,7 +144,7 @@ terminal(command="gh pr comment 86 --body '<review>'", workdir="~/project")
 
 1. Always `pty=true` for Codex terminal calls.
 2. Git repo required; use `mktemp -d && git init` for scratch.
-3. `exec` for one-shots; `--sandbox workspace-write` for builds.
+3. `exec` for one-shots (`codex exec "prompt"`); `--sandbox workspace-write` for builds.
 4. Background long tasks use `background=true` + `process` monitoring.
 5. Parallel Codex processes are allowed when each has an isolated worktree.
 

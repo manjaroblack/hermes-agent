@@ -411,13 +411,13 @@ Multi-scene video → one HTML per scene, independent render, `ffmpeg -f concat`
 | File | Contents |
 |------|----------|
 | `references/core-api.md` | canvas, coordinates, draw, `push()`/`pop()`, buffers, composition, `pixelDensity()`, responsive |
-| `references/shapes-and-geometry.md` | primitives, shapes, Bezier/Catmull-Rom, vertices, `p5.Vector`, SDF, SVG |
+| `references/shapes-and-geometry.md` | primitives (`ellipse()`), shapes, Bezier/Catmull-Rom, `vertex()`, `p5.Vector`, SDF, SVG |
 | `references/visual-effects.md` | noise, flow fields, particles, pixels, textures, feedback, reaction-diffusion |
-| `references/animation.md` | frame/easing, lerp/map, springs, state machines, timelines, millis, transitions |
-| `references/typography.md` | text/loadFont/textToPoints, kinetic type, masks, metrics, responsive sizing |
-| `references/color-systems.md` | color modes, lerp, palettes/harmony, blend modes, gradients, palette library |
-| `references/webgl-and-3d.md` | WEBGL, primitives, camera, lighting, materials, geometry, GLSL, framebuffers |
-| `references/interaction.md` | mouse/keyboard/touch/DOM, sliders/buttons, FFT/amplitude, scroll, responsive events |
+| `references/animation.md` | frame/easing, `lerp()`/`map()`, springs, state machines, timelines, millis, transitions |
+| `references/typography.md` | `text()`/loadFont/textToPoints, kinetic type, masks, metrics, responsive sizing |
+| `references/color-systems.md` | `colorMode()`, `lerpColor()`, `paletteLerp()`, harmony, `blendMode()`, gradients, palette library |
+| `references/webgl-and-3d.md` | WEBGL, primitives, camera, lighting, materials, geometry, GLSL (`createShader()`, `createFilterShader()`), framebuffers |
+| `references/interaction.md` | mouse/keyboard/touch/DOM, `createSlider()`/`createButton()`, FFT/amplitude, scroll, responsive events |
 | `references/export-pipeline.md` | save APIs, deterministic capture, ffmpeg, CCapture, SVG, clips, fxhash |
 | `references/troubleshooting.md` | performance, budgets, browser/WebGL, fonts, density, leaks, CORS |
 | `templates/viewer.html` | seed navigation, parameter sliders, PNG download, responsive canvas |

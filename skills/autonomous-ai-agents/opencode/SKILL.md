@@ -140,7 +140,7 @@ terminal(command="opencode -s ses_abc123", workdir="~/project", background=true,
 
 1. `terminal(command="opencode --version")`; `terminal(command="opencode auth list")`.
 2. Bounded → `opencode run '...'`; iterative → background `opencode` with PTY.
-3. Poll/log long jobs; submit explicit answers; exit Ctrl+C or kill.
+3. Monitor with `process(action="poll"|"log")`; answer via `process(action="submit", ...)`; exit with `process(action="write", data="\x03")` or `process(action="kill")`.
 4. Review files/tests and summarize concrete results.
 
 ## PR Review

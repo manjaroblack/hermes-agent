@@ -47,6 +47,13 @@ This overview is not a complete source of truth. If a command/setting is absent 
 - docs: https://hermes-agent.nousresearch.com/docs/
 - source: https://github.com/NousResearch/hermes-agent
 
+## Procedure
+
+1. Match the request to a capability and load its routed reference.
+2. Verify current commands/settings against docs, live CLI, or source before acting.
+3. Execute on the requested surface without crossing profile, secret, or cache boundaries.
+4. Confirm the resulting state and report the real check/output.
+
 ## Quick Start
 
 ```bash

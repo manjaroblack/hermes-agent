@@ -67,7 +67,7 @@ nc -z 127.0.0.1 40404 && echo "twozero MCP: READY"
 - codecs: `prores` (preferred macOS) or `mjpa`; H.264/H.265/AV1 require Commercial license
 - always `td_get_par_info` before setting params
 
-## Workflow
+## Procedure
 
 ### 0. Discover
 

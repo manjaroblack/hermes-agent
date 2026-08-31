@@ -85,7 +85,7 @@ INPUT → ANALYZE → SCENE_FN → TONEMAP → SHADE → ENCODE
 
 Per scene: vary background (or compose 2–3), character palette, color strategy/hue, shader intensity (bloom at peaks, grain in quiet), and particle type. Invent at least one custom palette/effect/color set/particle set/transition.
 
-## Workflow
+## Procedure
 
 ### 1. Creative vision
 

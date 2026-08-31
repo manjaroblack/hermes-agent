@@ -28,7 +28,7 @@ No API keys are required. Prefer local tools; fall back to the free remote API o
 - generate banners, cowsay/boxes art, image-to-ASCII, QR/weather art, or custom Unicode art
 - use when terminal-safe fixed-width output is the requested artifact
 
-## Decision Flow
+## Procedure
 
 1. text banner → pyfiglet; if absent, asciified API
 2. message in character speech/thought bubble → cowsay

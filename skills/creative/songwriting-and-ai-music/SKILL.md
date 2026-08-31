@@ -123,7 +123,7 @@ Custom Mode: separate Style + Lyrics for serious work; lyrics limit ~3,000 chars
 
 AI vocalists pronounce rather than read. Spell sound (`through` → `thru`); test proper nouns early; `Nous` → `Noose`; hyphenate syllables (`Re-search`, `bio-engineering`). ALL CAPS = louder/intense; vowel extension `lo-o-o-ove`; ellipses `I... need... you`; hyphenated stretch `ne-e-ed`. Spell numbers (`24/7` → `twenty four seven`); space acronyms (`AI` → `A I` or `A-I`); test unusual words in a 30-second clip; pronunciation is baked in, so fix lyrics first.
 
-## 9. Workflow
+## Procedure
 
 1. Concept/hook and emotional core.
 2. Adaptation: map syllables/rhyme/stress.

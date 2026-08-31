@@ -27,7 +27,7 @@ This works with Claude, GPT, Gemini, and local OpenAI-compatible models. Hermes 
 - inspect or operate native desktop apps without stealing focus
 - use fresh screenshot/AX state for GUI automation, testing, or repetitive tasks
 
-## Canonical Workflow
+## Procedure
 
 1. Capture first:
 
@@ -88,16 +88,16 @@ All actions accept `capture_after=True`; element-targeting actions accept `modif
 
 cua-driver routes background input by default and returns a structured verdict. Read it; climb only on returned evidence.
 
-- `effect`: `"confirmed"` (read-back; done), `"unverifiable"` (delivered; recapture), `"suspected_noop"` (almost certainly no effect)
+- effect: `effect:"confirmed"` (read-back; done), `effect:"unverifiable"` (delivered; recapture), `effect:"suspected_noop"` (almost certainly no effect)
 - `escalation`: `{recommended: "px" | "foreground" | "page", reason}` only when next rung exists; advisory
-- `code`: refusal such as `"background_unavailable"` or `"foreground_unsupported"`
+- code: refusal such as `code:"background_unavailable"` or `code:"foreground_unsupported"`
 - `verified`: `true` only on AX read-back
 
 Rungs:
 
 1. element/background (default): `click(element=N)`; confirmed = stop
 2. `unverifiable` → fresh capture/state before retry even if hint exists
-3. pixel/background after suspected noop or `px` refusal: `coordinate=[x,y]`
+3. pixel/background after suspected noop, `px` refusal, or a `degraded` capture with no elements: `coordinate=[x,y]`
 4. typed page route when `escalation.recommended == "page"` and exact browser contract below passes
 5. foreground after suspected noop, `background_unavailable`, or verified pixel noop: same action with `delivery_mode="foreground"`; pair `bring_to_front=True` for short sequences. It needs approval, briefly raises/restores focus, and suits users not actively working. Examples: Electron/Chromium consent dialogs such as tldraw offline "Run Script", DirectInput games, raw-input canvases.
 6. KDE/Qt synthetic keystrokes: if one fresh AX capture verifies foreground `type` was lost and raw XTest also fails, stop retrying rungs. Use terminal/file tools and let editor reload, or DBus/CLI. KTextEditor (Kate, KWrite, KDevelop) can report success with `effect:"unverifiable"` while swallowing text; same foreground path works on kcalc/Chrome (proven Aug 2026).
@@ -166,7 +166,7 @@ computer_use(action="scroll", direction="down", amount=3, coordinate=[500, 400])
 
 ## Screenshots
 
-On messaging platforms, save screenshot bytes durably and reply `MEDIA:/absolute/path.png`; cua-driver returns PNG/JPEG bytes and `mimeType`. On CLI, describe the capture; image remains in context.
+On messaging platforms, save screenshot bytes durably with `write_file` or terminal `base64 -d`, then reply `MEDIA:/absolute/path.png`; cua-driver returns PNG/JPEG bytes and `mimeType`. On CLI, describe the capture; image remains in context.
 
 ## Safety
 
@@ -183,7 +183,7 @@ On messaging platforms, save screenshot bytes durably and reply `MEDIA:/absolute
 |---|---|
 | `cua-driver not installed` | `hermes computer-use install`, or `hermes tools` → enable Computer Use |
 | empty capture / "no on-screen window" | Linux: check DISPLAY/X11 vs Wayland; Windows: interactive desktop vs Session 0/SSH; ask user for `hermes computer-use doctor`; see cua-driver `WINDOWS.md` |
-| stale element (`Element N not in cache`) | recapture; SOM indices expire; wrapper element tokens detect stale refs |
+| stale element (`Element N not in cache`) | recapture; SOM indices expire; wrapper opaque `element_token`s detect stale refs |
 | no click effect | read verdict; unverifiable → recapture; suspected noop/refusal → coordinate, exact typed page, foreground; do not declare app undrivable |
 | text disappears in terminal emulator | driver detects Ghostty, iTerm2, Terminal.app, Windows Terminal, mintty; ask `hermes computer-use doctor` if not working |
 | `blocked pattern in type text` | dangerous shell pattern such as `curl ... \| bash` or `sudo rm -rf`; split/reconsider |

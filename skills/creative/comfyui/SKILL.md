@@ -46,7 +46,7 @@ Use official `comfy-cli` for setup/lifecycle and direct REST/WebSocket + bundled
 
 ## Pack Map
 
-References: `official-cli.md` (comfy commands); `rest-api.md` (local/cloud REST+WS, schemas); `workflow-format.md` (API JSON/nodes/params); `template-integrity.md` (editor→API conversion, Reroute bypass, dotted dynamic keys `values.a`, `resize_type.width`, 302 redirects, one free-tier job, 1080p VRAM ceiling, Discord-compatible ffmpeg stitch; authored by [@purzbeats](https://github.com/purzbeats); load for official templates).
+References (`references/`): `official-cli.md` (every `comfy ...` command + flags); `rest-api.md` (local/cloud REST+WS, schemas); `workflow-format.md` (API JSON/nodes/params); `template-integrity.md` (`comfyui-workflow-templates` editor→API conversion, Reroute bypass, dotted dynamic keys `values.a`, `resize_type.width`, 302 redirects, one free-tier job, 1080p VRAM ceiling, Discord-compatible ffmpeg stitch; authored by [@purzbeats](https://github.com/purzbeats); load for official templates).
 
 Scripts:
 
@@ -105,7 +105,7 @@ python scripts/health_check.py
 # → JSON: comfy_cli on PATH? server reachable? at least one checkpoint? smoke-test passes?
 ```
 
-## Core Workflow
+## Procedure
 
 ### 1. API-format workflow
 
@@ -240,7 +240,7 @@ Report `wsl: true` (WSL2 NVIDIA passthrough) and `rosetta: true` (x86_64 Python 
 
 | Situation | Path |
 |---|---|
-| hardware `cloud` | A Cloud |
+| `verdict: cloud` from hardware check | A Cloud |
 | no GPU/no commitment | A Cloud |
 | Windows NVIDIA nontechnical | B Desktop |
 | Windows NVIDIA technical | C Portable or D CLI |

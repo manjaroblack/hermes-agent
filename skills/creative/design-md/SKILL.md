@@ -168,7 +168,7 @@ When accessibility matters, call WCAG findings out in the summary.
 
 - variants: `button-primary.hover` wrong; sibling `button-primary-hover` right
 - quote hex strings or YAML may choke/truncate `#1A1C1E`
-- quote negative dimensions: `letterSpacing: "-0.02em"`, not unquoted flow
+- quote negative dimensions: `letterSpacing: "-0.02em"`, not `letterSpacing: -0.02em`
 - reorder sections despite warning-only linter; consumers expect canonical order
 - CLI 0.3.0 silently drops typo `fontwight:`; check `fontFamily`, `fontSize`, `fontWeight`, `lineHeight`, `letterSpacing`, `fontFeature`, `fontVariation`
 - `version: alpha` is current spec version as of Jul 2026/CLI 0.3.0; alpha can break

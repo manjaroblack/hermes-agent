@@ -36,6 +36,14 @@ i/o: terminal commands, files, JSON/stream output, git worktrees, tmux session s
 - version: `claude --version` (v2.x+)
 - update: `claude update` or `claude upgrade`
 
+## Procedure
+
+1. Verify install/auth, repository, scope, and explicit `workdir`.
+2. Choose print mode for one-shot work or tmux PTY for multi-turn/dialog work.
+3. Launch with bounded tools, permissions, turns, and budget.
+4. Monitor real output; answer dialogs through tmux; inspect files/diff.
+5. Run affected checks and report concrete results before completion.
+
 ## Choose an Orchestration Mode
 
 ### Print mode (`-p`) — preferred
@@ -46,7 +54,7 @@ One-shot, non-interactive, no PTY/prompts; cleanest automation path:
 terminal(command="claude -p 'Add error handling to all API calls in src/' --allowedTools 'Read,Edit' --max-turns 10", workdir="/path/to/project", timeout=120)
 ```
 
-Use for one-shot fixes/features/refactors, CI/CD, JSON-schema extraction, piped input, and any task with no follow-up. Print mode skips all workspace-trust and permission dialogs.
+Use for one-shot fixes/features/refactors, CI/CD, JSON-schema extraction, piped input (`cat file | claude -p "analyze this"`), and any task with no follow-up. Print mode skips all workspace-trust and permission dialogs.
 
 ### Interactive PTY via tmux
 
@@ -438,8 +446,8 @@ When asked to create or modify database migrations:
 | `Shift+Enter` | Newline |
 | `Ctrl+J` | Newline |
 | `!` | Direct bash (`!npm test`); `!` alone toggles shell mode |
-| `@` | File/dir autocomplete |
-| `#` | Add CLAUDE.md memory |
+| `@` | File/dir autocomplete; e.g. `@./src/api/` |
+| `#` | Add CLAUDE.md memory; e.g. `# Use 2-space indentation` |
 | `/` | Slash commands |
 
 Use `ultrathink` in a prompt for maximum reasoning on that turn regardless of `/effort`.
@@ -513,6 +521,7 @@ A useful `CLAUDE.md` is concrete:
 - Type hints on all public functions
 - Docstrings in Google style
 - 2-space indentation for YAML, 4-space for Python
+- Name test files with `.test.ts` suffix
 - No wildcard imports
 ```
 

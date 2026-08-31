@@ -36,7 +36,7 @@ Based on [Cocoon AI's architecture-diagram-generator](https://github.com/Cocoon-
 
 1. Gather components, links, technologies, boundaries, and requested output path.
 2. Generate HTML with the design system below.
-3. Save with `write_file` to user path or `./[project-name]-architecture.html`.
+3. Save with `write_file` to user path (e.g. `~/architecture-diagram.html`) or default `./[project-name]-architecture.html`.
 4. Open in any modern browser; offline except optional Google Fonts.
 
 ### Preview

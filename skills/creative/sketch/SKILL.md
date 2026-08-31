@@ -25,9 +25,9 @@ Load for "sketch this screen", "show me what X could look like", "compare layout
 
 ## GSD Note
 
-If sibling `gsd-sketch` is installed via `npx get-shit-done-cc --hermes`, it supplies persistent `.planning/sketches/`, MANIFEST, frontier analysis, consistency audits, and GSD integration. This is the lightweight one-off path. Upstream [gsd-build/get-shit-done](https://github.com/gsd-build/get-shit-done) is archived/unmaintained; `get-shit-done-cc` still installs but is an archived community project.
+If sibling `gsd-sketch` is installed via `npx get-shit-done-cc --hermes --global`, use its `/gsd-sketch` workflow for persistent `.planning/sketches/`, MANIFEST, frontier analysis, consistency audits, and GSD integration. This is the lightweight one-off path. Upstream [gsd-build/get-shit-done](https://github.com/gsd-build/get-shit-done) is archived/unmaintained; `get-shit-done-cc` still installs but is an archived community project.
 
-## Core Method
+## Procedure
 
 ```text
 intake  →  variants  →  head-to-head  →  pick winner (or iterate)

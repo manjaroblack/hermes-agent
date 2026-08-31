@@ -126,7 +126,7 @@ The community corpus in `references/patterns.md` supplies the pattern families b
 
 Templates: `templates/donut-orbit.html` (measured ASCII logo obstacles, draggable wire sphere/cube, morphing shape fields, selectable DOM text, dev controls) and `templates/hello-orb-flow.html` (moving orb reflow).
 
-## Workflow
+## Procedure
 
 1. Select a pattern based on the brief.
 2. `write_file` a new `.html` in `/tmp/` or the user's workspace, starting from the matching template.
@@ -145,7 +145,7 @@ cd <dir-with-html> && python -m http.server 8765
 ## Performance
 
 - `prepare()`/`prepareWithSegments()` once per text+font; cache handle
-- resize reruns `layout()`/`layoutWithLines`, never re-prepare
+- resize reruns `layout()`/`layoutWithLines()`, never re-prepare or thrash `getBoundingClientRect`
 - `layoutNextLineRange` is cheap enough per frame for normal paragraphs
 - ASCII masks: keep a `Uint8Array`/typed cell buffer; derive/merge measured per-row obstacle spans before `layoutNextLineRange`
 - couple rendered cell buffer and obstacle spans with same tween when shape morphs
@@ -154,7 +154,7 @@ cd <dir-with-html> && python -m http.server 8765
 
 ## Pitfalls
 
-1. CSS/canvas font drift; preload the font or use a web-safe family.
+1. CSS/canvas font drift: `ctx.font = "16px Inter"` vs CSS `font-family: Inter, sans-serif; font-size: 16px`; preload Inter or use a web-safe family because fallback changes measurements.
 2. Re-preparing in animation; only `layout*` is cheap.
 3. `"é".split("")` splits visible grapheme; use `new Intl.Segmenter(undefined, { granularity: "grapheme" })` for emoji/combining/CJK.
 4. `rich-inline` `break: 'never'` chips need `extraWidth` for pill padding.

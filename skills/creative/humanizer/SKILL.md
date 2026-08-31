@@ -539,7 +539,7 @@ For file edits, apply the change and show diff/changed section.
 
 ## Attribution
 
-Ported from [blader/humanizer](https://github.com/blader/humanizer) (MIT), based on [Wikipedia: Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing), maintained by WikiProject AI Cleanup. Original author: Siqi Chen ([@blader](https://github.com/blader)); original repo: https://github.com/blader/humanizer, version 2.5.1. Hermes port adds native `read_file`, `patch`, and `write_file` guidance, the loading trigger, the marketing/blog cliché list in pattern 7, and patterns 30–34. Instructional prose was lightly edited to model the guidance. Original MIT license remains in the adjacent `LICENSE` file.
+Ported from [blader/humanizer](https://github.com/blader/humanizer) (MIT), based on [Wikipedia: Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing), maintained by WikiProject AI Cleanup. Original author: Siqi Chen ([@blader](https://github.com/blader)); original repo: https://github.com/blader/humanizer, version 2.5.1. Hermes port adds native `read_file`, `patch`, and `write_file` guidance, the loading trigger, the marketing/blog cliché list in pattern 7, and patterns 30–34. Instructional prose was lightly edited to model the guidance. Original MIT license remains in the adjacent `LICENSE` file alongside this `SKILL.md`.
 
 Key insight from Wikipedia: "LLMs use statistical algorithms to guess what should come next. The result tends toward the most statistically likely result that applies to the widest variety of cases."
 

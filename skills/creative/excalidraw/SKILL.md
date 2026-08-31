@@ -134,7 +134,7 @@ Standalone titles/annotations:
 }
 ```
 
-Fixed points: top `[0.5,0]`; bottom `[0.5,1]`; left `[0,0.5]`; right `[1,0.5]`.
+Fixed points: `top=[0.5,0]`; `bottom=[0.5,1]`; `left=[0,0.5]`; `right=[1,0.5]`.
 
 ## Z-Order
 

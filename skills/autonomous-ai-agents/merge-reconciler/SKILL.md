@@ -91,7 +91,7 @@ Run project build/tests with `terminal`; import/execute touched modules at minim
 
 For every hunk report:
 
-`file:lines — class — side(s) kept — rationale`
+`file:lines — class — which side(s) kept — rationale`
 
 For each same-question choice, name design question + chosen answer so a human can veto. Kanban: `kanban_complete(summary=...)`; standalone: print it.
 
