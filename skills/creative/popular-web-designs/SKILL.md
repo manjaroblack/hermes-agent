@@ -20,33 +20,41 @@ triggers:
 
 # Popular Web Designs
 
-54 real-world design systems ready for use when generating HTML/CSS. Each template captures a
-site's complete visual language: color palette, typography hierarchy, component styles, spacing
-system, shadows, responsive behavior, and practical agent prompts with exact CSS values.
+role: design-system selector
+do: choose a real visual vocabulary, load its template, apply exact tokens/components/layout to HTML/CSS
+inputs: known brand/site, content, target surface
+outputs: original HTML/CSS artifact informed by a template
+¬: clone proprietary screens/identity; use for formal DESIGN.md spec; use a template without reading it
 
-## Related design skills
+54 real-world systems provide palette, typography hierarchy, components, spacing, shadows, responsive behavior, and implementation prompts with CSS values.
 
-- **`claude-design`** — use for the design *process and taste* (scoping a brief,
-  producing variants, verifying a local HTML artifact, avoiding AI-design slop).
-  Pair it with this skill when the user wants a thoughtfully-designed page styled
-  after a known brand: `claude-design` drives the workflow, this skill supplies
-  the visual vocabulary.
-- **`design-md`** — use when the deliverable is a formal DESIGN.md token spec
-  file, not a rendered artifact.
+## When to Use
 
-## How to Use
+- page styled like Stripe, Linear, Vercel, or another catalog site
+- UI, web design, landing page, dashboard design
+- known-brand visual starting point
 
-1. Pick a design from the catalog below
-2. Load it: `skill_view(name="popular-web-designs", file_path="templates/<site>.md")`
-3. Use the design tokens and component specs when generating HTML
-4. Pair with the `generative-widgets` skill to serve the result via cloudflared tunnel
+## Related Skills
 
-Each template includes a **Hermes Implementation Notes** block at the top with:
-- CDN font substitute and Google Fonts `<link>` tag (ready to paste)
-- CSS font-family stacks for primary and monospace
-- Reminders to use `write_file` for HTML creation and `browser_vision` for verification
+- `claude-design`: process/taste, scoping, variants, local HTML verification, anti-slop. Pair it for thoughtful known-brand work; this skill supplies vocabulary.
+- `design-md`: formal persistent DESIGN.md token spec, not rendered artifact.
 
-## HTML Generation Pattern
+## Procedure
+
+1. Pick a design below.
+2. Load it:
+
+```text
+skill_view(name="popular-web-designs", file_path="templates/<site>.md")
+```
+
+3. Apply its tokens/component specs; use `write_file` for HTML.
+4. Serve with `generative-widgets` workflow (cloudflared tunnel) when needed.
+5. Verify with `browser_vision` for visual accuracy.
+
+Each template begins with Hermes Implementation Notes: CDN substitute + Google Fonts `<link>`, CSS primary/monospace stacks, `write_file` creation reminder, and `browser_vision` verification reminder.
+
+## HTML Pattern
 
 ```html
 <!DOCTYPE html>
@@ -82,13 +90,11 @@ Each template includes a **Hermes Implementation Notes** block at the top with:
 </html>
 ```
 
-Write the file with `write_file`, serve with the `generative-widgets` workflow (cloudflared tunnel),
-and verify the result with `browser_vision` to confirm visual accuracy.
+Write via `write_file`; serve through `generative-widgets`/cloudflared; verify with `browser_vision`.
 
-## Font Substitution Reference
+## Font Substitution
 
-Most sites use proprietary fonts unavailable via CDN. Each template maps to a Google Fonts
-substitute that preserves the design's character. Common mappings:
+Most original fonts are proprietary. Templates map them to Google Fonts while preserving weight, size, and tracking.
 
 | Proprietary Font | CDN Substitute | Character |
 |---|---|---|
@@ -108,10 +114,7 @@ substitute that preserves the design's character. Common mappings:
 | IBM Plex Sans/Mono | IBM Plex Sans/Mono | Available on Google Fonts |
 | Rubik (Sentry) | Rubik | Available on Google Fonts |
 
-When a template's CDN font matches the original (Inter, IBM Plex, Rubik, Geist), no
-substitution loss occurs. When a substitute is used (DM Sans for Circular, Source Sans 3
-for sohne-var), follow the template's weight, size, and letter-spacing values closely —
-those carry more visual identity than the specific font face.
+When original is available on Google Fonts (Inter, IBM Plex, Rubik, Geist), no substitution loss. For substitutions (DM Sans/Circular, Source Sans 3/sohne-var), follow template weight, size, and letter-spacing closely.
 
 ## Design Catalog
 
@@ -201,14 +204,25 @@ those carry more visual identity than the specific font face.
 
 ## Choosing a Design
 
-Match the design to the content:
+- developer tools/dashboards → Linear, Vercel, Supabase, Raycast, Sentry
+- docs/content → Mintlify, Notion, Sanity, MongoDB
+- marketing/landing → Stripe, Framer, Apple, SpaceX
+- dark UI → Linear, Cursor, ElevenLabs, Warp, Superhuman
+- light/clean → Vercel, Stripe, Notion, Cal.com, Replicate
+- playful/friendly → PostHog, Figma, Lovable, Zapier, Miro
+- premium/luxury → Apple, BMW, Stripe, Superhuman, Revolut
+- data-dense/dashboard → Sentry, Kraken, Cohere, ClickHouse
+- monospace/terminal → Ollama, OpenCode, x.ai, VoltAgent
 
-- **Developer tools / dashboards:** Linear, Vercel, Supabase, Raycast, Sentry
-- **Documentation / content sites:** Mintlify, Notion, Sanity, MongoDB
-- **Marketing / landing pages:** Stripe, Framer, Apple, SpaceX
-- **Dark mode UIs:** Linear, Cursor, ElevenLabs, Warp, Superhuman
-- **Light / clean UIs:** Vercel, Stripe, Notion, Cal.com, Replicate
-- **Playful / friendly:** PostHog, Figma, Lovable, Zapier, Miro
-- **Premium / luxury:** Apple, BMW, Stripe, Superhuman, Revolut
-- **Data-dense / dashboards:** Sentry, Kraken, Cohere, ClickHouse
-- **Monospace / terminal aesthetic:** Ollama, OpenCode, x.ai, VoltAgent
+## Pitfalls
+
+- A known system is a vocabulary reference, not permission to clone distinctive proprietary layouts or content; transform principles into original work.
+- Read the template's Hermes notes before choosing fonts or browser verification.
+- Use `claude-design` for process/taste and `design-md` for token specs; do not conflate outputs.
+
+## Verification
+
+- selected template was loaded and its tokens applied
+- HTML/CSS file exists and browser renders without obvious layout errors
+- visual check used `browser_vision` where available
+- output is an original artifact, not copied branded UI

@@ -14,31 +14,38 @@ metadata:
 
 # Hermes Agent
 
-Hermes Agent is an open-source AI agent framework by Nous Research that runs in your terminal, a native desktop app, messaging platforms, and IDEs. It's in the same category as Claude Code (Anthropic), Codex (OpenAI), and OpenClaw — autonomous coding and task-execution agents that use tool calling to interact with your system. Hermes works with any LLM provider (OpenRouter, Anthropic, OpenAI, Google, DeepSeek, xAI, local models, and 20+ others) and runs on Linux, macOS, Windows, and WSL.
+role: Hermes operator
+do: verify, configure, theme, extend, orchestrate, and troubleshoot Hermes surfaces
+inputs: user goal + live repo/docs; load matching reference before detail answers
+outputs: verified Hermes configuration, commands, skills, plugins, sessions, or UI artifacts
+¬: infer feature absence from this overview; put settings in `.env`; mutate prompt/toolsets mid-conversation
 
-What makes Hermes different:
+Hermes Agent is an open-source Nous Research framework for terminal, native desktop, messaging, IDE, TUI, dashboard, and ACP use. It supports OpenRouter, Anthropic, OpenAI, Google, DeepSeek, xAI, local, and 20+ providers across Linux, macOS, Windows, and WSL.
 
-- **Self-improving through skills** — Hermes learns from experience by saving reusable procedures as skills that load into future sessions.
-- **Persistent memory across sessions** — remembers who you are, your preferences, environment details, and lessons learned. Pluggable memory backends.
-- **Multi-platform gateway** — the same agent runs on Telegram, Discord, Slack, WhatsApp, iMessage, Signal, Matrix, Teams, Email, and a dozen more platforms with full tool access, not just chat.
-- **Many surfaces** — the same agent core drives the CLI, the Ink TUI, a native Electron desktop app, a web dashboard, and an ACP server for IDEs (VS Code / Zed / JetBrains).
-- **Provider-agnostic** — swap models and providers mid-workflow; credential pools rotate across multiple API keys automatically.
-- **Profiles** — run multiple independent Hermes instances with isolated configs, sessions, skills, and memory.
-- **Extensible & themeable** — plugins, MCP servers, custom tools, webhook triggers, cron scheduling, skins that theme every surface, desktop UI plugins, TUI widgets, and pet mascots.
+## When to Use
 
-**This skill is a hub.** The body covers identity, quick start, spawning/orchestration, and hard invariants. Everything else lives in reference files — **load the matching reference (below) before answering**; do not answer detail questions from the body alone.
+- configure, operate, extend, theme, or troubleshoot Hermes Agent
+- answer questions about CLI, gateway, profiles, skills, plugins, models, or UI surfaces
 
-**Docs:** https://hermes-agent.nousresearch.com/docs/
+## Capabilities
 
-## Scope & Verification
+- skills: reusable self-improving procedures
+- memory: persistent identity, preferences, environment details, and lessons; pluggable backends
+- gateway: Telegram, Discord, Slack, WhatsApp, iMessage, Signal, Matrix, Teams, Email, and more with full tools
+- surfaces: CLI, Ink TUI, Electron desktop, web dashboard, ACP for VS Code/Zed/JetBrains
+- provider agnostic: swap models/providers; credential pools rotate keys
+- profiles: independent configs, sessions, skills, memory
+- extensions: plugins, MCP, custom tools, webhooks, cron, skins, desktop UI plugins, TUI widgets, pet mascots
 
-This skill is a concise operating guide, not the complete source of truth for every Hermes feature. If a Hermes feature, command, or setting is not mentioned here or in a reference, do not treat that absence as evidence that it does not exist. Check the live repository and official docs before giving a negative answer.
+This is a hub. Identity, quick start, spawning, and invariants live here; load the matching reference before answering details. Docs: https://hermes-agent.nousresearch.com/docs/
 
-Good verification targets:
+## Scope + Verification
 
-- CLI commands: `hermes --help`, `hermes <command> --help`, and `hermes_cli/main.py`
-- User documentation: https://hermes-agent.nousresearch.com/docs/
-- Source tree: https://github.com/NousResearch/hermes-agent
+This overview is not a complete source of truth. If a command/setting is absent here and references, inspect live CLI/source/docs before a negative answer.
+
+- CLI: `hermes --help`, `hermes <command> --help`, `hermes_cli/main.py`
+- docs: https://hermes-agent.nousresearch.com/docs/
+- source: https://github.com/NousResearch/hermes-agent
 
 ## Quick Start
 
@@ -65,7 +72,7 @@ hermes proxy                   # OpenAI-compatible local proxy backed by your OA
 
 ## Key Paths
 
-```
+```text
 ~/.hermes/config.yaml       Main configuration (settings — never secrets)
 ~/.hermes/.env              API keys and secrets ONLY (under $HERMES_HOME if set)
 $HERMES_HOME/skills/        Installed skills
@@ -80,9 +87,9 @@ $HERMES_HOME/skills/        Installed skills
 ~/.hermes/hermes-agent/     Source code (if git-installed)
 ```
 
-Profiles use `~/.hermes/profiles/<name>/` with the same layout. When a profile is active, resolve the real home from `$HERMES_HOME` — never hardcode `~/.hermes`.
+Profiles use `~/.hermes/profiles/<name>/` with the same layout. Active profile resolves real home from `$HERMES_HOME`; never hardcode `~/.hermes` in code.
 
-## Routing Table — load the reference for the task
+## Reference Routing
 
 | User wants... | Load |
 |---|---|
@@ -93,48 +100,46 @@ Profiles use `~/.hermes/profiles/<name>/` with the same layout. When a profile i
 | AGENTS.md / .hermes.md / CLAUDE.md project rules | `references/project-context-files.md` |
 | Secret redaction, PII, approval modes, "reset permissions" | `references/security-privacy.md` |
 | Delegation, cron, curator, kanban | `references/background-systems.md` |
-| MCP servers (add, catalog, `hermes mcp`) | `references/native-mcp.md` |
-| Webhook routes and event-driven runs | `references/webhooks.md` |
-| A custom theme/skin ("synthwave theme", "change the gold ●") | `references/themes.md` + `templates/skin.yaml` |
-| A desktop app UI element (pane, widget, ⌘K command, page) | `references/desktop-plugins.md` + `templates/plugin.js` |
-| A live TUI panel or modal widget (ticker, clock, dashboard) | `references/tui-widgets.md` + `templates/clock.mjs` |
-| Pet mascots — install, select, scale, diagnose | `references/petdex.md` |
-| Windows-specific issues (keybinds, WinError 10106, BOM) | `references/windows-quirks.md` |
-| Debugging: voice, tools missing, gateway, aux models | `references/troubleshooting.md` |
-| Contributing code: adding tools, slash commands, tests | `references/contributor-guide.md` |
-| delegate_task "capped at N" reports | `references/delegate-task-concurrency-diagnosis.md` |
-| "Can app X use my Nous Portal subscription/OAuth?" | `references/portal-auth-for-third-party-apps.md` |
+| MCP servers, catalog, `hermes mcp` | `references/native-mcp.md` |
+| Webhook routes + event-driven runs | `references/webhooks.md` |
+| custom theme/skin | `references/themes.md` + `templates/skin.yaml` |
+| desktop pane/widget/⌘K/page | `references/desktop-plugins.md` + `templates/plugin.js` |
+| live TUI panel/modal | `references/tui-widgets.md` + `templates/clock.mjs` |
+| pet mascot install/select/scale/diagnose | `references/petdex.md` |
+| Windows keybinds, WinError 10106, BOM | `references/windows-quirks.md` |
+| debugging voice/tools/gateway/aux models | `references/troubleshooting.md` |
+| contributing tools/slash commands/tests | `references/contributor-guide.md` |
+| delegate_task "capped at N" | `references/delegate-task-concurrency-diagnosis.md` |
+| external app + Nous Portal subscription/OAuth | `references/portal-auth-for-third-party-apps.md` |
 
-Two theming rules that hold even without loading the reference: **you apply skins yourself** (`hermes config set display.skin <name>` — every surface repaints live within ~a second; don't tell the user to run `/skin`), and **to tweak one color, edit the ACTIVE skin** (`hermes skin set <key> <hex>`) — never fork `default`, which drops the palette and resets the background.
+Apply skins yourself: `hermes config set display.skin <name>`; surfaces repaint live within ~a second. To tweak one color, edit active skin: `hermes skin set <key> <hex>`. Never fork `default`; it drops the palette and resets background. Do not tell users to run `/skin` for this operation.
 
-## Spawning Additional Hermes Instances
+## Spawn Additional Hermes Instances
 
-Run additional Hermes processes as fully independent subprocesses — separate sessions, tools, and environments.
+Independent subprocesses have separate sessions, tools, and environments.
 
-### When to Use This vs delegate_task
+| | `delegate_task` | spawned `hermes` |
+|-|-----------------|------------------|
+| Isolation | separate conversation, shared process | fully independent process |
+| Duration | minutes, parent-loop bounded | hours/days |
+| Tool access | parent subset | full tool access |
+| Interactive | no | yes, PTY |
+| Use | quick parallel subtasks | long autonomous missions |
 
-| | `delegate_task` | Spawning `hermes` process |
-|-|-----------------|--------------------------|
-| Isolation | Separate conversation, shared process | Fully independent process |
-| Duration | Minutes (bounded by parent loop) | Hours/days |
-| Tool access | Subset of parent's tools | Full tool access |
-| Interactive | No | Yes (PTY mode) |
-| Use case | Quick parallel subtasks | Long autonomous missions |
+### One-shot / background
 
-### One-Shot Mode
-
-```
+```text
 terminal(command="hermes chat -q 'Research GRPO papers and write summary to ~/research/grpo.md'", timeout=300)
 
 # Background for long tasks:
 terminal(command="hermes chat -q 'Set up CI/CD for ~/myapp'", background=true)
 ```
 
-### Interactive PTY Mode (via tmux)
+### Interactive PTY via tmux
 
-Hermes uses prompt_toolkit, which requires a real terminal. Use tmux for interactive spawning:
+Hermes uses prompt_toolkit; interactive spawning needs a real terminal. Use tmux:
 
-```
+```text
 # Start
 terminal(command="tmux new-session -d -s agent1 -x 120 -y 40 'hermes'", timeout=10)
 
@@ -151,9 +156,9 @@ terminal(command="tmux send-keys -t agent1 'Add rate limiting middleware' Enter"
 terminal(command="tmux send-keys -t agent1 '/exit' Enter && sleep 2 && tmux kill-session -t agent1", timeout=10)
 ```
 
-### Multi-Agent Coordination
+### Parallel agents
 
-```
+```text
 # Agent A: backend
 terminal(command="tmux new-session -d -s backend -x 120 -y 40 'hermes -w'", timeout=10)
 terminal(command="sleep 8 && tmux send-keys -t backend 'Build REST API for user management' Enter", timeout=15)
@@ -167,9 +172,9 @@ terminal(command="tmux capture-pane -t backend -p | tail -30", timeout=5)
 terminal(command="tmux send-keys -t frontend 'Here is the API schema from the backend agent: ...' Enter", timeout=5)
 ```
 
-### Session Resume
+### Resume
 
-```
+```text
 # Resume most recent session
 terminal(command="tmux new-session -d -s resumed 'hermes --continue'", timeout=10)
 
@@ -177,28 +182,31 @@ terminal(command="tmux new-session -d -s resumed 'hermes --continue'", timeout=1
 terminal(command="tmux new-session -d -s resumed 'hermes --resume 20260225_143052_a1b2c3'", timeout=10)
 ```
 
-### Tips
+Tips: prefer `delegate_task` for quick work; use `-w` worktree mode for editing agents; set one-shot timeouts; use `hermes chat -q` fire-and-forget; tmux avoids raw PTY `\r`/`\n` issues; use `cronjob` for scheduled work. For delegate cap reports load `references/delegate-task-concurrency-diagnosis.md` (three real cap paths; absent one means model self-limiting). For Portal/OAuth questions load `references/portal-auth-for-third-party-apps.md` and walk plugin-vs-app, Portal exposure, local broker proxy.
 
-- **Prefer `delegate_task` for quick subtasks** — less overhead than spawning a full process
-- **Use `-w` (worktree mode)** when spawning agents that edit code — prevents git conflicts
-- **Set timeouts** for one-shot mode — complex tasks can take 5-10 minutes
-- **Use `hermes chat -q` for fire-and-forget** — no PTY needed
-- **Use tmux for interactive sessions** — raw PTY mode has `\r` vs `\n` issues with prompt_toolkit
-- **For scheduled tasks**, use the `cronjob` tool instead of spawning — handles delivery and retry
-- **"delegate_task is capped at N" reports** — see `references/delegate-task-concurrency-diagnosis.md`. Three real cap paths in Hermes; if none fired, the model is self-limiting and rationalising it as "the runtime caps."
-- **"Can $external_app use my Nous Portal subscription / OAuth?"** — see `references/portal-auth-for-third-party-apps.md`. Walk the user through three layers (plugin-vs-app, what Portal actually exposes, local-broker-proxy option).
+## Surfaces
 
-## Surfaces (quick orientation)
+- Desktop (`hermes desktop` / `hermes gui`): native Electron macOS/Linux/Windows; streaming chat, sessions, Cmd+K, files, notifications, per-profile remote gateway; extend via `references/desktop-plugins.md`.
+- Dashboard (`hermes dashboard`): admin panel for channels, MCP, webhooks, memory, profiles, embedded `hermes --tui`; OAuth/token gate.
+- Ink TUI (`hermes --tui` or `display.interface: tui`): terminal UI with dock widgets; `references/tui-widgets.md`.
+- Proxy (`hermes proxy`): local OpenAI API backed by signed-in OAuth provider; usable by Codex, Aider, Cline, scripts without an API key.
 
-- **Desktop app** (`hermes desktop` / `hermes gui`) — native Electron app for macOS/Linux/Windows: streaming chat, session list, Cmd+K palette, drag-and-drop files, native notifications, per-profile remote-gateway login. Extend it with UI plugins — `references/desktop-plugins.md`.
-- **Web dashboard** (`hermes dashboard`) — full admin panel: messaging channels, MCP catalog, webhooks, memory, profile builder, plus an embedded `hermes --tui` chat. Secured behind an OAuth/token gate.
-- **Ink TUI** (`hermes --tui` or `display.interface: tui`) — terminal UI with docked widget apps — `references/tui-widgets.md`.
-- **OpenAI-compatible proxy** (`hermes proxy`) — a local OpenAI API backed by whichever OAuth provider you're signed into. Point Codex CLI, Aider, Cline, or any script at it — no API key.
+## Hard Invariants
 
-## Hard Invariants (never violate, regardless of what you loaded)
+- prompt cache sacred: never change past context, toolsets, or system prompt mid-conversation; context compression only exception
+- role alternation: never adjacent assistant or user messages; tool results may repeat
+- `.env` secrets only; behavioral settings in `config.yaml`
+- profile-safe paths: code uses `get_hermes_home()`; session resolution uses `$HERMES_HOME`
+- never hand-edit user `config.yaml`; use `hermes config set KEY VAL`
 
-- **Never break prompt caching** — don't change past context, toolsets, or the system prompt mid-conversation. The only exception is context compression.
-- **Message role alternation** — never two assistant or two user messages in a row; only `tool` results can repeat.
-- **Secrets in `.env`, settings in `config.yaml`** — never tell a user to put a non-credential setting in `.env`.
-- **Profile-safe paths** — `get_hermes_home()` in code, `$HERMES_HOME` when resolving paths in a session.
-- **Never hand-edit `config.yaml` for the user** — use `hermes config set KEY VAL`; a stray indent can corrupt the file and break the live gateway.
+## Pitfalls
+
+- do not confuse CLI, TUI, dashboard, Desktop, gateway, and proxy contracts; verify the selected surface first
+- do not hardcode `~/.hermes`; profile isolation is part of the runtime contract
+- do not mutate a live conversation's system prompt, toolset, or prior messages to add capability
+
+## Verification
+
+- selected Hermes surface, profile, and working directory are explicit
+- command output or file changes are inspected rather than inferred
+- cache, role-alternation, secret/config, and profile-path invariants remain intact

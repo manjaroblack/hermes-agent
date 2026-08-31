@@ -13,45 +13,35 @@ metadata:
 
 # Pretext Creative Demos
 
-## Overview
+role: creative browser-demo builder
+do: use `@chenglou/pretext` to measure/layout real text without DOM reflow, then render a deliberate interactive visual
+inputs: prose/script/poetry, font, width, obstacle geometry, interaction, palette
+outputs: one self-contained `.html` demo
+¬: CSS-only static layout; rich-text editor; image→text (`ascii-art`/`ascii-video`); canvas art with no text role (`p5js`); lorem ipsum; blank/default first paint
 
-[`@chenglou/pretext`](https://github.com/chenglou/pretext) is a 15KB zero-dependency TypeScript library by Cheng Lou (React core, ReasonML, Midjourney) for **DOM-free multiline text measurement and layout**. It does one thing: given `(text, font, width)`, return the line breaks, per-line widths, per-grapheme positions, and total height — all via canvas measurement, no reflow.
-
-That sounds like plumbing. It is not. Because it is fast and geometric, it is a **creative primitive**: you can reflow paragraphs around a moving sprite at 60fps, build games whose level geometry is made of real words, drive ASCII logos through prose, shatter text into particles with exact per-grapheme starting positions, or pack shrink-wrapped multiline UI without any `getBoundingClientRect` thrash.
-
-This skill exists so Hermes can make **cool demos** with it — the kind people post to X. See `pretext.cool` and `chenglou.me/pretext` for the community demo corpus.
+[`@chenglou/pretext`](https://github.com/chenglou/pretext) is Cheng Lou's 15KB zero-dependency TypeScript library (React core, ReasonML, Midjourney) for **DOM-free multiline text measurement and layout**. Given `(text, font, width)`, it returns line breaks, per-line widths, per-grapheme positions, and total height through canvas measurement, without reflow. It is a creative primitive: text can flow around a moving sprite, become game geometry, drive ASCII logos, or shatter into particles with exact positions. See `pretext.cool` and `chenglou.me/pretext` for community demos.
 
 ## When to Use
 
-Use when the user asks for:
-- A "pretext demo" / "cool pretext thing" / "text-as-X"
-- Text flowing around a moving shape (hero sections, editorial layouts, animated long-form pages)
-- ASCII-art effects using **real words or prose**, not monospace rasters
-- Games where the playfield / obstacles / bricks are made of text (Tetris-from-letters, Breakout-of-prose)
-- Kinetic typography with per-glyph physics (shatter, scatter, flock, flow)
-- Typographic generative art, especially with non-Latin scripts or mixed scripts
-- Multiline "shrink-wrap" UI (smallest container width that still fits the text)
-- Anything that would require knowing line breaks *before* rendering
-
-Don't use for:
-- Static SVG/HTML pages where CSS already solves layout — just use CSS
-- Rich text editors, general inline formatting engines (pretext is intentionally narrow)
-- Image → text (use `ascii-art` / `ascii-video` skills)
-- Pure canvas generative art with no text role — use `p5js`
+- "pretext demo", "cool pretext thing", or "text-as-X"
+- text around a moving shape; hero/editorial/animated long-form layout
+- ASCII effects made from real words/prose, not monospace rasters
+- text playfields, Tetris-from-letters, Breakout-of-prose
+- kinetic typography with per-glyph shatter/scatter/flock/flow
+- typographic generative art with non-Latin or mixed scripts
+- multiline shrink-wrap UI; known line breaks before rendering
 
 ## Creative Standard
 
-This is visual art rendered in a browser. Pretext returns numbers; **you** draw the thing.
-
-- **Don't ship a "hello world" demo.** The `hello-orb-flow.html` template is the *starting* point. Every delivered demo must add intentional color, motion, composition, and one visual detail the user didn't ask for but will appreciate.
-- **Dark backgrounds, warm cores, considered palette.** Classic amber-on-black (CRT / terminal) works, but so do cold-white-on-charcoal (editorial) and desaturated pastels (risograph). Pick one and commit.
-- **Proportional fonts are the point.** Pretext's whole vibe is "not monospaced" — lean into it. Use Iowan Old Style, Inter, JetBrains Mono, Helvetica Neue, or a variable font. Never default sans.
-- **Real source/text, not lorem ipsum.** The corpus should mean something. Short manifestos, poetry, real source code, a found text, the library's own README — never `lorem ipsum`.
-- **First-paint excellence.** No loading states, no blank frames. The demo must look shippable the instant it opens.
+- `hello-orb-flow.html` is a starting point, never the finished brief.
+- choose a considered palette: amber-on-black CRT/terminal, cold white on charcoal editorial, or desaturated risograph pastels
+- proportional fonts are the point; try Iowan Old Style, Inter, JetBrains Mono, Helvetica Neue, or a variable font; never default sans
+- use meaningful source text (manifesto, poetry, real source code, found text, library README), never `lorem ipsum`
+- first paint must be shippable: no blank/loading frame; add intentional color, motion, composition, and one appreciated extra detail
 
 ## Stack
 
-Single self-contained HTML file per demo. No build step.
+Single self-contained HTML; no build step.
 
 | Layer | Tool | Purpose |
 |-------|------|---------|
@@ -71,28 +61,20 @@ import {
 </script>
 ```
 
-Pin the version. `@0.0.6` at time of writing — check [npm](https://www.npmjs.com/package/@chenglou/pretext) for the latest if demo behavior is off.
+Pin the version; `@0.0.6` is the version at writing. Check [npm](https://www.npmjs.com/package/@chenglou/pretext) if behavior is off.
 
-## The Two Use Cases
+## API Patterns
 
-Almost everything reduces to one of these two shapes. Learn both.
-
-### Use-case 1 — measure, then render with CSS/DOM
+### 1. Measure, render with CSS/DOM
 
 ```js
 const prepared = prepare(text, "16px Inter");
 const { height, lineCount } = layout(prepared, 320, 20);
 ```
 
-You still let the browser draw the text. Pretext just tells you how tall the box will be at a given width, **without** a DOM read. Use for:
-- Virtualized lists where rows contain wrapping text
-- Masonry with precise card heights
-- "Does this label fit?" dev-time checks
-- Preventing layout shift when remote text loads
+Pretext computes box height without a DOM read. Use for virtualized wrapping rows, precise masonry heights, fit checks, and preventing layout shift. Keep `font` and `letterSpacing` exactly synchronized with CSS; `ctx.font` such as `"16px Inter"` or `"500 17px 'JetBrains Mono'"` must match rendered CSS.
 
-**Keep `font` and `letterSpacing` exactly in sync with your CSS.** The canvas `ctx.font` format (e.g. `"16px Inter"`, `"500 17px 'JetBrains Mono'"`) must match the rendered CSS, or measurements drift.
-
-### Use-case 2 — measure *and* render yourself
+### 2. Measure and render yourself
 
 ```js
 const prepared = prepareWithSegments(text, FONT);
@@ -102,12 +84,9 @@ for (let i = 0; i < lines.length; i++) {
 }
 ```
 
-This is where the creative work lives. You own the drawing, so you can:
-- Render to canvas, SVG, WebGL, or any coordinate system
-- Substitute per-glyph transforms (rotation, jitter, scale, opacity)
-- Use line metadata (width, grapheme positions) as geometry
+Render to canvas/SVG/WebGL/any coordinate system; apply per-glyph rotation/jitter/scale/opacity; treat line metadata as geometry.
 
-For **variable-width-per-line** flow (text around a shape, text in a donut band, text in a non-rectangular column):
+For variable corridor widths (shape wrap, donut band, non-rectangular column):
 
 ```js
 let cursor = { segmentIndex: 0, graphemeIndex: 0 };
@@ -123,98 +102,85 @@ while (true) {
 }
 ```
 
-This is the most important pattern in the whole library. It's what unlocks "text flowing around a dragged sprite" — the demo that went viral on X.
+This is the core pattern for text flowing around dragged sprites.
 
-### Helpers worth knowing
+### Helpers
 
-- `measureLineStats(prepared, maxWidth)` → `{ lineCount, maxLineWidth }` — the widest line, i.e. multiline shrink-wrap width.
-- `walkLineRanges(prepared, maxWidth, callback)` — iterate lines without allocating strings. Use for stats/physics over graphemes when you don't need the characters.
-- `@chenglou/pretext/rich-inline` — the same system but for paragraphs mixing fonts / chips / mentions. Import from the subpath.
+- `measureLineStats(prepared, maxWidth)` → `{ lineCount, maxLineWidth }` for multiline shrink-wrap width
+- `walkLineRanges(prepared, maxWidth, callback)` for stats/physics without string allocation
+- `@chenglou/pretext/rich-inline` for paragraphs mixing fonts/chips/mentions
 
-## Demo Recipe Patterns
+## Demo Patterns
 
-The community corpus (see `references/patterns.md`) clusters into a handful of strong patterns. Pick one and riff — don't invent a new category unless asked.
+The community corpus in `references/patterns.md` supplies the pattern families below; riff on one rather than inventing a new category unless asked.
 
-| Pattern | Key API | Example idea |
+| Pattern | Key API | Example |
 |---|---|---|
-| **Reflow around obstacle** | `layoutNextLineRange` + per-row width function | Editorial paragraph that parts around a dragged cursor sprite |
-| **Text-as-geometry game** | `layoutWithLines` + per-line collision rects | Breakout where each brick is a measured word |
-| **Shatter / particles** | `walkLineRanges` → per-grapheme (x,y) → physics | Sentence that explodes into letters on click |
-| **ASCII obstacle typography** | `layoutNextLineRange` + measured per-row obstacle spans | Bitmap ASCII logo, shape morphs, and draggable wire objects that make text open around their actual geometry |
-| **Editorial multi-column** | `layoutNextLineRange` per column + shared cursor | Animated magazine spread with pull quotes |
-| **Kinetic type** | `layoutWithLines` + per-line transform over time | Star Wars crawl, wave, bounce, glitch |
-| **Multiline shrink-wrap** | `measureLineStats` | Quote card that auto-sizes to its tightest container |
+| Reflow around obstacle | `layoutNextLineRange` + per-row width function | Editorial paragraph parts around a dragged cursor sprite |
+| Text-as-geometry game | `layoutWithLines` + per-line collision rects | Breakout with measured word bricks |
+| Shatter / particles | `walkLineRanges` → per-grapheme `(x,y)` → physics | Sentence explodes into letters on click |
+| ASCII obstacle typography | `layoutNextLineRange` + measured per-row obstacle spans | Bitmap ASCII logo, shape morphs, draggable wire objects open text around actual geometry |
+| Editorial multi-column | `layoutNextLineRange` per column + shared cursor | Animated magazine spread with pull quotes |
+| Kinetic type | `layoutWithLines` + per-line transforms | Star Wars crawl, wave, bounce, glitch |
+| Multiline shrink-wrap | `measureLineStats` | Quote card auto-sizes to tightest container |
 
-See `templates/donut-orbit.html` and `templates/hello-orb-flow.html` for working single-file starters.
+Templates: `templates/donut-orbit.html` (measured ASCII logo obstacles, draggable wire sphere/cube, morphing shape fields, selectable DOM text, dev controls) and `templates/hello-orb-flow.html` (moving orb reflow).
 
 ## Workflow
 
-1. **Pick a pattern** from the table above based on the user's brief.
-2. **Start from a template**:
-   - `templates/hello-orb-flow.html` — text reflowing around a moving orb (reflow-around-obstacle pattern)
-   - `templates/donut-orbit.html` — advanced example: measured ASCII logo obstacles, draggable wire sphere/cube, morphing shape fields, selectable DOM text, and dev-only controls
-   - `write_file` to a new `.html` in `/tmp/` or the user's workspace.
-3. **Swap the corpus** for something intentional to the brief. Real prose, 10-100 sentences, no lorem.
-4. **Tune the aesthetic** — font, palette, composition, interaction. This is the work; don't skip it.
-5. **Verify locally**:
-   ```sh
-   cd <dir-with-html> && python -m http.server 8765
-   # then open http://localhost:8765/<file>.html
-   ```
-6. **Check the console** — pretext will throw if `prepareWithSegments` is called with a bad font string; `Intl.Segmenter` is available in every modern browser.
-7. **Show the user the file path**, not just the code — they want to open it.
+1. Select a pattern based on the brief.
+2. `write_file` a new `.html` in `/tmp/` or the user's workspace, starting from the matching template.
+3. Replace corpus with 10–100 sentences of intentional real prose.
+4. Tune font, palette, composition, and interaction; do not skip the aesthetic work.
+5. Verify locally:
 
-## Performance Notes
+```sh
+cd <dir-with-html> && python -m http.server 8765
+# then open http://localhost:8765/<file>.html
+```
 
-- `prepare()` / `prepareWithSegments()` is the expensive call. Do it **once** per text+font pair. Cache the handle.
-- On resize, only rerun `layout()` / `layoutWithLines()` — never re-prepare.
-- For per-frame animations where text doesn't change but geometry does, `layoutNextLineRange` in a tight loop is cheap enough to do every frame at 60fps for normal-length paragraphs.
-- When rendering ASCII masks per frame, keep a cell buffer (`Uint8Array`/typed arrays), derive measured per-row obstacle spans from the cells or projected geometry, merge spans, then feed those spans into `layoutNextLineRange` before drawing text.
-- Keep visual animation and layout animation coupled. If a sphere morphs into a cube, tween both the rendered cell buffer and the obstacle spans with the same value; otherwise the demo looks painted-on instead of physically reflowed.
-- For fades, prefer layer opacity over changing glyph intensity or obstacle scale. Put transient ASCII sprites on their own canvas and fade the canvas with CSS/GSAP opacity so geometry does not appear to shrink.
-- Canvas `ctx.font` setting is surprisingly slow; set it **once** per frame if font doesn't vary, not per `fillText` call.
+6. Check console; bad font strings can make `prepareWithSegments` throw; `Intl.Segmenter` exists in modern browsers.
+7. Return the file path, not only source.
 
-## Common Pitfalls
+## Performance
 
-1. **Drifting CSS/canvas font strings.** `ctx.font = "16px Inter"` measured, but CSS says `font-family: Inter, sans-serif; font-size: 16px`. Fine *if* Inter loads. If Inter 404s, CSS falls back to sans-serif and measurements drift by 5-20%. Always `preload` the font or use a web-safe family.
+- `prepare()`/`prepareWithSegments()` once per text+font; cache handle
+- resize reruns `layout()`/`layoutWithLines`, never re-prepare
+- `layoutNextLineRange` is cheap enough per frame for normal paragraphs
+- ASCII masks: keep a `Uint8Array`/typed cell buffer; derive/merge measured per-row obstacle spans before `layoutNextLineRange`
+- couple rendered cell buffer and obstacle spans with same tween when shape morphs
+- fade transient ASCII sprites by layer opacity/CSS/GSAP, not glyph intensity or obstacle scale
+- set `ctx.font` once per frame, not per `fillText`
 
-2. **Re-preparing inside the animation loop.** Only `layout*` is cheap. Re-calling `prepare` every frame will tank perf. Keep the prepared handle in module scope.
+## Pitfalls
 
-3. **Forgetting `Intl.Segmenter` for grapheme splits.** Emoji, combining marks, CJK — `"é".split("")` gives you two chars. Use `new Intl.Segmenter(undefined, { granularity: "grapheme" })` when sampling individual visible glyphs.
+1. CSS/canvas font drift; preload the font or use a web-safe family.
+2. Re-preparing in animation; only `layout*` is cheap.
+3. `"é".split("")` splits visible grapheme; use `new Intl.Segmenter(undefined, { granularity: "grapheme" })` for emoji/combining/CJK.
+4. `rich-inline` `break: 'never'` chips need `extraWidth` for pill padding.
+5. `unpkg` serves raw TypeScript/404; use `esm.sh`.
+6. Verify actual rendered font; monospace fallback defeats proportional design.
+7. If corridor is too narrow, skip row (`y += lineHeight; continue;`) instead of tiny `maxWidth` that yields one-grapheme lines.
+8. Default first paint is tutorial-grade; add vignette, scanline, idle motion, and one deliberate interaction.
 
-4. **`break: 'never'` chips without `extraWidth`.** In `rich-inline`, if you use `break: 'never'` for an atomic chip/mention, you must also supply `extraWidth` for the pill padding — otherwise chip chrome overflows the container.
+## Verification
 
-5. **Using `@chenglou/pretext` from `unpkg` with TypeScript-only entry.** Use `esm.sh` — it compiles the TS exports to browser-ready ESM automatically. `unpkg` will 404 or serve raw TS.
+- one HTML opens by double-click or `python -m http.server`
+- pinned `esm.sh` import; real corpus matches concept
+- canvas font and CSS match; prepare called once
+- dark/considered palette, interactive response or idle motion, extra-mile detail
+- local server test has no console errors; 60fps on mid-tier laptop or documented degradation
 
-6. **Monospace fallbacks silently erasing the whole point.** Users seeing monospace-looking output often have a CSS `font-family` that fell through to `monospace`. Verify the actual rendered font via DevTools.
+## Community References
 
-7. **Skipping rows vs adjusting width** when flowing around a shape. If the corridor on this row is too narrow to fit a line, *skip the row* (`y += lineHeight; continue;`) rather than passing a tiny maxWidth to `layoutNextLineRange` — pretext will return one-grapheme lines that look broken.
+All linked from [pretext.cool](https://www.pretext.cool/):
 
-8. **Shipping a cold demo.** The default first-paint looks tutorial-grade. Add: vignette, subtle scanline, idle auto-motion, one carefully chosen interactive response (drag, hover, scroll, click). Without these, "cool pretext demo" lands as "intern repro of the README."
-
-## Verification Checklist
-
-- [ ] Demo is a single self-contained `.html` file — opens by double-click or `python -m http.server`
-- [ ] `@chenglou/pretext` imported via `esm.sh` with pinned version
-- [ ] Corpus is real prose, not lorem ipsum, and matches the demo's concept
-- [ ] Font string passed to `prepare` matches the CSS font exactly
-- [ ] `prepare()` / `prepareWithSegments()` called once, not per frame
-- [ ] Dark background + considered palette — not the default white canvas
-- [ ] At least one interactive response (drag / hover / scroll / click) or idle auto-motion
-- [ ] Tested locally with `python -m http.server` and confirmed no console errors
-- [ ] 60fps on a mid-tier laptop (or graceful degradation documented)
-- [ ] One "extra mile" detail the user didn't ask for
-
-## Reference: Community Demos
-
-Clone these for inspiration / patterns (all MIT-ish, linked from [pretext.cool](https://www.pretext.cool/)):
-
-- **Pretext Breaker** — breakout with word-bricks — `github.com/rinesh/pretext-breaker`
-- **Tetris × Pretext** — `github.com/shinichimochizuki/tetris-pretext`
-- **Dragon animation** — `github.com/qtakmalay/PreTextExperiments`
-- **Somnai editorial engine** — `github.com/somnai-dreams/pretext-demos`
-- **Bad Apple!! ASCII** — `github.com/frmlinn/bad-apple-pretext`
-- **Drag-sprite reflow** — `github.com/dokobot/pretext-demo`
-- **Alarmy editorial clock** — `github.com/SmisLee/alarmy-pretext-demo`
+- Pretext Breaker — `github.com/rinesh/pretext-breaker`
+- Tetris × Pretext — `github.com/shinichimochizuki/tetris-pretext`
+- Dragon animation — `github.com/qtakmalay/PreTextExperiments`
+- Somnai editorial engine — `github.com/somnai-dreams/pretext-demos`
+- Bad Apple!! ASCII — `github.com/frmlinn/bad-apple-pretext`
+- Drag-sprite reflow — `github.com/dokobot/pretext-demo`
+- Alarmy editorial clock — `github.com/SmisLee/alarmy-pretext-demo`
 
 Official playground: [chenglou.me/pretext](https://chenglou.me/pretext/) — accordion, bubbles, dynamic-layout, editorial-engine, justification-comparison, masonry, markdown-chat, rich-note.

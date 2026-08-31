@@ -14,59 +14,64 @@ metadata:
 
 # TouchDesigner Integration (twozero MCP)
 
-## CRITICAL RULES
+role: TouchDesigner/MCP operator
+do: discover TD 2025.32 params/hints/network; build, wire, verify, display, record real-time visuals
+inputs: network goal, OP types, GLSL/audio/media, local TouchDesigner + twozero.tox
+outputs: working TD network, screenshots/video, explicit health/perf/errors
+¬: guessed params; continued `tdAttributeError`; absolute callback paths; native-tool bypass; unverified black/zero-FPS output
 
-1. **NEVER guess parameter names.** Call `td_get_par_info` for the op type FIRST. Your training data is wrong for TD 2025.32.
+## When to Use
+
+- build, inspect, animate, audio-react, display, or record TouchDesigner networks through twozero MCP
+- use for real-time visuals, VJ/installations, generative art, or GLSL/audio-reactive work
+
+## Critical Rules
+
+1. **NEVER guess parameter names.** Call `td_get_par_info` for the OP type FIRST. Training data is wrong for TD 2025.32.
 2. **If `tdAttributeError` fires, STOP.** Call `td_get_operator_info` on the failing node before continuing.
 3. **NEVER hardcode absolute paths** in script callbacks. Use `me.parent()` / `scriptOp.parent()`.
-4. **Prefer native MCP tools over td_execute_python.** Use `td_create_operator`, `td_set_operator_pars`, `td_get_errors` etc. Only fall back to `td_execute_python` for complex multi-step logic.
-5. **Call `td_get_hints` before building.** It returns patterns specific to the op type you're working with.
+4. **Prefer native MCP tools over td_execute_python.** Use `td_create_operator`, `td_set_operator_pars`, `td_get_errors`, etc.; use `td_execute_python` only for complex multi-step logic.
+5. **Call `td_get_hints` before building.** It returns OP-specific patterns.
 
-## Architecture
+## Architecture + Setup
 
-```
+```text
 Hermes Agent -> MCP (Streamable HTTP) -> twozero.tox (port 40404) -> TD Python
 ```
 
-36 native tools. Free plugin (no payment/license — confirmed April 2026).
-Context-aware (knows selected OP, current network).
-Hub health check: `GET http://localhost:40404/mcp` returns JSON with instance PID, project name, TD version.
+36 native tools; free plugin, no payment/license (confirmed April 2026); context-aware (selected OP/current network). Health: `GET http://localhost:40404/mcp` returns JSON with instance PID, project name, TD version.
 
-## Setup (Automated)
-
-Run the setup script to handle everything:
+Automated setup, via `terminal`:
 
 ```bash
 bash "${HERMES_HOME:-$HOME/.hermes}/skills/creative/touchdesigner-mcp/scripts/setup.sh"
 ```
 
-The script will:
-1. Check if TD is running
-2. Download twozero.tox if not already cached
-3. Add `twozero_td` MCP server to Hermes config (if missing)
-4. Test the MCP connection on port 40404
-5. Report what manual steps remain (drag .tox into TD, enable MCP toggle)
+Script: checks TD; downloads cached twozero.tox; adds `twozero_td` MCP server to Hermes config if missing; tests port 40404; reports manual steps.
 
-### Manual steps (one-time, cannot be automated)
+One-time manual steps:
 
-1. **Drag `~/Downloads/twozero.tox` into the TD network editor** → click Install
-2. **Enable MCP:** click twozero icon → Settings → mcp → "auto start MCP" → Yes
-3. **Restart Hermes session** to pick up the new MCP server
+1. Drag `~/Downloads/twozero.tox` into TD network editor → click Install.
+2. twozero icon → Settings → mcp → "auto start MCP" → Yes.
+3. Restart Hermes session.
 
-After setup, verify:
+Verify:
+
 ```bash
 nc -z 127.0.0.1 40404 && echo "twozero MCP: READY"
 ```
 
 ## Environment Notes
 
-- **Non-Commercial TD** caps resolution at 1280×1280. Use `outputresolution = 'custom'` and set width/height explicitly.
-- **Codecs:** `prores` (preferred on macOS) or `mjpa` as fallback. H.264/H.265/AV1 require a Commercial license.
-- Always call `td_get_par_info` before setting params — names vary by TD version (see CRITICAL RULES #1).
+- Non-Commercial TD caps resolution at 1280×1280; use `outputresolution = 'custom'` with explicit width/height.
+- codecs: `prores` (preferred macOS) or `mjpa`; H.264/H.265/AV1 require Commercial license
+- always `td_get_par_info` before setting params
 
 ## Workflow
 
-### Step 0: Discover (before building anything)
+### 0. Discover
+
+Before any build:
 
 ```
 Call td_get_par_info with op_type for each type you plan to use.
@@ -75,21 +80,19 @@ Call td_get_focus to see where the user is and what's selected.
 Call td_get_network to see what already exists.
 ```
 
-No temp nodes, no cleanup. This replaces the old discovery dance entirely.
+No temp nodes/cleanup; this replaces the old discovery dance.
 
-### Step 1: Clean + Build
+### 1. Clean + build
 
-**IMPORTANT: Split cleanup and creation into SEPARATE MCP calls.** Destroying and recreating same-named nodes in one `td_execute_python` script causes "Invalid OP object" errors. See pitfalls #11b.
+Cleanup and creation are **separate MCP calls**. Destroy/recreate same-named nodes in one `td_execute_python` script causes `Invalid OP object` errors.
 
-Use `td_create_operator` for each node (handles viewport positioning automatically):
-
-```
+```text
 td_create_operator(type="noiseTOP", parent="/project1", name="bg", parameters={"resolutionw": 1280, "resolutionh": 720})
 td_create_operator(type="levelTOP", parent="/project1", name="brightness")
 td_create_operator(type="nullTOP", parent="/project1", name="out")
 ```
 
-For bulk creation or wiring, use `td_execute_python`:
+Bulk/wiring via `td_execute_python`:
 
 ```python
 # td_execute_python script:
@@ -104,29 +107,29 @@ for i in range(len(nodes)-1):
 result = {'created': nodes}
 ```
 
-### Step 2: Set Parameters
+### 2. Set parameters
 
-Prefer the native tool (validates params, won't crash):
+Native first:
 
 ```
 td_set_operator_pars(path="/project1/bg", parameters={"roughness": 0.6, "monochrome": true})
 ```
 
-For expressions or modes, use `td_execute_python`:
+Expressions/modes via script:
 
 ```python
 op('/project1/time_driver').par.colorr.expr = "absTime.seconds % 1000.0"
 ```
 
-### Step 3: Wire
+### 3. Wire
 
-Use `td_execute_python` — no native wire tool exists:
+No native wire tool; use `td_execute_python`:
 
 ```python
 op('/project1/bg').outputConnectors[0].connect(op('/project1/fx').inputConnectors[0])
 ```
 
-### Step 4: Verify
+### 4. Verify
 
 ```
 td_get_errors(path="/project1", recursive=true)
@@ -134,13 +137,13 @@ td_get_perf()
 td_get_operator_info(path="/project1/out", detail="full")
 ```
 
-### Step 5: Display / Capture
+### 5. Display/capture
 
 ```
 td_get_screenshot(path="/project1/out")
 ```
 
-Or open a window via script:
+Open a window:
 
 ```python
 win = op('/project1').create(windowCOMP, 'display')
@@ -149,69 +152,39 @@ win.par.winw = 1280; win.par.winh = 720
 win.par.winopen.pulse()
 ```
 
-## MCP Tool Quick Reference
+## Native MCP Tool Reference
 
-**Core (use these most):**
+**Core:**
+
 | Tool | What |
 |------|------|
-| `td_execute_python` | Run arbitrary Python in TD. Full API access. |
+| `td_execute_python` | Arbitrary Python in TD; full API |
 | `td_create_operator` | Create node with params + auto-positioning |
-| `td_set_operator_pars` | Set params safely (validates, won't crash) |
-| `td_get_operator_info` | Inspect one node: connections, params, errors |
-| `td_get_operators_info` | Inspect multiple nodes in one call |
-| `td_get_network` | See network structure at a path |
-| `td_get_errors` | Find errors/warnings recursively |
-| `td_get_par_info` | Get param names for an OP type (replaces discovery) |
-| `td_get_hints` | Get patterns/tips before building |
-| `td_get_focus` | What network is open, what's selected |
+| `td_set_operator_pars` | Set params safely; validates |
+| `td_get_operator_info` | One node: connections, params, errors |
+| `td_get_operators_info` | Multiple nodes |
+| `td_get_network` | Network structure |
+| `td_get_errors` | Recursive errors/warnings |
+| `td_get_par_info` | Param names for OP type |
+| `td_get_hints` | Patterns/tips before building |
+| `td_get_focus` | Open network/selection |
 
-**Read/Write:**
-| Tool | What |
-|------|------|
-| `td_read_dat` | Read DAT text content |
-| `td_write_dat` | Write/patch DAT content |
-| `td_read_chop` | Read CHOP channel values |
-| `td_read_textport` | Read TD console output |
+**Read/write:** `td_read_dat` (DAT text), `td_write_dat` (DAT text), `td_read_chop` (CHOP values), `td_read_textport` (console).
 
-**Visual:**
-| Tool | What |
-|------|------|
-| `td_get_screenshot` | Capture one OP viewer to file |
-| `td_get_screenshots` | Capture multiple OPs at once |
-| `td_get_screen_screenshot` | Capture actual screen via TD |
-| `td_navigate_to` | Jump network editor to an OP |
+**Visual:** `td_get_screenshot`, `td_get_screenshots`, `td_get_screen_screenshot`, `td_navigate_to`.
 
-**Search:**
-| Tool | What |
-|------|------|
-| `td_find_op` | Find ops by name/type across project |
-| `td_search` | Search code, expressions, string params |
+**Search:** `td_find_op` (name/type), `td_search` (code/expressions/string params).
 
-**System:**
-| Tool | What |
-|------|------|
-| `td_get_perf` | Performance profiling (FPS, slow ops) |
-| `td_list_instances` | List all running TD instances |
-| `td_get_docs` | In-depth docs on a TD topic |
-| `td_agents_md` | Read/write per-COMP markdown docs |
-| `td_reinit_extension` | Reload extension after code edit |
-| `td_clear_textport` | Clear console before debug session |
+**System:** `td_get_perf`, `td_list_instances`, `td_get_docs`, `td_agents_md`, `td_reinit_extension`, `td_clear_textport`.
 
-**Input Automation:**
-| Tool | What |
-|------|------|
-| `td_input_execute` | Send mouse/keyboard to TD |
-| `td_input_status` | Poll input queue status |
-| `td_input_clear` | Stop input automation |
-| `td_op_screen_rect` | Get screen coords of a node |
-| `td_click_screen_point` | Click a point in a screenshot |
-| `td_screen_point_to_global` | Convert screenshot pixel to absolute screen coords |
+**Input:** `td_input_execute`, `td_input_status`, `td_input_clear`, `td_op_screen_rect`, `td_click_screen_point`, `td_screen_point_to_global`.
 
-The table above covers the 32 tools used in typical creative workflows. The remaining 4 tools (`td_project_quit`, `td_test_session`, `td_dev_log`, `td_clear_dev_log`) are admin/dev-mode utilities — see `references/mcp-tools.md` for the full 36-tool reference with complete parameter schemas.
+The table covers the 32 tools used in typical creative workflows. Remaining four (`td_project_quit`, `td_test_session`, `td_dev_log`, `td_clear_dev_log`) are admin/dev utilities; full 36-tool schemas: `references/mcp-tools.md`.
 
-## Key Implementation Rules
+## Implementation Rules
 
-**GLSL time:** No `uTDCurrentTime` in GLSL TOP. Use the Values page:
+**GLSL time:** no `uTDCurrentTime` in GLSL TOP. Query params, then Values page:
+
 ```python
 # Call td_get_par_info(op_type="glslTOP") first to confirm param names
 td_set_operator_pars(path="/project1/shader", parameters={"value0name": "uTime"})
@@ -220,23 +193,19 @@ td_set_operator_pars(path="/project1/shader", parameters={"value0name": "uTime"}
 # In GLSL: uniform float uTime;
 ```
 
-Fallback: Constant TOP in `rgba32float` format (8-bit clamps to 0-1, freezing the shader).
+Fallback = Constant TOP `rgba32float`; 8-bit clamps 0–1 and freezes shader.
 
-**Feedback TOP:** Use `top` parameter reference, not direct input wire. "Not enough sources" resolves after first cook. "Cook dependency loop" warning is expected.
+Feedback TOP: `top` parameter reference, not direct input wire; "Not enough sources" resolves after first cook; "Cook dependency loop" warning is expected.
 
-**Resolution:** Non-Commercial caps at 1280×1280. Use `outputresolution = 'custom'`.
+Resolution = `outputresolution = 'custom'`; large shaders can be written to `/tmp/file.glsl`, then loaded with `td_write_dat`/`td_execute_python`.
 
-**Large shaders:** Write GLSL to `/tmp/file.glsl`, then use `td_write_dat` or `td_execute_python` to load.
+TD 2025.32 point access: `point.P[0]`, `point.P[1]`, `point.P[2]`, not `.x/.y/.z`.
 
-**Vertex/Point access (TD 2025.32):** `point.P[0]`, `point.P[1]`, `point.P[2]` — NOT `.x`, `.y`, `.z`.
+Extensions: `ext0object` format `"op('./datName').module.ClassName(me)"` in CONSTANT mode; after `td_write_dat`, call `td_reinit_extension`.
 
-**Extensions:** `ext0object` format is `"op('./datName').module.ClassName(me)"` in CONSTANT mode. After editing extension code with `td_write_dat`, call `td_reinit_extension`.
+Callbacks: `me.parent()`/`scriptOp.parent()` only. Cleaning: `list(root.children)` before iterating + `child.valid` check.
 
-**Script callbacks:** ALWAYS use relative paths via `me.parent()` / `scriptOp.parent()`.
-
-**Cleaning nodes:** Always `list(root.children)` before iterating + `child.valid` check.
-
-## Recording / Exporting Video
+## Recording + Export
 
 ```python
 # via td_execute_python:
@@ -250,23 +219,19 @@ rec.par.record = True   # start
 # rec.par.record = False  # stop (call separately later)
 ```
 
-H.264/H.265/AV1 need Commercial license. Use `prores` on macOS or `mjpa` as fallback.
-Extract frames: `ffmpeg -i /tmp/output.mov -vframes 120 /tmp/frames/frame_%06d.png`
+H.264/H.265/AV1 need Commercial license; use `prores` macOS or `mjpa`. Frames:
 
-**TOP.save() is useless for animation** — captures same GPU texture every time. Always use MovieFileOut.
-
-### Before Recording: Checklist
-
-1. **Verify FPS > 0** via `td_get_perf`. If FPS=0 the recording will be empty. See pitfalls #38-39.
-2. **Verify shader output is not black** via `td_get_screenshot`. Black output = shader error or missing input. See pitfalls #8, #40.
-3. **If recording with audio:** cue audio to start first, then delay recording by 3 frames. See pitfalls #19.
-4. **Set output path before starting record** — setting both in the same script can race.
-
-## Audio-Reactive GLSL (Proven Recipe)
-
-### Correct signal chain (tested April 2026)
-
+```bash
+ffmpeg -i /tmp/output.mov -vframes 120 /tmp/frames/frame_%06d.png
 ```
+
+`TOP.save()` is useless for animation; MovieFileOut is required.
+
+Before recording: (1) `td_get_perf`, FPS > 0; (2) `td_get_screenshot`, output not black; (3) audio cue first, delay recording 3 frames; (4) set output path before starting record, separate calls to avoid race.
+
+## Audio-Reactive GLSL
+
+```text
 AudioFileIn CHOP (playmode=sequential)
   → AudioSpectrum CHOP (FFT=512, outputmenu=setmanually, outlength=256, timeslice=ON)
   → Math CHOP (gain=10)
@@ -277,18 +242,7 @@ Constant TOP (rgba32float, time) → GLSL TOP input 0
 GLSL TOP → Null TOP → MovieFileOut
 ```
 
-### Critical audio-reactive rules (empirically verified)
-
-1. **TimeSlice must stay ON** for AudioSpectrum. OFF = processes entire audio file → 24000+ samples → CHOP to TOP overflow.
-2. **Set Output Length manually** to 256 via `outputmenu='setmanually'` and `outlength=256`. Default outputs 22050 samples.
-3. **DO NOT use Lag CHOP for spectrum smoothing.** Lag CHOP operates in timeslice mode and expands 256 samples to 2400+, averaging all values to near-zero (~1e-06). The shader receives no usable data. This was the #1 audio sync failure in testing.
-4. **DO NOT use Filter CHOP either** — same timeslice expansion problem with spectrum data.
-5. **Smoothing belongs in the GLSL shader** if needed, via temporal lerp with a feedback texture: `mix(prevValue, newValue, 0.3)`. This gives frame-perfect sync with zero pipeline latency.
-6. **CHOP to TOP dataformat = 'r'**, layout = 'rowscropped'. Spectrum output is 256x2 (stereo). Sample at y=0.25 for first channel.
-7. **Math gain = 10** (not 5). Raw spectrum values are ~0.19 in bass range. Gain of 10 gives usable ~5.0 for the shader.
-8. **No Resample CHOP needed.** Control output size via AudioSpectrum's `outlength` param directly.
-
-### GLSL spectrum sampling
+Rules: AudioSpectrum `TimeSlice` ON; `outputmenu='setmanually'`, `outlength=256`; never Lag/Filter CHOP (timeslice expansion makes values ~`1e-06`); smooth in GLSL via `mix(prevValue, newValue, 0.3)`; CHOP to TOP `dataformat = 'r'`, `layout = 'rowscropped'`, 256x2 stereo and y=0.25 first channel; Math gain 10 (raw bass ~0.19); no Resample CHOP.
 
 ```glsl
 // Input 0 = time (1x1 rgba32float), Input 1 = spectrum (256x2)
@@ -304,9 +258,9 @@ float hi   = (texture(sTD2DInputs[1], vec2(0.6, 0.25)).r +
               texture(sTD2DInputs[1], vec2(0.8, 0.25)).r) / 2.0;
 ```
 
-See `references/network-patterns.md` for complete build scripts + shader code.
+Complete build scripts/shader: `references/network-patterns.md`.
 
-## Operator Quick Reference
+## Operator Families
 
 | Family | Color | Python class / MCP type | Suffix |
 |--------|-------|-------------|--------|
@@ -317,40 +271,53 @@ See `references/network-patterns.md` for complete build scripts + shader code.
 | MAT | Yellow | phongMAT, pbrMAT, glslMAT, constMAT | MAT |
 | COMP | Gray | geometryCOMP, containerCOMP, cameraCOMP, lightCOMP, windowCOMP | COMP |
 
-## Security Notes
+## Security
 
-- MCP runs on localhost only (port 40404). No authentication — any local process can send commands.
-- `td_execute_python` has unrestricted access to the TD Python environment and filesystem as the TD process user.
-- `setup.sh` downloads twozero.tox from the official 404zero.com URL. Verify the download if concerned.
-- The skill never sends data outside localhost. All MCP communication is local.
+- MCP localhost only, port 40404, no authentication: any local process can send commands.
+- `td_execute_python` unrestricted in TD Python/filesystem as TD process user.
+- `setup.sh` downloads twozero.tox from official 404zero.com; verify if concerned.
+- skill sends no data outside localhost; MCP communication local.
 
 ## References
 
-| File | What |
-|------|------|
+| File | Scope |
+|---|---|
 | `references/pitfalls.md` | Hard-won lessons from real sessions |
-| `references/operators.md` | All operator families with params and use cases |
-| `references/network-patterns.md` | Recipes: audio-reactive, generative, GLSL, instancing |
-| `references/mcp-tools.md` | Full twozero MCP tool parameter schemas |
-| `references/python-api.md` | TD Python: op(), scripting, extensions |
-| `references/troubleshooting.md` | Connection diagnostics, debugging |
-| `references/glsl.md` | GLSL uniforms, built-in functions, shader templates |
-| `references/postfx.md` | Post-FX: bloom, CRT, chromatic aberration, feedback glow |
-| `references/layout-compositor.md` | HUD layout patterns, panel grids, BSP-style layouts |
-| `references/operator-tips.md` | Wireframe rendering, feedback TOP setup |
-| `references/geometry-comp.md` | Geometry COMP: instancing, POP vs SOP, morphing |
-| `references/audio-reactive.md` | Audio band extraction, beat detection, envelope following |
-| `references/animation.md` | LFOs, timers, keyframes, easing, expression-driven motion |
-| `references/midi-osc.md` | MIDI/OSC controllers, TouchOSC, multi-machine sync |
-| `references/particles.md` | POPs and legacy particleSOP — emission, forces, collisions |
+| `references/operators.md` | Operator families, params, and use cases |
+| `references/network-patterns.md` | Audio-reactive, generative, GLSL, and instancing recipes |
+| `references/mcp-tools.md` | Complete twozero MCP schemas |
+| `references/python-api.md` | TD Python: `op()`, scripting, extensions |
+| `references/troubleshooting.md` | Connection diagnostics and debugging |
+| `references/glsl.md` | Uniforms, built-ins, and shader templates |
+| `references/postfx.md` | Bloom, CRT, chromatic aberration, feedback glow |
+| `references/layout-compositor.md` | HUD, panel grids, BSP-style layouts |
+| `references/operator-tips.md` | Wireframe and feedback TOP setup |
+| `references/geometry-comp.md` | Instancing, POP vs SOP, morphing |
+| `references/audio-reactive.md` | Bands, beats, envelope following |
+| `references/animation.md` | LFOs, timers, keyframes, easing, expressions |
+| `references/midi-osc.md` | MIDI/OSC, TouchOSC, multi-machine sync |
+| `references/particles.md` | POPs and particleSOP emission/forces/collisions |
 | `references/projection-mapping.md` | Multi-window output, corner pin, mesh warp, edge blending |
 | `references/external-data.md` | HTTP, WebSocket, MQTT, Serial, TCP, webserverDAT |
-| `references/panel-ui.md` | Custom params, panel COMPs, button/slider/field, panelExecuteDAT |
-| `references/replicator.md` | replicatorCOMP — data-driven cloning, layouts, callbacks |
-| `references/dat-scripting.md` | Execute DAT family — chop/dat/parameter/panel/op/executeDAT |
-| `references/3d-scene.md` | Lighting rigs, shadows, IBL/cubemaps, multi-camera, PBR |
-| `scripts/setup.sh` | Automated setup script |
-
----
+| `references/panel-ui.md` | Custom params, panel COMPs, controls, panelExecuteDAT |
+| `references/replicator.md` | replicatorCOMP cloning, layouts, callbacks |
+| `references/dat-scripting.md` | Execute DAT family |
+| `references/3d-scene.md` | Lighting, shadows, IBL/cubemaps, cameras, PBR |
+| `scripts/setup.sh` | Automated twozero setup |
 
 > You're not writing code. You're conducting light.
+
+## Pitfalls
+
+- localhost MCP has no authentication; keep port 40404 private and treat `td_execute_python` as unrestricted code execution
+- inspect operator info and parameter hints before setting values; do not guess names, types, or network paths
+- verify cleanup, FPS, non-black output, audio length, and recording codec before reporting success
+
+## Verification
+
+- setup/port health verified; manual tox install/toggle/restart acknowledged
+- every OP type had `td_get_par_info`; hints/focus/network inspected first
+- cleanup/build/set/wire calls separated and native tools preferred
+- errors, perf, full operator info, screenshot all checked
+- FPS > 0, output non-black, recording path/codec/license valid
+- audio chain uses timeslice/output length/dataformat rules; output opens and is playable

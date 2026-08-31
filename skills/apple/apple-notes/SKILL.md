@@ -15,30 +15,26 @@ prerequisites:
 
 # Apple Notes
 
-Use `memo` to manage Apple Notes directly from the terminal. Notes sync across all Apple devices via iCloud.
-
-## Prerequisites
-
-- **macOS** with Notes.app
-- Install: `brew tap antoniorodr/memo && brew install antoniorodr/memo/memo`
-- Grant Automation access to Notes.app when prompted (System Settings → Privacy → Automation)
+role: macOS Notes operator
+do: manage Notes.app through `memo`; preserve iCloud sync across Apple devices
+outputs: listed, created, edited, deleted, moved, or exported notes
+¬: Bear Notes; agent-only memory; unsupported image/attachment edits
 
 ## When to Use
 
-- User asks to create, view, or search Apple Notes
-- Saving information to Notes.app for cross-device access
-- Organizing notes into folders
-- Exporting notes to Markdown/HTML
+- create, view, search, or organize Apple Notes
+- save information to Notes.app for iPhone/iPad/Mac access
+- filter by folder; export to Markdown or HTML
 
-## When NOT to Use
+## Prerequisites
 
-- Obsidian vault management → use the `obsidian` skill
-- Bear Notes → separate app (not supported here)
-- Quick agent-only notes → use the `memory` tool instead
+- macOS + Notes.app
+- install: `brew tap antoniorodr/memo && brew install antoniorodr/memo/memo`
+- grant Automation access to Notes.app when prompted: System Settings → Privacy → Automation
 
 ## Quick Reference
 
-### View Notes
+### View
 
 ```bash
 memo notes                        # List all notes
@@ -46,49 +42,46 @@ memo notes -f "Folder Name"       # Filter by folder
 memo notes -s "query"             # Search notes (fuzzy)
 ```
 
-### Create Notes
+### Create
 
 ```bash
 memo notes -a                     # Add a note (opens your $EDITOR)
 memo notes -a -f "Folder Name"    # Add a note into a specific folder
 ```
 
-`-a`/`--add` is a bare flag — it opens your `$EDITOR` to compose the note; it does
-not take a title argument. Use `-f/--folder` to target a folder. Set `$EDITOR`
-first (e.g. `export EDITOR=vim`).
+`-a`/`--add` is a bare flag; it opens `$EDITOR` and accepts no title argument. Set `$EDITOR` first, e.g. `export EDITOR=vim`. Use `-f/--folder` for the destination folder.
 
-### Edit Notes
+### Edit, delete, move
 
 ```bash
 memo notes -e                     # Interactive selection to edit
-```
-
-### Delete Notes
-
-```bash
 memo notes -d                     # Interactive selection to delete
-```
-
-### Move Notes
-
-```bash
 memo notes -m                     # Move note to folder (interactive)
 ```
 
-### Export Notes
+### Export
 
 ```bash
 memo notes -ex                    # Export to HTML/Markdown
 ```
 
-## Limitations
+## Procedure
 
-- Cannot edit notes containing images or attachments
-- Interactive prompts require terminal access (use pty=true if needed)
-- macOS only — requires Apple Notes.app
+1. Confirm macOS, Notes.app, `memo`, and Automation permission.
+2. Resolve intent: cross-device note → Notes; Markdown-native knowledge base → `obsidian`; ephemeral agent note → `memory`.
+3. For interactive commands (`-e`, `-d`, `-m`, or editor composition), use a terminal with `pty=true`.
+4. Run the narrowest command above; report result and destination folder/path.
 
-## Rules
+## Pitfalls
 
-1. Prefer Apple Notes when user wants cross-device sync (iPhone/iPad/Mac)
-2. Use the `memory` tool for agent-internal notes that don't need to sync
-3. Use the `obsidian` skill for Markdown-native knowledge management
+- Notes containing images or attachments cannot be edited.
+- Interactive prompts require terminal access; use `pty=true` when needed.
+- macOS only; Apple Notes.app is required.
+- Do not claim cross-device sync unless the user is using iCloud-backed Apple Notes.
+
+## Verification
+
+- list/search result matches requested folder or query
+- after create/edit/move/export, rerun the relevant `memo` command and confirm the result
+- confirm exported HTML/Markdown path
+- preserve boundaries: `obsidian` for Obsidian vaults, `memory` for agent-internal notes, no Bear support

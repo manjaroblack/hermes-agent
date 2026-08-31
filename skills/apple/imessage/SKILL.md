@@ -14,37 +14,32 @@ prerequisites:
 
 # iMessage
 
-Use `imsg` to read and send iMessage/SMS via macOS Messages.app.
-
-## Prerequisites
-
-- **macOS** with Messages.app signed in
-- Install: `brew install steipete/tap/imsg`
-- Grant Full Disk Access for terminal (System Settings → Privacy → Full Disk Access)
-- Grant Automation permission for Messages.app when prompted
+role: macOS Messages operator
+do: inspect Messages.app chats/history; send iMessage or SMS through `imsg`; watch new messages
+¬: unsupported group membership changes; bulk messaging without confirmation; unknown recipients
 
 ## When to Use
 
-- User asks to send an iMessage or text message
-- Reading iMessage conversation history
-- Checking recent Messages.app chats
-- Sending to phone numbers or Apple IDs
+- send an iMessage or text message
+- read conversation history or recent Messages.app chats
+- send to a phone number or Apple ID
 
-## When NOT to Use
+¬use: Telegram/Discord/Slack/WhatsApp → the matching gateway channel; group add/remove → unsupported. Confirm any bulk/mass messaging first.
 
-- Telegram/Discord/Slack/WhatsApp messages → use the appropriate gateway channel
-- Group chat management (adding/removing members) → not supported
-- Bulk/mass messaging → always confirm with user first
+## Prerequisites
+
+- macOS + Messages.app signed in
+- install: `brew install steipete/tap/imsg`
+- grant terminal Full Disk Access: System Settings → Privacy → Full Disk Access
+- grant Messages.app Automation permission when prompted
 
 ## Quick Reference
 
-### List Chats
+### Chats and history
 
 ```bash
 imsg chats --limit 10 --json
 ```
-
-### View History
 
 ```bash
 # By chat ID
@@ -54,21 +49,21 @@ imsg history --chat-id 1 --limit 20 --json
 imsg history --chat-id 1 --limit 20 --attachments --json
 ```
 
-### Send Messages
+### Send
 
 ```bash
 # Text only
-imsg send --to "+14155551212" --text "Hello!"
+imsg send --to "+141****1212" --text "Hello!"
 
 # With attachment
-imsg send --to "+14155551212" --text "Check this out" --file /path/to/image.jpg
+imsg send --to "+141****1212" --text "Check this out" --file /path/to/image.jpg
 
 # Force iMessage or SMS
-imsg send --to "+14155551212" --text "Hi" --service imessage
-imsg send --to "+14155551212" --text "Hi" --service sms
+imsg send --to "+141****1212" --text "Hi" --service imessage
+imsg send --to "+141****1212" --text "Hi" --service sms
 ```
 
-### Watch for New Messages
+### Watch
 
 ```bash
 imsg watch --chat-id 1 --attachments
@@ -76,16 +71,17 @@ imsg watch --chat-id 1 --attachments
 
 ## Service Options
 
-- `--service imessage` — Force iMessage (requires recipient has iMessage)
-- `--service sms` — Force SMS (green bubble)
-- `--service auto` — Let Messages.app decide (default)
+- `--service imessage`: force iMessage; recipient must have iMessage
+- `--service sms`: force SMS (green bubble)
+- `--service auto`: let Messages.app decide (default)
 
-## Rules
+## Procedure
 
-1. **Always confirm recipient and message content** before sending
-2. **Never send to unknown numbers** without explicit user approval
-3. **Verify file paths** exist before attaching
-4. **Don't spam** — rate-limit yourself
+1. List chats/history and resolve recipient identity.
+2. Confirm recipient and exact message content before sending; never send to an unknown number without explicit approval.
+3. Verify every attachment path exists before using `--file`.
+4. Choose `--service` only when requested; otherwise use default `auto`.
+5. Rate-limit; do not spam. For incoming monitoring, use `watch` with the intended chat ID.
 
 ## Example Workflow
 
@@ -95,8 +91,22 @@ User: "Text mom that I'll be late"
 # 1. Find mom's chat
 imsg chats --limit 20 --json | jq '.[] | select(.displayName | contains("Mom"))'
 
-# 2. Confirm with user: "Found Mom at +1555123456. Send 'I'll be late' via iMessage?"
+# 2. Confirm with user: "Found Mom at +155****3456. Send 'I'll be late' via iMessage?"
 
 # 3. Send after confirmation
-imsg send --to "+1555123456" --text "I'll be late"
+imsg send --to "+155****3456" --text "I'll be late"
 ```
+
+## Pitfalls
+
+- `--service imessage` can fail when recipient lacks iMessage; use `auto` unless forced.
+- Do not expose or guess a recipient from an ambiguous chat name.
+- Do not attach a missing or unintended file.
+- Messages.app, Full Disk Access, and Automation permissions are macOS prerequisites.
+
+## Verification
+
+- chat lookup identifies intended recipient
+- pre-send confirmation covers recipient + exact content
+- post-send history/watch confirms delivery attempt and selected service
+- attachment path is verified before send; unsupported group management is declined
