@@ -11,52 +11,88 @@ metadata:
     related_skills: [excel-author, powerpoint]
 ---
 
-# pptx-author
+role: headless financial pitch-deck author
+do: create `.pptx` with python-pptx; load firm template; bind every number to source workbook; embed model-rendered charts; keep one takeaway per slide; deliver file only
+inputs: source `.xlsx`/named ranges; template; deck narrative; charts/figures; slide types
+outputs: `./out/<name>.pptx`; traceable footnotes; presentation-ready slides
+¬: drive live PowerPoint; transcribe numbers from memory/summary; use fragile native charts when fidelity requires PNG; email/upload/post; omit model cell/sheet sources; add unrelated animation-heavy slideware
 
-Produce a .pptx file on disk using `python-pptx`. Use when you need to deliver a deck as a file artifact, not drive a live PowerPoint session.
+Produce a `.pptx` file on disk with `python-pptx`, not a live PowerPoint session.
+Adapted from Anthropic `pptx-author`/`pitch-deck`; MCP/Office-JS branches removed.
+For broader slide, speaker-note, embed, and media support use built-in
+`powerpoint`.
 
-Adapted from Anthropic's `pptx-author` and `pitch-deck` skills in [anthropics/financial-services](https://github.com/anthropics/financial-services). The MCP / Office-JS branches of the originals are dropped — this assumes headless Python.
+## When to Use
 
-For the broader, already-shipped PowerPoint authoring skill (slides, speaker notes, embeds, media), see the built-in `powerpoint` skill. This skill is a lighter-weight pattern tuned for model-backed decks (pitch decks, IC memos, earnings notes) where every number must trace to a source workbook.
+- model-backed pitch decks, IC memos, earnings notes, financial presentations
+- deck numbers that must trace to a source workbook
 
-## Output contract
+Use live Office MCP for a live PowerPoint session; use `powerpoint` for
+non-financial slideware, heavy animation/transitions, or speaker notes.
 
-- Write to `./out/<name>.pptx`. Create `./out/` if it does not exist.
-- Return the relative path in your final message.
+## Output Contract and Setup
 
-## Setup
+- write `./out/<name>.pptx`; create `./out/`
+- return relative path in final response
+- no external sends; orchestration layers handle delivery
 
 ```bash
 pip install "python-pptx>=0.6"
 ```
 
-## Core conventions
+## Procedure
 
-### One idea per slide
-Title states the takeaway; body supports it. A slide titled "Q3 Revenue" is weak; "Revenue growth accelerated to 14% Y/Y in Q3" is strong.
+### 1. Establish a template and slide idea
 
-### Every number traces to the model
-If a figure on a slide came from `./out/model.xlsx`, footnote the sheet and cell.
-
-```
-Revenue: $1,250M  (Source: model.xlsx, Inputs!C3)
-```
-
-Never transcribe numbers from memory or from a summary — open the workbook, read the named range, and bind the deck value to it programmatically when you can.
-
-### Use the firm template when one is mounted
-If `./templates/firm-template.pptx` exists, load it so the deck inherits branded colors, fonts, and master layouts.
+If `./templates` contains `firm-template.pptx`, load it so branded colors, fonts,
+and master layouts survive:
 
 ```python
 from pptx import Presentation
 from pathlib import Path
 
-template = Path("./templates/firm-template.pptx")
+template = Path("./templates") / "firm-template.pptx"
 prs = Presentation(str(template)) if template.exists() else Presentation()
 ```
 
-### Charts: PNG-from-model beats native pptx charts
-When fidelity matters (the model's chart styling must match the deck exactly), render the chart to PNG from the source workbook and embed the image. Native `pptx.chart` charts are fragile and often don't match firm conventions.
+One idea per slide: title states takeaway; body supports it. Weak:
+`Q3 Revenue`; strong: `Revenue growth accelerated to 14% Y/Y in Q3`.
+
+### 2. Bind numbers to model
+
+Every slide figure from `./out/model.xlsx` gets sheet/cell footnote:
+
+```text
+Revenue: $1,250M  (Source: model.xlsx, Inputs!C3)
+```
+
+Never transcribe from memory or a summary. Open workbook, read named range, and
+bind programmatically whenever possible. Recalculate workbook before reading;
+`openpyxl` only sees computed values after a prior calculation. Run the
+`excel-author` recalc helper or open/save through real Excel.
+
+```python
+from openpyxl import load_workbook
+
+wb = load_workbook("./out/model.xlsx", data_only=True)
+def nr(name):
+    """Resolve a named range to its current computed value."""
+    rng = wb.defined_names[name]
+    sheet, coord = next(rng.destinations)
+    return wb[sheet][coord].value
+
+revenue_fy24 = nr("RevenueFY24")
+implied_mid  = nr("ImpliedSharePriceBase")
+```
+
+```python
+slide.shapes.title.text = f"Implied share price of ${implied_mid:.2f} (base case)"
+```
+
+### 3. Prefer PNG charts from model
+
+When fidelity matters, render chart to PNG from source workbook and embed it;
+native `pptx.chart` charts are fragile and often do not match firm conventions:
 
 ```python
 from pptx.util import Inches
@@ -65,18 +101,14 @@ slide.shapes.add_picture("./out/charts/football_field.png",
                          width=Inches(8))
 ```
 
-### No external sends
-This skill writes a file. It never emails, uploads, or posts. Orchestration layers handle delivery.
-
-## Skeleton
+### 4. Create slides and save
 
 ```python
 from pptx import Presentation
-from pptx.util import Inches, Pt
-from pptx.dml.color import RGBColor
+from pptx.util import Inches
 from pathlib import Path
 
-template = Path("./templates/firm-template.pptx")
+template = Path("./templates") / "firm-template.pptx"
 prs = Presentation(str(template)) if template.exists() else Presentation()
 
 # Title slide
@@ -119,55 +151,37 @@ Path("./out").mkdir(exist_ok=True)
 prs.save("./out/pitch-aurora.pptx")
 ```
 
-## Binding deck numbers to the source workbook
+## Suggested Pitch-Deck Sequence
 
-Read named ranges or specific cells from your Excel model so deck numbers never drift.
+Not prescriptive; use as starting skeleton:
 
-```python
-from openpyxl import load_workbook
-
-wb = load_workbook("./out/model.xlsx", data_only=True)
-def nr(name):
-    """Resolve a named range to its current computed value."""
-    rng = wb.defined_names[name]
-    sheet, coord = next(rng.destinations)
-    return wb[sheet][coord].value
-
-revenue_fy24 = nr("RevenueFY24")
-implied_mid  = nr("ImpliedSharePriceBase")
-```
-
-Then build deck content using those values:
-```python
-slide.shapes.title.text = f"Implied share price of ${implied_mid:.2f} (base case)"
-```
-
-Remember to recalculate the workbook before reading it — openpyxl only sees computed values if something has already calculated the sheet. Run the recalc helper in the `excel-author` skill first, or open/save through a real Excel session.
-
-## Slide-type checklist for pitch decks
-
-A typical banking pitch deck follows this structure. Not prescriptive, but useful as a starting skeleton:
-
-1. Cover / title
-2. Disclaimer
-3. Table of contents
-4. Situation overview
-5. Company snapshot (the target)
-6. Market / sector context
-7. Valuation summary (football field) — the money slide
-8. Trading comps detail
-9. Precedent transactions detail
+1. cover/title
+2. disclaimer
+3. contents
+4. situation overview
+5. target company snapshot
+6. market/sector context
+7. valuation summary/football field (money slide)
+8. trading comps detail
+9. precedent transactions detail
 10. DCF summary
-11. Illustrative LBO / sponsor case
-12. Process considerations
-13. Appendix
+11. illustrative LBO/sponsor case
+12. process considerations
+13. appendix
 
-## When NOT to use this skill
+## Verification
 
-- Users in a live PowerPoint session with an Office MCP available — drive their live doc instead.
-- Non-financial slideware (quarterly all-hands, marketing decks) — use the broader `powerpoint` skill.
-- Decks with heavy animation, transitions, or speaker notes — use the broader `powerpoint` skill.
+- [ ] firm template loaded when present
+- [ ] output is `./out/<name>.pptx` and path returned
+- [ ] each slide has one clear takeaway
+- [ ] every number traces to workbook sheet/cell or named range
+- [ ] workbook recalculated before `data_only=True` reads
+- [ ] charts are PNG-from-model where fidelity matters
+- [ ] no external send performed
+- [ ] deck type fits this light financial authoring skill
 
 ## Attribution
 
-Conventions adapted from Anthropic's Claude for Financial Services plugin suite, Apache-2.0 licensed. Original: https://github.com/anthropics/financial-services/tree/main/plugins/agent-plugins/pitch-agent/skills/pptx-author
+Conventions adapted from Anthropic's Claude for Financial Services plugin suite,
+Apache-2.0. Original:
+https://github.com/anthropics/financial-services/tree/main/plugins/agent-plugins/pitch-agent/skills/pptx-author

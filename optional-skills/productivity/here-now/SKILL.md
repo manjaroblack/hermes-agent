@@ -16,87 +16,81 @@ metadata:
 
 # here.now
 
-here.now lets agents publish websites and store private files in cloud Drives.
+role: here.now site publisher and private Drive operator
+do: read current docs; resolve helper paths; publish/finalize sites; update slugs; store/share Drive files; manage API-key/token hygiene; report live URLs/expiry from current output
+inputs: file/directory; slug/claim token; API key/Drive token; Drive/path/prefix/TTL; site options; user email/code for key setup
+outputs: live site URL; anonymous claim URL/expiry or authenticated permanence; Drive object/share; state/cache; redacted operation result
+¬: trust stale local docs/state over live API; publish before finalize; expose credentials/tokens; call private Drive public; show raw claim URL unless valid; send auth to untrusted base URL; commit `.herenow` state
 
-Use here.now for two jobs:
+here.now publishes websites/files at `{slug}.here.now` and stores private files
+in cloud Drives. Helpers keep this edge capability outside core:
 
-- **Sites**: publish websites and files at `{slug}.here.now`.
-- **Drives**: store private agent files in cloud folders.
+- `${HERMES_SKILL_DIR}/scripts/publish.sh` — site publish/update
+- `${HERMES_SKILL_DIR}/scripts/drive.sh` — private Drive storage
 
-## Current docs
+## When to Use
 
-**Before answering questions about here.now capabilities, features, or workflows, read the current docs:**
+- publish a static site or raw file/directory
+- update an existing here.now slug
+- store private agent documents, plans, memory, assets, media, research, or code
+- share scoped Drive access with another agent
+- obtain an API key or inspect current site/Drive capability
 
-→ **https://here.now/docs**
+## Current Docs Gate
 
-Read the docs:
+Before answering any here.now capability, feature, or workflow question, read
+https://here.now/docs:
 
-- at the first here.now-related interaction in a conversation
-- any time the user asks how to do something
-- any time the user asks what is possible, supported, or recommended
-- before telling the user a feature is unsupported
+- first here.now interaction in a conversation
+- every how-to/what-is-supported/recommended question
+- before saying a feature is unsupported
 
-Topics that require current docs (do not rely on local skill text alone):
+Topics requiring current docs: Drives/sharing, custom domains, payments/gating,
+forking, proxy routes/service variables, handles/links, limits/quotas, SPA
+routing, errors/remediation, and feature availability. If docs fetch fails,
+continue with local skill plus live API/script output; for active operations live
+API behavior wins when it conflicts with docs.
 
-- Drives and Drive sharing
-- custom domains
-- payments and payment gating
-- forking
-- proxy routes and service variables
-- handles and links
-- limits and quotas
-- SPA routing
-- error handling and remediation
-- feature availability
+## Prerequisites
 
-**If docs and live API behavior disagree, trust the live API behavior.**
+- binaries: `curl`, `file`, `jq`
+- optional `$HERENOW_API_KEY`
+- optional `$HERENOW_DRIVE_TOKEN`
+- optional `~/.herenow/credentials`
+- publish/Drive helpers at `${HERMES_SKILL_DIR}/scripts/`
 
-If the docs fetch fails or times out, continue with the local skill and live API/script output. Prefer live API behavior for active operations.
+## Procedure
 
-## Requirements
-
-- Required binaries: `curl`, `file`, `jq`
-- Optional environment variable: `$HERENOW_API_KEY`
-- Optional Drive token variable: `$HERENOW_DRIVE_TOKEN`
-- Optional credentials file: `~/.herenow/credentials`
-- Skill helper paths:
-  - `${HERMES_SKILL_DIR}/scripts/publish.sh` for publishing sites
-  - `${HERMES_SKILL_DIR}/scripts/drive.sh` for private Drive storage
-
-## Create a site
+### 1. Publish a site
 
 ```bash
 PUBLISH="${HERMES_SKILL_DIR}/scripts/publish.sh"
 bash "$PUBLISH" {file-or-dir} --client hermes
 ```
 
-Outputs the live URL (e.g. `https://bright-canvas-a7k2.here.now/`).
+Output includes live URL such as `https://bright-canvas-a7k2.here.now/`. Flow:
+create/update → upload files → finalize. Site is not live until finalize succeeds.
+Without API key: anonymous site expires in 24 hours. With saved API key: permanent.
 
-Under the hood this is a three-step flow: create/update -> upload files -> finalize. A site is not live until finalize succeeds.
+HTML: `index.html` must be at published directory root; publish `my-site/` with
+`my-site/index.html`, not its parent. Raw files are supported: one file gets rich
+viewer (image/PDF/video/audio); multiple files get directory listing, navigation,
+and image gallery.
 
-Without an API key this creates an **anonymous site** that expires in 24 hours.
-With a saved API key, the site is permanent.
-
-**File structure:** For HTML sites, place `index.html` at the root of the directory you publish, not inside a subdirectory. The directory's contents become the site root. For example, publish `my-site/` where `my-site/index.html` exists — don't publish a parent folder that contains `my-site/`.
-
-You can also publish raw files without any HTML. Single files get a rich auto-viewer (images, PDF, video, audio). Multiple files get an auto-generated directory listing with folder navigation and an image gallery.
-
-## Update an existing site
+### 2. Update a site
 
 ```bash
 PUBLISH="${HERMES_SKILL_DIR}/scripts/publish.sh"
 bash "$PUBLISH" {file-or-dir} --slug {slug} --client hermes
 ```
 
-The script auto-loads the `claimToken` from `.herenow/state.json` when updating anonymous sites. Pass `--claim-token {token}` to override.
+Anonymous updates auto-load `claimToken` from `.herenow/state.json`; override
+with `--claim-token {token}`. Authenticated updates require saved API key.
 
-Authenticated updates require a saved API key.
+### 3. Store/share private Drive files
 
-## Use a Drive
-
-Use a Drive when the user wants private cloud storage for agent files: documents, context, memory, plans, assets, media, research, code, and anything else that should persist without being published as a website.
-
-Every signed-in account has a default Drive named `My Drive`.
+Use a Drive for files that persist privately rather than public website assets.
+Every signed-in account has default `My Drive`:
 
 ```bash
 DRIVE="${HERMES_SKILL_DIR}/scripts/drive.sh"
@@ -107,32 +101,34 @@ bash "$DRIVE" cat "My Drive" notes/today.md
 bash "$DRIVE" share "My Drive" --perms write --prefix notes/ --ttl 7d
 ```
 
-Use scoped Drive tokens for agent-to-agent handoff. If you receive a `herenow_drive` share block, use its `token` as `Authorization: Bearer <token>` against `api_base`, respect `pathPrefix` when present, and preserve ETags on writes. A `pathPrefix` of `null` means full-Drive access. If the skill is available, prefer `drive.sh`; otherwise call the listed API operations directly.
+For agent handoff use scoped Drive tokens. Given a `herenow_drive` share block,
+send its `token` as `Authorization: Bearer ***` against `api_base`, respect
+`pathPrefix`, preserve ETags on writes, and treat `pathPrefix: null` as full-Drive
+access. Prefer `drive.sh`; otherwise use listed API operations directly.
 
-## API key storage
+### 4. Resolve API-key storage
 
-The publish script reads the API key from these sources (first match wins):
+Publish key precedence, first match:
 
-1. `--api-key {key}` flag (CI/scripting only — avoid in interactive use)
-2. `$HERENOW_API_KEY` environment variable
-3. `~/.herenow/credentials` file (recommended for agents)
+1. `--api-key {key}` (CI/scripting only; avoid interactive)
+2. `$HERENOW_API_KEY`
+3. `~/.herenow/credentials` (agent-recommended)
 
-To store a key, write it to the credentials file:
+Save a received key immediately, without asking the user to run it:
 
 ```bash
 mkdir -p ~/.herenow && echo "{API_KEY}" > ~/.herenow/credentials && chmod 600 ~/.herenow/credentials
 ```
 
-**IMPORTANT**: After receiving an API key, save it immediately — run the command above yourself. Do not ask the user to run it manually. Avoid passing the key via CLI flags (e.g. `--api-key`) in interactive sessions; the credentials file is the preferred storage method.
+Prefer credentials file over interactive CLI flags. Never commit
+`~/.herenow/credentials` or `.herenow/state.json`.
 
-Never commit credentials or local state files (`~/.herenow/credentials`, `.herenow/state.json`) to source control.
+### 5. Obtain an API key
 
-## Getting an API key
+To upgrade anonymous 24-hour sites to permanent:
 
-To upgrade from anonymous (24h) to permanent sites:
-
-1. Ask the user for their email address.
-2. Request a one-time sign-in code:
+1. ask user email
+2. request one-time code:
 
 ```bash
 curl -sS https://here.now/api/auth/agent/request-code \
@@ -140,8 +136,8 @@ curl -sS https://here.now/api/auth/agent/request-code \
   -d '{"email": "user@example.com"}'
 ```
 
-3. Tell the user: "Check your inbox for a sign-in code from here.now and paste it here."
-4. Verify the code and get the API key:
+3. tell user: "Check your inbox for a sign-in code from here.now and paste it here."
+4. verify:
 
 ```bash
 curl -sS https://here.now/api/auth/agent/verify-code \
@@ -149,15 +145,15 @@ curl -sS https://here.now/api/auth/agent/verify-code \
   -d '{"email":"user@example.com","code":"ABCD-2345"}'
 ```
 
-5. Save the returned `apiKey` yourself (do not ask the user to do this):
+5. save returned `apiKey` yourself:
 
 ```bash
 mkdir -p ~/.herenow && echo "{API_KEY}" > ~/.herenow/credentials && chmod 600 ~/.herenow/credentials
 ```
 
-## State file
+### 6. Treat state as cache
 
-After every site create/update, the script writes to `.herenow/state.json` in the working directory:
+After create/update, script writes `.herenow/state.json` in CWD:
 
 ```json
 {
@@ -172,46 +168,67 @@ After every site create/update, the script writes to `.herenow/state.json` in th
 }
 ```
 
-Before creating or updating sites, you may check this file to find prior slugs.
-Treat `.herenow/state.json` as internal cache only.
-Never present this local file path as a URL, and never use it as source of truth for auth mode, expiry, or claim URL.
+Use it to find prior slugs before create/update, but never present its local
+path as URL or use it as source of truth for auth mode, expiry, or claim URL.
 
-## What to tell the user
+### 7. Report result to user
 
-For published sites:
+Sites:
 
-- Always share the `siteUrl` from the current script run.
-- Read and follow `publish_result.*` lines from script stderr to determine auth mode.
-- When `publish_result.auth_mode=authenticated`: tell the user the site is **permanent** and saved to their account. No claim URL is needed.
-- When `publish_result.auth_mode=anonymous`: tell the user the site **expires in 24 hours**. Share the claim URL (if `publish_result.claim_url` is non-empty and starts with `https://`) so they can keep it permanently. Warn that claim tokens are only returned once and cannot be recovered.
-- Never tell the user to inspect `.herenow/state.json` for claim URLs or auth status.
+- always share current run's `siteUrl`
+- inspect `publish_result.*` stderr lines for auth mode
+- `publish_result.auth_mode=authenticated` → permanent/account-saved; no claim URL
+- `publish_result.auth_mode=anonymous` → expires in 24 hours; share claim URL only when `publish_result.claim_url` is non-empty and begins `https://`; warn claim token is returned once and unrecoverable
+- never tell user to inspect `state.json` for auth/claim status
 
-For Drives:
+Drives:
 
-- Do not describe Drive files as public URLs.
-- Tell the user Drive contents are private unless shared with a scoped token.
-- When sharing access with another agent, prefer a scoped token with a narrow `pathPrefix` and short TTL.
+- do not describe Drive files as public URLs
+- say contents private unless scoped token share exists
+- for agents, narrow `pathPrefix` and short TTL
 
-## publish.sh options
+### 8. Use publish options
 
-| Flag                   | Description                                  |
+| Flag | Description |
 | ---------------------- | -------------------------------------------- |
-| `--slug {slug}`        | Update an existing site instead of creating |
-| `--claim-token {token}`| Override claim token for anonymous updates    |
-| `--title {text}`       | Viewer title (non-HTML sites)             |
-| `--description {text}` | Viewer description                            |
-| `--ttl {seconds}`      | Set expiry (authenticated only)               |
-| `--client {name}`      | Agent name for attribution (e.g. `hermes`)    |
-| `--base-url {url}`     | API base URL (default: `https://here.now`)    |
+| `--slug {slug}` | Update an existing site instead of creating |
+| `--claim-token {token}`| Override claim token for anonymous updates |
+| `--title {text}` | Viewer title (non-HTML sites) |
+| `--description {text}` | Viewer description |
+| `--ttl {seconds}` | Set expiry (authenticated only) |
+| `--client {name}` | Agent name for attribution (e.g. `hermes`) |
+| `--base-url {url}` | API base URL (default: `https://here.now`) |
 | `--allow-nonherenow-base-url` | Allow sending auth to non-default `--base-url` |
-| `--api-key {key}`      | API key override (prefer credentials file)    |
-| `--spa`                | Enable SPA routing (serve index.html for unknown paths) |
-| `--forkable`           | Allow others to fork this site                           |
+| `--api-key {key}` | API key override (prefer credentials file) |
+| `--spa` | Enable SPA routing (serve index.html for unknown paths) |
+| `--forkable` | Allow others to fork this site |
+
+## Pitfalls
+
+- read https://here.now/docs before claims about current support; live API wins for active operations
+- finalize failure means site is not live even if upload succeeded
+- anonymous sites expire in 24 hours; authenticated sites are permanent
+- `index.html` belongs at published root; raw files follow viewer/listing rules
+- Drive content is private, not a public URL; scope shares with narrow prefix/TTL
+- never expose API/Drive tokens, claim tokens, credential file, or local state
+- `state.json` is cache only; current script stderr/result is authoritative
+- claim URL is one-time/recoverability-sensitive; only share validated `https://` output
+- `--allow-nonherenow-base-url` can send auth off-domain; use only with explicit trust
+- never commit `~/.herenow/credentials` or `.herenow/state.json`
+- dashboard/docs may not cover stdio shell-auth state or `$HERMES_HOME/.env` credential flows; those stay host-side
+
+## Verification
+
+- required binaries and helper paths resolve
+- current docs read for capability questions
+- publish output has `siteUrl`; finalize succeeded
+- auth mode/expiry/claim reporting comes from current `publish_result.*`, not state cache
+- Drive listing/read/write/share uses intended Drive and scoped token policy
+- credential file mode is `600`; no secret appears in output or source control
+- inspect current docs for account management beyond helper surface
 
 ## Beyond publish.sh
 
-For Drive operations, use `drive.sh` or the Drive API. For broader account and site management — delete, metadata, passwords, payments, domains, handles, links, variables, proxy routes, forking, duplication, and more — see the current docs:
-
-→ **https://here.now/docs**
-
-Full docs: https://here.now/docs
+For Drive operations use `drive.sh` or Drive API. For delete, metadata,
+passwords, payments, domains, handles, links, variables, proxy routes, forking,
+duplication, and other account/site management, read https://here.now/docs.

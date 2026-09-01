@@ -11,30 +11,35 @@ metadata:
     related_skills: [stripe-link-cli, mpp-agent]
 ---
 
-# Stripe Projects Skill
+# Stripe Projects
 
-Wraps the [Stripe Projects](https://projects.dev) CLI plugin so Hermes can provision SaaS services (Neon, Twilio, Vercel, etc.), generate and sync credentials into the user's `.env`, and manage billing across providers from one place.
+role: per-project SaaS provisioning and credential-sync operator
+do: install Stripe CLI/plugin; initialize project; catalog providers; confirm tier/charge; add/link service; verify; upgrade/remove/rotate; protect `.env` and vault
+inputs: project root; provider/service; existing-resource/link intent; account/tier choice; credential rotation/removal request
+outputs: provisioned provider resource; `.env` keys; encrypted vault record; provider list/status; upgrade/remove/rotation result
+¬: provision without project/account/charge confirmation; commit `.env`; assume existing-resource import; claim removal destroys provider resource; leak vault/plaintext credentials; ignore billing
 
-Gated `[linux, macos]` while the broader payments cluster matures on Windows. The Stripe CLI itself is cross-platform; this gate is a posture for the cluster, not a hard limit.
+Wraps [Stripe Projects](https://projects.dev) CLI plugin for SaaS providers
+(Neon, Twilio, Vercel, etc.), credential sync, and provider billing.
+Gated `[linux, macos]` while payments tooling matures on Windows; Stripe CLI
+itself is cross-platform.
 
 ## When to Use
 
-Trigger phrases:
+- set up/provision a provider or create a database
+- request Postgres, Redis, Twilio number, or similar project resource
+- manage stack credentials, rotate a key, upgrade a plan
+- discover available providers
+- link an existing provider account with `stripe projects link <provider>`
 
-- "set up <provider>", "provision <Neon|Twilio|Vercel|...>", "create a database"
-- "give me a <Postgres|Redis|Twilio number|...> for this project"
-- "manage my stack credentials", "rotate this key", "upgrade my plan"
-- "what providers can I add?"
-
-If the user already has a provider account, this skill can still connect it with `stripe projects link <provider>`. If the user wants to use an existing provider resource, such as an existing database or Vercel project, check provider support first; many providers currently support provisioning new resources but not importing existing ones.
+Existing-resource import is provider-specific; many providers provision new
+resources but do not import an existing database/Vercel project. Check support.
 
 ## Prerequisites
 
-- Stripe CLI installed (Homebrew on macOS, package manager on Linux, or download from https://docs.stripe.com/stripe-cli/install)
-- Stripe Projects plugin installed
-- A Stripe account. If the user doesn't have one yet, the CLI can guide them through sign-in or account creation in the browser during setup.
-
-## Install
+- Stripe CLI: Homebrew, Linux package manager, or https://docs.stripe.com/stripe-cli/install
+- Stripe Projects plugin
+- Stripe account; browser sign-in/account creation may occur during setup
 
 macOS:
 
@@ -43,36 +48,37 @@ brew install stripe/stripe-cli/stripe
 stripe plugin install projects
 ```
 
-Linux: follow the platform-specific install at https://docs.stripe.com/stripe-cli/install, then:
+Linux: follow https://docs.stripe.com/stripe-cli/install, then:
 
 ```
 stripe plugin install projects
 ```
 
-## How to Run
-
-All commands run through the `terminal` tool from inside the user's project directory (the CLI writes `.env` and `.projects/vault/vault.json` into the CWD).
-
 ## Procedure
 
-### 1. Initialize the project
+All commands run through `terminal` from project root. CLI writes `.env` and
+`.projects/vault/vault.json` relative to current working directory.
+
+### 1. Initialize
 
 ```
 cd <project-root>
 stripe projects init
 ```
 
-This creates `.projects/vault/vault.json` (encrypted credential store) and prepares the project to receive providers.
+Creates `.projects/vault/vault.json` encrypted credential store and prepares the
+project for providers.
 
-### 2. Discover available providers
+### 2. Discover catalog
 
 ```
 stripe projects catalog
 ```
 
-Lists every provider Stripe Projects supports — databases, hosting, auth, AI, analytics, messaging, etc.
+Review provider availability across databases, hosting, auth, AI, analytics,
+messaging, and other categories before choosing a service.
 
-### 3. Add a service
+### 3. Add/link service
 
 ```
 stripe projects add <provider>/<service>
@@ -84,7 +90,12 @@ Examples:
 - `stripe projects add twilio/sms`
 - `stripe projects add runloop/sandbox`
 
-The CLI provisions the service in the user's own account with the provider, generates credentials, syncs them into `.env`, and records the resource in the vault. The user may need to confirm a tier selection or pricing prompt.
+The CLI provisions in user's provider account, generates credentials, syncs
+`.env`, and records the resource in the vault. Surface tier/pricing prompt and
+obtain confirmation before a charge.
+
+For an existing provider account, use `stripe projects link <provider>` after
+checking existing-resource support.
 
 ### 4. Verify
 
@@ -92,9 +103,9 @@ The CLI provisions the service in the user's own account with the provider, gene
 stripe projects list
 ```
 
-Should show the newly added provider and its `.env` keys.
+Confirm provider and expected `.env` keys; never print secret values.
 
-### 5. Manage / upgrade / remove
+### 5. Manage lifecycle
 
 ```
 stripe projects upgrade <provider>     # tier change
@@ -102,14 +113,19 @@ stripe projects remove <provider>      # deprovision
 stripe projects rotate <provider>      # rotate credentials
 ```
 
+Confirm impact and billing before upgrade/remove. After remove, inspect the
+provider dashboard for high-cost services; removal may leave paused/dormant
+resources.
+
 ## Pitfalls
 
-- **`.env` writes are real writes.** The CLI appends to whatever `.env` is in the project root. If the user's `.env` is gitignored (normal), the keys land safely; if not, this skill could be a credential-leak vector. Always check `.gitignore` first.
-- **Per-project state.** `.projects/vault/vault.json` is per-project. Provisioning the same service in two different projects creates two separate resources — and two bills.
-- **Billing happens on Stripe's side.** Tier prompts during `add`/`upgrade` are real charges; surface them to the user before confirming.
-- **Provider availability changes.** The catalog grows; if a provider the user names isn't listed, `stripe projects catalog | grep <name>` first instead of failing the `add` call.
-- **Credentials in vault are encrypted but `.env` is plaintext.** Standard `.env` hygiene applies — never commit it.
-- **Removing a service does NOT always destroy the underlying resource.** Some providers leave a paused/dormant resource behind. Check the provider's own dashboard after `remove` for high-cost services (managed databases especially).
+- `.env` writes are real project-root writes; check `.gitignore` first. Never commit plaintext credentials.
+- `.projects/vault/vault.json` is per-project; same service in two projects creates separate resources and bills.
+- `add`/`upgrade` tier prompts can charge; surface them before confirmation.
+- Provider catalog changes; check `stripe projects catalog | grep <name>` before failing an add.
+- Vault is encrypted but `.env` is plaintext; apply standard `.env` hygiene.
+- `remove` does not always destroy the underlying resource; verify provider dashboard, especially managed databases.
+- Stripe account/browser setup may block first run; do not claim provisioning until CLI reports success.
 
 ## Verification
 
@@ -117,4 +133,6 @@ stripe projects rotate <provider>      # rotate credentials
 stripe projects --version && stripe projects list
 ```
 
-Exit code 0 inside an initialized project means the plugin is healthy.
+Exit code 0 inside initialized project means plugin is healthy. Also verify
+target provider/resource, vault record, expected keys without values, `.gitignore`,
+and charge/removal outcome.

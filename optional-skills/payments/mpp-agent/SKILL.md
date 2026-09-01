@@ -11,109 +11,117 @@ metadata:
     related_skills: [stripe-link-cli, stripe-projects]
 ---
 
-# MPP Agent Skill
+# MPP Agent
 
-Wraps the Machine Payments Protocol (MPP, https://mpp.dev) clients so Hermes can pay for per-request API access against servers that respond with `HTTP 402 Payment Required`.
+role: Machine Payments Protocol client operator
+do: identify 402 challenge; choose funded client; onboard/login; pay GET/POST; inspect receipt; preserve wallet secrecy; route server-side work elsewhere
+inputs: merchant URL; 402 `www-authenticate`; wallet/client preference; request method/body; optional provider onboarding
+outputs: paid merchant response; receipt evidence; client/account status; unsupported-method explanation
+¬: pay without user intent; expose wallet keys; confuse server integration with client payment; force Stripe on non-Stripe challenge; retry dead auth forever
 
-Three client options, all distributed via npm. Pick the lightest one that solves the user's need. Gated `[linux, macos]` while the broader payments tooling matures on Windows.
+Wrap npm MPP clients so Hermes can pay per-request APIs that answer
+`HTTP 402 Payment Required`. MPP: https://mpp.dev. Payments tooling is gated
+`[linux, macos]` while the cluster matures on Windows.
 
 ## When to Use
 
-- A merchant API returns `HTTP 402` with a `www-authenticate` header — and the user wants to actually pay it, not just log the response.
-- The user asks to "pay per request", "set up an agent wallet", "use Tempo / Privy / AgentCash", or wants to discover MPP-priced services.
-- A Stripe Link spend has produced a Shared Payment Token (SPT) and the agent needs to attach it to the 402 challenge — in that flow, prefer `link-cli mpp pay` (see the `stripe-link-cli` skill).
+- merchant API returns `HTTP 402` with `www-authenticate` and user wants payment
+- user asks for pay-per-request, agent wallet, Tempo, Privy, AgentCash, or MPP service discovery
+- Stripe Link spend produced a Shared Payment Token (SPT) for a 402 challenge; prefer `link-cli mpp pay` via `stripe-link-cli`
 
-## Choosing a client
+## Client Selection
 
 | Tool | When | Setup |
 |---|---|---|
-| `link-cli` | User already has Stripe Link set up, or the 402 challenge advertises `method="stripe"` | see the `stripe-link-cli` skill |
-| Tempo Wallet | MPP services with spend controls, service discovery | `tempo wallet login` |
-| Privy Agent CLI | Multi-chain wallets, browser-based funding | `privy-agent-wallets login` |
-| AgentCash | 300+ pre-priced APIs via one USDC.e balance | `npx agentcash onboard` |
-| `mppx` | Dev + debugging, smallest dep surface | `npm install -g mppx` then `mppx account create` |
+| `link-cli` | Stripe Link exists or challenge advertises `method="stripe"` | `stripe-link-cli` |
+| Tempo Wallet | MPP services, spend controls, discovery | `tempo wallet login` |
+| Privy Agent CLI | Multi-chain wallet, browser funding | `privy-agent-wallets login` |
+| AgentCash | 300+ pre-priced APIs via USDC.e balance | `npx agentcash onboard` |
+| `mppx` | development/debugging, smallest dependency surface | `npm install -g mppx`, then `mppx account create` |
 
-Default: if the user already has Stripe Link configured or the 402 challenge specifies `method="stripe"`, use `link-cli mpp pay` (the `stripe-link-cli` skill). Otherwise `mppx` for one-off paid calls and debugging, and Tempo Wallet when the user wants persistent spend controls.
+Default: Stripe Link or `method="stripe"` → `link-cli mpp pay`; otherwise
+`mppx` for one-off calls/debugging, Tempo Wallet for persistent spend controls.
 
 ## Prerequisites
 
 - Node.js 20+ on `PATH`
-- A funded wallet (Tempo / Privy / AgentCash) OR an `mppx` account
-- For Tempo / Privy / AgentCash: follow their respective onboarding skills:
-  - `https://tempo.xyz/SKILL.md`
-  - `https://agents.privy.io/skill.md`
-  - `https://agentcash.dev/skill.md`
+- funded Tempo/Privy/AgentCash wallet or `mppx` account
+- provider onboarding when selected: https://tempo.xyz/SKILL.md,
+  https://agents.privy.io/skill.md, https://agentcash.dev/skill.md
 
-Use `web_extract` to fetch any of those SKILL.md files if the user picks one.
+Fetch a chosen onboarding skill with `web_extract`; do not invent its commands.
 
-## Procedure (mppx, fastest path)
+## Procedure: mppx
 
-Run all commands through the `terminal` tool.
+Run all commands through `terminal`.
 
-### 1. Install + create an account
+### 1. Install and create account
 
 ```
 npm install -g mppx
 mppx account create
 ```
 
-Store the resulting account credentials wherever the CLI tells you (the CLI writes them under its own config — do not paste them into the agent transcript).
+Store credentials where the CLI directs; never paste them into the agent
+transcript.
 
-### 2. Inspect the merchant's 402 challenge
+### 2. Inspect the 402 challenge
 
-If the user gives you a URL, probe it first to confirm it actually speaks MPP:
-
-```
+```bash
 curl -i <url>
 ```
 
-A real MPP 402 looks like:
+Expected MPP shape:
 
 ```
 HTTP/1.1 402 Payment Required
 www-authenticate: tempo amount=0.1 currency=...
 ```
 
-### 3. Pay the request
+Select a client from the challenge method and the user's funded wallet.
+
+### 3. Pay
 
 ```
 mppx <url>
 ```
 
-For non-GET methods or request bodies:
+Non-GET/body:
 
 ```
 mppx <url> --method POST --data '<json>'
 ```
 
-`mppx` handles the 402 challenge/credential dance automatically and prints the merchant's actual response on success.
+`mppx` handles challenge/credential exchange and prints the merchant response
+on success.
 
-### 4. Verify the receipt
+### 4. Verify receipt
 
-`mppx` attaches the receipt header automatically. To inspect:
+MPP attaches receipt header automatically:
 
 ```
 mppx <url> -v
 ```
 
-## Procedure (Tempo Wallet)
+## Procedure: Tempo Wallet
 
-The Tempo Wallet skill at https://tempo.xyz/SKILL.md is the canonical reference; fetch it with `web_extract` and follow it. Headline:
+Canonical skill: https://tempo.xyz/SKILL.md. Fetch it with `web_extract` and
+follow current instructions. Headline commands:
 
 ```
 tempo wallet login
 tempo wallet pay <url>
 ```
 
-Spend controls and service discovery live in the wallet UI at https://wallet.tempo.xyz.
+Spend controls/service discovery: https://wallet.tempo.xyz.
 
 ## Pitfalls
 
-- **`HTTP 402` without `method="stripe"` cannot be paid by Stripe Link.** If the challenge advertises only Tempo / other methods, use `mppx` (or whichever wallet matches) — Link will reject it. Conversely, if it advertises `method="stripe"`, prefer Link via the `stripe-link-cli` skill so the spend goes through the user's approved card.
-- **Multiple challenges in one header.** `www-authenticate` may list several methods (e.g. `tempo, stripe`). The Link CLI's `mpp decode` will pick the Stripe one; `mppx` will pick Tempo. There's no single "right" client — pick by which wallet the user has funded.
-- **Zero-amount challenges.** Some MPP endpoints charge `$0.00` and just want a proof credential. These work without a funded wallet. Don't refuse them as "broken."
-- **Wallet keys never enter agent context.** All four clients store keys under their own config dirs (or generate per-session ephemeral keypairs, in Privy's case). Do not `cat`/`read_file` them.
-- **Server-side MPP is a different skill.** If the user wants to ADD 402 to their own API, this skill is wrong — point them at https://mpp.dev/quickstart/server and the `mppx/nextjs` / `mppx/hono` / `mppx/express` / `mppx/elysia` middlewares. A dedicated `mpp-server` skill may land later.
+- `HTTP 402` without `method="stripe"` cannot use Stripe Link; use matching `mppx`/wallet. With `method="stripe"`, prefer Link so approved card spend is used.
+- Multiple `www-authenticate` methods (e.g. `tempo, stripe`) are valid; `mpp decode` picks Stripe and `mppx` picks Tempo. Choose the funded wallet.
+- Zero-amount challenges may require proof only; no funded wallet needed.
+- Wallet keys stay in each client config or Privy ephemeral keypair; never expose them through a command or file tool.
+- Server-side MPP is a separate task: use https://mpp.dev/quickstart/server and `mppx/nextjs`, `mppx/hono`, `mppx/express`, or `mppx/elysia` middleware; this skill is client-only.
 
 ## Verification
 
@@ -121,4 +129,6 @@ Spend controls and service discovery live in the wallet UI at https://wallet.tem
 mppx --version && mppx account list
 ```
 
-Exit code 0 means installed and an account exists.
+Exit code 0 means `mppx` is installed and an account exists. For a payment,
+also require the expected HTTP response and receipt, without exposing wallet
+credentials.

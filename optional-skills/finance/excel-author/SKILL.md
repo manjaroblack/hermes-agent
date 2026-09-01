@@ -13,33 +13,48 @@ metadata:
 
 # excel-author
 
-Produce an .xlsx file on disk using `openpyxl`. Follow the banker-grade conventions below so the model is auditable, flexible, and reviewable by someone other than the person who built it.
+role: headless `openpyxl` financial-workbook author and auditor
+do: create one model per `.xlsx`; use formula/color/comment/named-range conventions; add Checks tab; build sensitivities; recalculate with LibreOffice; deliver artifact path
+inputs: model assumptions/raw actuals; template; workbook structure; formulas; source/date/comments; user output name
+outputs: `./out/<name>.xlsx`; computed values; Checks TRUE/FALSE; auditable source trail; validation result
+¬: live Office session; append unless asked; hardcode derived values; omit named ranges/checks/comments; use even-dimension sensitivity; deliver without recalculation; email/upload/post artifact
 
-Adapted from Anthropic's `xlsx-author` and `audit-xls` skills in the [anthropics/financial-services](https://github.com/anthropics/financial-services) repo. The MCP / Office-JS / Cowork-specific branches of the originals are dropped — this skill assumes headless Python.
+Produces a banker-grade `.xlsx` on disk with formulas that flex, traceable
+inputs, and checks reviewable by someone other than the author. Adapted from
+Anthropic `xlsx-author`/`audit-xls`; MCP/Office-JS/Cowork branches removed for
+headless Python.
 
-## Output contract
+## When to Use
 
-- Write to `./out/<name>.xlsx`. Create `./out/` if it does not exist.
-- Return the relative path in your final message so downstream tools can pick it up.
-- One logical model per file. Do not append to an existing workbook unless explicitly asked.
+- financial models, DCFs, comps, LBOs, three-statement workbooks
+- auditable spreadsheet artifacts generated in a non-interactive environment
 
-## Setup
+Use live Office MCP instead for a live Excel session. Use CSV/pandas for pure
+tabular exports and a BI tool for heavily interactive dashboards/charts.
+
+## Output Contract
+
+- write to `./out/<name>.xlsx`; create `./out/`
+- return relative path in final response for downstream pickup
+- one logical model per file; do not append to existing workbook unless explicitly asked
+
+## Prerequisites
 
 ```bash
 pip install "openpyxl>=3.0"
 ```
 
-## Core conventions (non-negotiable)
+## Procedure
 
-### Blue / black / green cell color
-- **Blue** (`Font(color="0000FF")`) — hardcoded input a human entered. Revenue drivers, WACC inputs, terminal growth, market data.
-- **Black** (default) — formula. Every derived cell is a live Excel formula.
-- **Green** (`Font(color="006100")`) — link to another sheet or external file.
+### 1. Apply cell conventions
 
-A reviewer can then scan the sheet and immediately see what's an assumption vs. what's computed.
+- blue `Font(color="0000FF")`: hardcoded input a human enters (drivers, WACC, terminal g, market data)
+- black/default: formula/derived calculation
+- green `Font(color="006100")`: link to another sheet/external file
 
-### Formulas over hardcodes
-Every calculation cell MUST be a formula string, never a number computed in Python and pasted as a value.
+Formula rule: every calculation cell is a formula string, never Python-computed
+number. Only hardcoded: raw historical inputs, flexed assumption drivers, and
+current market data with source/date comment.
 
 ```python
 # WRONG — silent bug waiting to happen
@@ -49,15 +64,9 @@ ws["D20"] = revenue_prior_year * (1 + growth)
 ws["D20"] = "=D19*(1+$B$8)"
 ```
 
-The only hardcoded numbers permitted:
-1. Raw historical inputs (actual revenues, reported EBITDA, etc.)
-2. Assumption drivers the user is meant to flex (growth rates, WACC inputs, terminal g)
-3. Current market data (share price, debt balance) — with a cell comment documenting source + date
+### 2. Use named ranges
 
-If you catch yourself computing a value in Python and writing the result, stop.
-
-### Named ranges for cross-sheet references
-Use named ranges for any figure referenced from another sheet, a deck, or a memo.
+Name figures referenced from another sheet, deck, or memo:
 
 ```python
 from openpyxl.workbook.defined_name import DefinedName
@@ -66,14 +75,12 @@ wb.defined_names["WACC"] = DefinedName("WACC", attr_text="Inputs!$C$8")
 calc["D30"] = "=D29/WACC"
 ```
 
-### Balance checks tab
-Include a `Checks` tab that ties everything and surfaces TRUE/FALSE:
-- Balance sheet balances (assets = liabilities + equity)
-- Cash flow ties to period-over-period cash change on the BS
-- Sum-of-parts ties to consolidated totals
-- No rogue hardcodes inside calc ranges
+### 3. Add Checks tab
 
-Example:
+Include TRUE/FALSE checks for BS Assets = Liabilities + Equity, cash-flow tie to
+BS period change, sum-of-parts to consolidated totals, and no rogue hardcodes in
+calc ranges:
+
 ```python
 checks = wb.create_sheet("Checks")
 checks["A2"] = "BS balances"
@@ -81,8 +88,7 @@ checks["B2"] = "=IS!D20-IS!D21-IS!D22"
 checks["C2"] = "=ABS(B2)<0.01"  # TRUE/FALSE
 ```
 
-### Cell comments on every hardcoded input
-Add the comment AS you create the cell, not later.
+### 4. Comment every hardcoded input immediately
 
 ```python
 from openpyxl.comments import Comment
@@ -92,10 +98,9 @@ ws["C2"].comment = Comment("Source: 10-K FY2024, p.47, revenue line", "analyst")
 ```
 
 Format: `Source: [System/Document], [Date], [Reference], [URL if applicable]`.
+Never defer and never use `TODO: add source`.
 
-Never defer sourcing. Never write `TODO: add source`.
-
-## Skeleton: typical financial model
+### 5. Build standard skeleton
 
 ```python
 from openpyxl import Workbook
@@ -138,15 +143,16 @@ calc["C2"] = "=Inputs!C3*(1+Inputs!C4)"   # formula, black
 # --- Checks tab ---
 chk = wb.create_sheet("Checks")
 chk["A2"] = "BS balances"
-chk["B2"] = "=ABS(BS!D20-BS!D21-BS!D22)<0.01"
+chk["B2"] = "=BS!D20-BS!D21-BS!D22"
+chk["C2"] = "=ABS(B2)<0.01"  # TRUE/FALSE
 
 Path("./out").mkdir(exist_ok=True)
 wb.save("./out/model.xlsx")
 ```
 
-## Section headers with merged cells
+### 6. Style merged section headers
 
-openpyxl quirk: when you merge, set the value on the top-left cell and style the full range separately.
+Set top-left value/style and style the full merged range:
 
 ```python
 ws["A7"] = "CASH FLOW PROJECTION"
@@ -156,14 +162,10 @@ for col in range(1, 9):  # A..H
     ws.cell(row=7, column=col).fill = HEADER_FILL
 ```
 
-## Sensitivity tables
+### 7. Build sensitivity tables with formulas
 
-Build with loops, not hardcoded formulas per cell. Rules:
-
-- **Odd number of rows/cols** (5×5 or 7×7) — guarantees a true center cell.
-- **Center cell = base case.** The middle row/col header must equal the model's actual WACC and terminal g so the center output equals the base-case implied share price. That's the sanity check.
-- **Highlight the center cell** with medium-blue fill (`"BDD7EE"`) and bold.
-- Populate every cell with a full recalculation formula — never an approximation.
+Use odd 5×5/7×7 grids, symmetric axes, base at center, medium-blue `BDD7EE`
+bold center, every cell full-recalculation formula, never approximation.
 
 ```python
 # 5x5 WACC (rows) x terminal growth (cols) sensitivity
@@ -198,47 +200,38 @@ center.fill = PatternFill("solid", fgColor="BDD7EE")
 center.font = BOLD
 ```
 
-## Recalculating before delivery
+Axes must equal `[base-2Δ, base-Δ, base, base+Δ, base+2Δ]`; center output
+must equal base implied share price. Do not use Excel Data Table feature.
 
-openpyxl writes formula strings but does not compute them. Excel recalculates on open, but downstream consumers (auto-check scripts, CI) need computed values.
+### 8. Recalculate
 
-Run LibreOffice or a dedicated recalc step before delivery:
+`openpyxl` writes formulas but does not calculate them. Downstream checks need
+cached values; use LibreOffice or this skill's `scripts/recalc.py`:
 
 ```bash
 # LibreOffice headless recalc
 libreoffice --headless --calc --convert-to xlsx ./out/model.xlsx --outdir ./out/
 ```
 
-Or use a Python recalc helper (see `scripts/recalc.py` in this skill).
+## User Checkpoints
 
-## Model layout planning
+For large models, stop/show/confirm after Inputs, Revenue, FCF, WACC, and
+valuation/equity bridge; only then build sensitivities. Catch wrong assumptions
+before downstream work.
 
-Before writing any formula:
-1. Define ALL section row positions
-2. Write ALL headers and labels
-3. Write ALL section dividers and blank rows
-4. THEN write formulas using the locked row positions
+## Verification Checklist
 
-This prevents the cascading-formula-breakage pattern where inserting a header row after formulas are written shifts every downstream reference.
-
-## Verify step-by-step with the user
-
-For large models (DCFs, 3-statement, LBO), stop and show the user intermediate artifacts before continuing. Catching a wrong margin assumption before you've built downstream sensitivity tables saves an hour.
-
-Checkpoint pattern:
-- After Inputs block → show raw inputs, confirm before projecting
-- After Revenue projections → confirm top line + growth
-- After FCF build → confirm the full schedule
-- After WACC → confirm inputs
-- After valuation → confirm the equity bridge
-- THEN build sensitivity tables
-
-## When NOT to use this skill
-
-- Users in a live Excel session with an Office MCP available — drive their live workbook instead.
-- Pure tabular data export with no formulas — `csv` or `pandas.to_excel` is simpler.
-- Dashboards / charts with heavy interactivity — use a real BI tool.
+- [ ] output is `./out/<name>.xlsx`, one logical model
+- [ ] formulas, not Python hardcodes, for every calculation
+- [ ] blue inputs, black formulas, green cross-sheet links
+- [ ] named ranges for cross-sheet/deck/memo references
+- [ ] comments on every hardcoded input at creation
+- [ ] Checks tab covers BS, cash, sum-of-parts, rogue hardcodes
+- [ ] sensitivity axes odd/symmetric, center is base, every cell formula, center highlighted
+- [ ] formulas recalculated; no formula errors; artifact path returned
 
 ## Attribution
 
-Conventions (blue/black/green, formulas-over-hardcodes, named ranges, sensitivity rules) adapted from Anthropic's Claude for Financial Services plugin suite, Apache-2.0 licensed. Original: https://github.com/anthropics/financial-services/tree/main/plugins/vertical-plugins/financial-analysis/skills/xlsx-author
+Conventions adapted from Anthropic's Claude for Financial Services plugin suite,
+Apache-2.0. Original:
+https://github.com/anthropics/financial-services/tree/main/plugins/vertical-plugins/financial-analysis/skills/xlsx-author

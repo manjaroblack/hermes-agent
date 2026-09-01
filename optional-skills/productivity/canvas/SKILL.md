@@ -12,30 +12,41 @@ metadata:
     tags: [Canvas, LMS, Education, Courses, Assignments]
 ---
 
-# Canvas LMS — Course & Assignment Access
+# Canvas LMS
 
-Read-only access to Canvas LMS for listing courses and assignments.
+role: read-only Canvas course/assignment information operator
+do: configure token/base URL; list active/all courses; list/order assignments; paginate; report auth/rate-limit failures
+inputs: Canvas instance URL; API token; enrollment state; course ID; due-date ordering
+outputs: course/assignment JSON; full-assignment URL; pagination-aware results; troubleshooting guidance
+¬: modify LMS data; expose tokens; guess institution URL; treat 401/403 as empty data; report truncated description as complete
 
-## Scripts
+Read-only Canvas LMS access for listing courses and assignments. Helper:
+`scripts/canvas_api.py`; calls use Canvas REST API with an API token.
 
-- `scripts/canvas_api.py` — Python CLI for Canvas API calls
+## When to Use
 
-## Setup
+- list active courses or all enrollment states
+- list assignments for a course, optionally ordered by due date
+- inspect course metadata or assignment links/descriptions
 
-1. Log in to your Canvas instance in a browser
-2. Go to **Account → Settings** (click your profile icon, then Settings)
-3. Scroll to **Approved Integrations** and click **+ New Access Token**
-4. Name the token (e.g., "Hermes Agent"), set an optional expiry, and click **Generate Token**
-5. Copy the token and add to `${HERMES_HOME:-~/.hermes}/.env`:
+## Prerequisites
+
+1. Log in to the Canvas instance in a browser.
+2. Open **Account → Settings**.
+3. In **Approved Integrations**, select **+ New Access Token**.
+4. Name token (e.g. "Hermes Agent"), optionally set expiry, select **Generate Token**.
+5. Store token and no-trailing-slash base URL in `${HERMES_HOME:-~/.hermes}/.env`:
 
 ```
 CANVAS_API_TOKEN=your_token_here
 CANVAS_BASE_URL=https://yourschool.instructure.com
 ```
 
-The base URL is whatever appears in your browser when you're logged into Canvas (no trailing slash).
+Base URL is the browser URL while logged in; do not invent an institution.
 
-## Usage
+## Procedure
+
+### 1. Query courses and assignments
 
 ```bash
 CANVAS="python $HERMES_HOME/skills/productivity/canvas/scripts/canvas_api.py"
@@ -53,41 +64,49 @@ $CANVAS list_assignments 12345
 $CANVAS list_assignments 12345 --order-by due_at
 ```
 
-## Output Format
+### 2. Parse output
 
-**list_courses** returns:
+`list_courses` returns:
+
 ```json
 [{"id": 12345, "name": "Intro to CS", "course_code": "CS101", "workflow_state": "available", "start_at": "...", "end_at": "..."}]
 ```
 
-**list_assignments** returns:
+`list_assignments` returns:
+
 ```json
 [{"id": 67890, "name": "Homework 1", "due_at": "2025-02-15T23:59:00Z", "points_possible": 100, "submission_types": ["online_upload"], "html_url": "...", "description": "...", "course_id": 12345}]
 ```
 
-Note: Assignment descriptions are truncated to 500 characters. The `html_url` field links to the full assignment page in Canvas.
+Descriptions are truncated to 500 characters; `html_url` is the full Canvas
+assignment page.
 
-## API Reference (curl)
+### 3. Use direct API when needed
 
 ```bash
 # List courses
-curl -s -H "Authorization: Bearer $CANVAS_API_TOKEN" \
+curl -s -H "Authorization: Bearer ***" \
   "$CANVAS_BASE_URL/api/v1/courses?enrollment_state=active&per_page=10"
 
 # List assignments for a course
-curl -s -H "Authorization: Bearer $CANVAS_API_TOKEN" \
+curl -s -H "Authorization: Bearer ***" \
   "$CANVAS_BASE_URL/api/v1/courses/COURSE_ID/assignments?per_page=10&order_by=due_at"
 ```
 
-Canvas uses `Link` headers for pagination. The Python script handles pagination automatically.
+Canvas paginates via `Link` headers; the Python helper follows pagination.
 
-## Rules
+## Pitfalls
 
-- This skill is **read-only** — it only fetches data, never modifies courses or assignments
-- On first use, verify auth by running `$CANVAS list_courses` — if it fails with 401, guide the user through setup
-- Canvas rate-limits to ~700 requests per 10 minutes; check `X-Rate-Limit-Remaining` header if hitting limits
+- read-only: helper fetches only; never modify courses/assignments
+- first use: run `$CANVAS list_courses`; 401 means guide token setup, not an empty course list
+- rate limit is approximately 700 requests per 10 minutes; inspect `X-Rate-Limit-Remaining` when near limit
+- 403 means token lacks permission for that course
+- empty list: try `--enrollment-state active` or omit flag for all states
+- wrong institution: verify `CANVAS_BASE_URL` matches browser URL
+- timeout: check connectivity to Canvas instance
+- keep API token out of messages, logs, and durable notes
 
-## Troubleshooting
+## Verification
 
 | Problem | Fix |
 |---------|-----|
@@ -96,3 +115,6 @@ Canvas uses `Link` headers for pagination. The Python script handles pagination 
 | Empty course list | Try `--enrollment-state active` or omit the flag to see all states |
 | Wrong institution | Verify `CANVAS_BASE_URL` matches the URL in your browser |
 | Timeout errors | Check network connectivity to your Canvas instance |
+
+Successful verification returns parseable course/assignment JSON, expected
+course IDs, and assignment `html_url` values without revealing credentials.

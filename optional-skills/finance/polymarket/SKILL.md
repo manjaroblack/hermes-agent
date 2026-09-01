@@ -6,73 +6,73 @@ author: Hermes Agent + Teknium
 license: MIT
 tags: [polymarket, prediction-markets, market-data, trading]
 platforms: [linux, macos, windows]
+metadata:
+  hermes:
+    tags: [polymarket, prediction-markets, market-data, trading]
+    related_skills: []
 ---
+
+role: read-only Polymarket prediction-market data analyst
+do: search/discover events; parse nested markets; present prices as probabilities and volume; deep-dive orderbooks/history; monitor movements when requested
+inputs: market/event query; optional `clobTokenIds`/`conditionId`; desired depth/time range
+outputs: market question; Yes/No percentages; volume; orderbook/history/trade data as requested
+¬: place trades; require authentication for public REST reads; call prices certainty; omit market question/probability; fabricate unavailable price history
 
 # Polymarket — Prediction Market Data
 
-Query prediction market data from Polymarket using their public REST APIs.
-All endpoints are read-only and require zero authentication.
-
-See `references/api-endpoints.md` for the full endpoint reference with curl examples.
+Query Polymarket public REST APIs. Endpoints are read-only and require zero
+authentication. Full endpoint reference/curl examples:
+`references/api-endpoints.md`.
 
 ## When to Use
 
-- User asks about prediction markets, betting odds, or event probabilities
-- User wants to know "what are the odds of X happening?"
-- User asks about Polymarket specifically
-- User wants market prices, orderbook data, or price history
-- User asks to monitor or track prediction market movements
+- prediction markets, betting odds, event probabilities, or Polymarket
+- market prices, orderbook data, price history, or movement monitoring
 
-## Key Concepts
+## Concepts
 
-- **Events** contain one or more **Markets** (1:many relationship)
-- **Markets** are binary outcomes with Yes/No prices between 0.00 and 1.00
-- Prices ARE probabilities: price 0.65 means the market thinks 65% likely
-- `outcomePrices` field: JSON-encoded array like `["0.80", "0.20"]`
-- `clobTokenIds` field: JSON-encoded array of two token IDs [Yes, No] for price/book queries
-- `conditionId` field: hex string used for price history queries
-- Volume is in USDC (US dollars)
+- Events contain one or more Markets (1:many)
+- Markets are binary Yes/No outcomes; prices range 0.00-1.00 and represent probabilities
+- `outcomePrices`: JSON-encoded array such as `["0.80", "0.20"]`
+- `clobTokenIds`: JSON-encoded `[Yes, No]` token IDs for price/orderbook queries
+- `conditionId`: hex string for price-history queries
+- volume is USDC (US dollars)
 
-## Three Public APIs
+## APIs
 
-1. **Gamma API** at `gamma-api.polymarket.com` — Discovery, search, browsing
-2. **CLOB API** at `clob.polymarket.com` — Real-time prices, orderbooks, history
-3. **Data API** at `data-api.polymarket.com` — Trades, open interest
+1. Gamma: `gamma-api.polymarket.com` — discovery, search, browsing
+2. CLOB: `clob.polymarket.com` — real-time prices, orderbooks, history
+3. Data: `data-api.polymarket.com` — trades, open interest
 
-## Typical Workflow
+## Procedure
 
-When a user asks about prediction market odds:
+1. search Gamma `public-search` with user query
+2. parse response; extract events and nested markets
+3. present market question, current prices as percentages, volume
+4. if requested, use `clobTokenIds` for orderbook and `conditionId` for history
 
-1. **Search** using the Gamma API public-search endpoint with their query
-2. **Parse** the response — extract events and their nested markets
-3. **Present** market question, current prices as percentages, and volume
-4. **Deep dive** if asked — use clobTokenIds for orderbook, conditionId for history
+Present `outcomePrices ["0.652", "0.348"]` as `Yes: 65.2%, No: 34.8%`; always
+include market question/probability and available volume, e.g.
+`"Will X happen?" — 65.2% Yes ($1.2M volume)`.
 
-## Presenting Results
+### Double-encoded fields
 
-Format prices as percentages for readability:
-- outcomePrices `["0.652", "0.348"]` becomes "Yes: 65.2%, No: 34.8%"
-- Always show the market question and probability
-- Include volume when available
+Gamma returns `outcomePrices`, `outcomes`, and `clobTokenIds` as JSON strings
+inside JSON. In Python:
 
-Example: `"Will X happen?" — 65.2% Yes ($1.2M volume)`
-
-## Parsing Double-Encoded Fields
-
-The Gamma API returns `outcomePrices`, `outcomes`, and `clobTokenIds` as JSON strings
-inside JSON responses (double-encoded). When processing with Python, parse them with
-`json.loads(market['outcomePrices'])` to get the actual array.
+```python
+json.loads(market["outcomePrices"])
+```
 
 ## Rate Limits
 
-Generous — unlikely to hit for normal usage:
-- Gamma: 4,000 requests per 10 seconds (general)
-- CLOB: 9,000 requests per 10 seconds (general)
-- Data: 1,000 requests per 10 seconds (general)
+- Gamma: 4,000 requests / 10 seconds (general)
+- CLOB: 9,000 requests / 10 seconds (general)
+- Data: 1,000 requests / 10 seconds (general)
 
-## Limitations
+## Limitations and Verification
 
-- This skill is read-only — it does not support placing trades
-- Trading requires wallet-based crypto authentication (EIP-712 signatures)
-- Some new markets may have empty price history
-- Geographic restrictions apply to trading but read-only data is globally accessible
+- read-only; trading requires wallet crypto authentication/EIP-712 signatures
+- new markets may have empty price history
+- geographic restrictions apply to trading; read-only data is globally accessible
+- report API/source context and query time when monitoring or comparing movement

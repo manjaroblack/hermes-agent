@@ -12,7 +12,13 @@ metadata:
     related_skills: [dcf-model, comps-analysis, lbo-model]
 ---
 
-# Stocks Skill
+# Stocks
+
+role: read-only Yahoo Finance market-data operator
+do: quote; search tickers; fetch OHLCV history; compare symbols; query crypto; report source/rate-limit caveats
+inputs: ticker(s) or company query; history range; optional `ALPHA_VANTAGE_KEY`
+outputs: JSON quote/history/search/compare/crypto data
+¬: place orders; access accounts; treat unofficial Yahoo API as stable; expose credentials; imply financial advice
 
 Read-only market data via Yahoo Finance. Five commands: `quote`, `search`,
 `history`, `compare`, `crypto`. Python stdlib only — no API key, no pip
@@ -20,30 +26,30 @@ installs. Yahoo's endpoint is unofficial and may rate-limit or change.
 
 ## When to Use
 
-- User asks for a current stock price (AAPL, TSLA, MSFT, ...)
-- User wants to look up a ticker by company name
-- User wants OHLCV history or performance over a date range
-- User wants to compare several tickers side by side
-- User asks for a crypto price (BTC, ETH, SOL, ...)
+- current stock price (`AAPL`, `TSLA`, `MSFT`, ...)
+- ticker lookup by company name
+- OHLCV history or performance over a date range
+- side-by-side comparison of several tickers
+- crypto price (`BTC`, `ETH`, `SOL`, ...)
 
 ## Prerequisites
 
-Python 3.8+ stdlib only. Optional: set `ALPHA_VANTAGE_KEY` to enrich
-`market_cap`, `pe_ratio`, and 52-week levels when Yahoo's crumb-protected
-fields come back null. Free key: https://www.alphavantage.co/support/#api-key
+- Python 3.8+ stdlib only
+- optional `ALPHA_VANTAGE_KEY` enriches `market_cap`, `pe_ratio`, and 52-week levels when Yahoo crumb-protected fields are null
+- free key: https://www.alphavantage.co/support/#api-key
 
-## How to Run
+## Procedure
 
-Invoke through the `terminal` tool. Once installed:
+Invoke through the `terminal` tool. Installed helper:
 
 ```
 SCRIPT=~/.hermes/skills/finance/stocks/scripts/stocks_client.py
 python $SCRIPT quote AAPL
 ```
 
-All output is JSON on stdout — pipe through `jq` if you want to slice it.
+All output is JSON on stdout. Use `jq` only when slicing output.
 
-## Quick Reference
+### Quick Reference
 
 ```
 python $SCRIPT quote AAPL
@@ -54,37 +60,20 @@ python $SCRIPT compare AAPL MSFT GOOGL
 python $SCRIPT crypto BTC ETH SOL
 ```
 
-## Commands
+### Commands
 
-### `quote SYMBOL [SYMBOL2 ...]`
-
-Current price, change, change%, volume, 52-week high/low.
-
-### `search QUERY`
-
-Find tickers by company name. Returns top 5: symbol, name, exchange, type.
-
-### `history SYMBOL [--range RANGE]`
-
-Daily OHLCV plus stats (min, max, avg, total return %). Ranges: `1mo`,
-`3mo`, `6mo`, `1y`, `5y`. Default: `1mo`.
-
-### `compare SYMBOL1 SYMBOL2 [...]`
-
-Side-by-side: price, change%, 52-week performance.
-
-### `crypto SYMBOL [SYMBOL2 ...]`
-
-Crypto prices. Pass `BTC` (the script appends `-USD` automatically).
+- `quote SYMBOL [SYMBOL2 ...]` → current price, change, change%, volume, 52-week high/low
+- `search QUERY` → top 5 ticker results: symbol, name, exchange, type
+- `history SYMBOL [--range RANGE]` → daily OHLCV plus min, max, average, total-return percentage; ranges `1mo`, `3mo`, `6mo`, `1y`, `5y`; default `1mo`
+- `compare SYMBOL1 SYMBOL2 [...]` → price, change%, 52-week performance side by side
+- `crypto SYMBOL [SYMBOL2 ...]` → crypto prices; `BTC` becomes `BTC-USD` automatically
 
 ## Pitfalls
 
-- Yahoo Finance's API is unofficial. Endpoints can change or rate-limit
-  without notice — if requests start failing, that's why.
-- `market_cap` and `pe_ratio` may return null on `quote` when Yahoo's
-  crumb session isn't established. Set `ALPHA_VANTAGE_KEY` to backfill.
-- Add a small delay between bulk requests to avoid rate-limiting.
-- This is read-only — no order placement, no account integration.
+- Yahoo Finance API unofficial; endpoints can change or rate-limit without notice.
+- `market_cap` and `pe_ratio` may be null when Yahoo crumb session is absent; use `ALPHA_VANTAGE_KEY` to backfill.
+- Add a small delay between bulk requests to reduce rate limiting.
+- Read-only only: no order placement or account integration.
 
 ## Verification
 
@@ -92,4 +81,4 @@ Crypto prices. Pass `BTC` (the script appends `-USD` automatically).
 python ~/.hermes/skills/finance/stocks/scripts/stocks_client.py quote AAPL
 ```
 
-Returns a JSON object with `symbol: "AAPL"` and a numeric `price` field.
+Confirm exit success, JSON object `symbol: "AAPL"`, and numeric `price`.
