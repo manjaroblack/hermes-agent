@@ -34,8 +34,8 @@ python /path/to/excel-author/scripts/recalc.py ./out/model.xlsx
 
 ## Data Source Priority
 
-1. If S&P Kensho, FactSet, Daloopa, or another structured financial-data MCP is configured, use it exclusively for financial/trading information; do not web-search.
-2. If no structured MCP is available, use Bloomberg Terminal, SEC EDGAR filings, company IR pages, or other institutional sources. In Hermes, access SEC through `web_search`/`web_extract` or use interactive data portals with `browser_navigate`.
+1. If S&P Kensho, FactSet, Daloopa, or another structured financial-data MCP is configured, use it exclusively for financial/trading information; Hermes MCP support is documented in the `native-mcp` skill; do not web-search.
+2. If no structured MCP is available, use Bloomberg Terminal, SEC EDGAR (`https://www.sec.gov/cgi-bin/browse-edgar`), company IR pages, or other institutional sources. In Hermes, access SEC through `web_search`/`web_extract` or use interactive data portals with `browser_navigate`.
 3. User-provided data is valid when explicitly supplied; ask when required context is missing.
 4. Never fabricate. If a multiple/filing number cannot be sourced, mark cell `[UNSOURCED]` and surface it to user.
 
@@ -313,7 +313,7 @@ Checklist (adapt to user/template):
 Add complexity only as needed: quarterly+LTM for seasonality, FCF for cash
 story, sector metrics, or more statistic rows for >5 companies.
 
-### 11. Red flags
+## Pitfalls
 
 Data: inconsistent periods, unexplained missing data, >10% source variance.
 Valuation: negative EBITDA valued on EBITDA (use revenue), P/E >100x without
@@ -360,7 +360,7 @@ Asset Turnover = Revenue / Total Assets
 Debt/Equity = Total Debt / Shareholders' Equity
 ```
 
-## Delivery Checklist
+## Verification
 
 - all companies truly comparable; periods consistent; units clearly labeled
 - formulas reference cells, not hardcoded derived values

@@ -70,9 +70,15 @@ json.loads(market["outcomePrices"])
 - CLOB: 9,000 requests / 10 seconds (general)
 - Data: 1,000 requests / 10 seconds (general)
 
-## Limitations and Verification
+## Pitfalls
 
 - read-only; trading requires wallet crypto authentication/EIP-712 signatures
 - new markets may have empty price history
 - geographic restrictions apply to trading; read-only data is globally accessible
+
+## Verification
+
+- parse double-encoded outcomes/prices/token IDs before reporting
+- include market question, Yes/No percentages, and available volume
+- distinguish empty history from request failure; never invent missing movement
 - report API/source context and query time when monitoring or comparing movement

@@ -43,7 +43,7 @@ headless openpyxl → .xlsx on disk
 recalculate: python /path/to/excel-author/scripts/recalc.py ./out/model.xlsx
 ```
 
-- every calculation is an Excel formula string (`ws["D20"] = "=B5*B6"`), never a Python-calculated hardcode
+- every calculation is an Excel formula string (`ws["D20"] = "=B5*B6"` or `cell.value = "=B5*B6"`), never a Python-calculated hardcode such as `cell.value = 1250`
 - use template layout, proper cell references, and its sign convention consistently (outflows may be negative or positive)
 - work section-by-section: complete, show, validate, and get confirmation before moving on
 
@@ -137,7 +137,7 @@ python /path/to/excel-author/scripts/recalc.py model.xlsx
 
 Require success with zero errors. Fix all errors before delivery.
 
-## Common Problem Areas
+## Pitfalls
 
 - balancing: one identified plug equals difference
 - taxes: only relevant income line × tax rate; decide whether losses create tax shields or are ignored; do not reference unrelated debt schedules
@@ -236,10 +236,11 @@ Returns, and Sensitivities in order.
 ## Data Sources — MCP First, Web Fallback
 
 If configured, structured financial-data MCPs (Daloopa etc.) are preferred for
-point-in-time comps, precedents, and filings. Otherwise use `web_search` /
-`web_extract` with SEC EDGAR (`https://www.sec.gov/cgi-bin/browse-edgar`), company
-IR pages, `browser_navigate`, or user data. Ask when absent; never fabricate and
-mark unavailable values `[UNSOURCED]`.
+point-in-time comps, precedents, and filings; Hermes MCP support is documented
+in the `native-mcp` skill. Otherwise use `web_search` / `web_extract` with SEC
+EDGAR (`https://www.sec.gov/cgi-bin/browse-edgar`), company IR pages,
+`browser_navigate`, or user data. Ask when absent; never fabricate and mark
+unavailable values `[UNSOURCED]`.
 
 ## Attribution
 

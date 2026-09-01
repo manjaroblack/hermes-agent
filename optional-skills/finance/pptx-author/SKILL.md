@@ -169,6 +169,14 @@ Not prescriptive; use as starting skeleton:
 12. process considerations
 13. appendix
 
+## Pitfalls
+
+- transcribing numbers from memory/summary breaks workbook traceability
+- reading `data_only=True` before workbook recalculation returns stale/empty values
+- native PowerPoint charts can drift from model and firm rendering conventions
+- missing template masters, one-slide takeaways, or sheet/cell footnotes weakens review
+- sending/uploading from this skill bypasses the file-only delivery contract
+
 ## Verification
 
 - [ ] firm template loaded when present

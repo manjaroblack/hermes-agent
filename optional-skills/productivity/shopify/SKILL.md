@@ -401,3 +401,11 @@ order cancellation, fulfillment, and inventory. Before `productDelete`,
 and obtain user confirmation. No staging clone exists unless user has a separate
 development store. Verify `errors`, `userErrors`, resource non-null, and cost
 before reporting success.
+
+## Verification
+
+- response has no top-level `errors` or mutation `userErrors`
+- requested resource/mutation result is non-null and IDs remain full Shopify GIDs
+- pagination cursor and `extensions.cost.throttleStatus` were inspected when relevant
+- destructive mutation had explicit confirmation and a post-mutation readback
+- output/logs/durable notes contain no access token, app secret, or customer PII beyond task need

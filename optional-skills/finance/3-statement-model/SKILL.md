@@ -38,7 +38,7 @@ python /path/to/excel-author/scripts/recalc.py ./out/model.xlsx
 ### Formula policy
 
 - every projection cell, roll-forward, linkage, and subtotal is an Excel formula
-- with `openpyxl`, write `ws["D15"] = "=D14*(1+Assumptions!$B$5)"`, never a computed number
+- with `openpyxl`, write `ws["D15"] = "=D14*(1+Assumptions!$B$5)"`, not the computed result `ws["D15"] = 12500`
 - hardcoded numbers only: historical actuals and assumption drivers in Assumptions tab
 - if Python computes a value for a cell, stop and replace with formula; scenarios must flex
 
@@ -169,11 +169,13 @@ must tie, and hierarchy must hold for NI/EBITDA/FCF/margins.
 ### 7. Retrieve data
 
 If public-company filing extraction is required, use
-`references/sec-filings.md`. Prefer structured financial-data MCP when
-configured (S&P Kensho, FactSet, Daloopa, or equivalent). Otherwise use SEC
-EDGAR (`https://www.sec.gov/cgi-bin/browse-edgar`), company IR pages, interactive
-data portals, or explicitly user-provided data. Never fabricate; mark an
-unsourced multiple/filing number `[UNSOURCED]` and surface it.
+`references/sec-filings.md`. Prefer a configured structured financial-data MCP
+(S&P Kensho, FactSet, Daloopa, or equivalent); Hermes MCP support is documented
+in the `native-mcp` skill. Otherwise use `web_search`/`web_extract` against SEC
+EDGAR (`https://www.sec.gov/cgi-bin/browse-edgar`), company IR pages,
+`browser_navigate` for interactive portals, or explicitly user-provided data.
+Never fabricate; mark an unsourced multiple/filing number `[UNSOURCED]` and
+surface it.
 
 ### 8. Validate formulas and linkages
 
@@ -227,6 +229,14 @@ iterations 100, maximum change 0.001. Add a circuit-breaker toggle in Assumption
 Run the `excel-author` recalculator before delivery. Resolve every error until
 status is `success`. Review all `#REF!`, `#DIV/0!`, `#VALUE!`, and `#NAME?`;
 confirm inputs/placeholders, units, scenario behavior, and clean save.
+
+## Pitfalls
+
+- derived/projected hardcodes such as `ws["D15"] = 12500` break scenario flex
+- writing before mapping tabs/rows/dependencies can overwrite or shift formulas
+- mixed periods, units, or signs silently break schedules and statement ties
+- unmanaged interest/cash/debt circularity prevents stable recalculation
+- unresolved formula errors or `[UNSOURCED]` inputs make delivery invalid
 
 ## Verification
 

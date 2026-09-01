@@ -146,6 +146,14 @@ Also provide a one-page merger-consequences summary for a pitch book.
 - include foregone interest income on cash used and new interest expense on debt raised
 - apply acquirer marginal tax rate to synergies and interest adjustments
 
+## Pitfalls
+
+- purchase price without net debt, transaction fees, or PPA understates deal cost
+- stock consideration without exchange-ratio/new-share dilution overstates EPS
+- one EPS view can hide GAAP intangible amortization or adjusted cash economics
+- full run-rate Year 1 synergies, omitted taxes, or omitted financing effects overstate accretion
+- hardcoded sensitivity outputs conceal broken premium/synergy/mix linkages
+
 ## Verification
 
 - [ ] acquirer, target, and transaction inputs sourced or marked `[UNSOURCED]`
@@ -161,10 +169,11 @@ Also provide a one-page merger-consequences summary for a pitch book.
 ## Data Sources — MCP First, Web Fallback
 
 If configured, structured financial-data MCPs (Daloopa etc.) are preferred for
-point-in-time comps, precedents, and filings. Otherwise use `web_search` /
-`web_extract` with SEC EDGAR (`https://www.sec.gov/cgi-bin/browse-edgar`), company
-IR pages, `browser_navigate`, or user data. Ask when absent; never fabricate and
-flag unavailable values `[UNSOURCED]`.
+point-in-time comps, precedents, and filings; Hermes MCP support is documented
+in the `native-mcp` skill. Otherwise use `web_search` / `web_extract` with SEC
+EDGAR (`https://www.sec.gov/cgi-bin/browse-edgar`), company IR pages,
+`browser_navigate`, or user data. Ask when absent; never fabricate and flag
+unavailable values `[UNSOURCED]`.
 
 ## Attribution
 

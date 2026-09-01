@@ -397,7 +397,7 @@ Row,Content
 Write headers/labels → dividers/blank rows → formulas → immediate formula tests.
 Think foundation/walls, not formulas before headers.
 
-## Common Mistakes (Reject)
+## Pitfalls
 
 ### Sensitivity shortcuts
 
@@ -699,8 +699,9 @@ For errors/unreasonable results read `TROUBLESHOOTING.md`.
 ## Data Sources in Hermes
 
 If structured financial-data MCP configured, prefer it for point-in-time comps,
-precedent transactions, and filings. Otherwise use `web_search`/`web_extract` on
-SEC EDGAR (`https://www.sec.gov/cgi-bin/browse-edgar`), company IR pages,
+precedent transactions, and filings; Hermes MCP support is documented in the
+`native-mcp` skill. Otherwise use `web_search`/`web_extract` on SEC EDGAR
+(`https://www.sec.gov/cgi-bin/browse-edgar`), company IR pages,
 `browser_navigate` for interactive portals, or user data. Ask when missing.
 Never fabricate; surface `[UNSOURCED]`.
 

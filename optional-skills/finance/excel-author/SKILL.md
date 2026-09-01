@@ -29,8 +29,9 @@ headless Python.
 - financial models, DCFs, comps, LBOs, three-statement workbooks
 - auditable spreadsheet artifacts generated in a non-interactive environment
 
-Use live Office MCP instead for a live Excel session. Use CSV/pandas for pure
-tabular exports and a BI tool for heavily interactive dashboards/charts.
+Use live Office MCP instead for a live Excel session. Use CSV or
+`pandas.to_excel` for pure tabular exports and a BI tool for heavily interactive
+dashboards/charts.
 
 ## Output Contract
 
@@ -218,6 +219,14 @@ libreoffice --headless --calc --convert-to xlsx ./out/model.xlsx --outdir ./out/
 For large models, stop/show/confirm after Inputs, Revenue, FCF, WACC, and
 valuation/equity bridge; only then build sensitivities. Catch wrong assumptions
 before downstream work.
+
+## Pitfalls
+
+- Python-computed derived values create silent hardcodes that no longer flex
+- unnamed cross-sheet outputs and deferred source comments destroy auditability
+- even/asymmetric sensitivity grids or Excel Data Tables do not meet the formula-grid contract
+- `openpyxl` does not calculate formulas; unrecalculated cached values may be stale
+- merged headers styled only at top-left render inconsistently across the range
 
 ## Verification Checklist
 
