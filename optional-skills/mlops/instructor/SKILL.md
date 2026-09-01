@@ -14,17 +14,23 @@ metadata:
 
 # Instructor: Structured LLM Outputs
 
-## When to Use This Skill
+role: Instructor structured-LLM-output operator
+do: define Pydantic response models; configure provider client; extract/validate/retry/stream; handle errors; batch; save typed results without leaking data
+inputs: provider/model; prompt/messages; Pydantic schema/validators; retry limit; stream/batch mode; sensitive-data policy
+outputs: validated model instances; partial/iterable results; validation/API errors; typed extraction/classification artifacts
+¬: treat schema validity as factual correctness; log PII/API keys; retry unboundedly; ignore provider mode limits; accept unconstrained strings for fixed categories
+
+## When to Use
 
 Use Instructor when you need to:
-- **Extract structured data** from LLM responses reliably
-- **Validate outputs** against Pydantic schemas automatically
-- **Retry failed extractions** with automatic error handling
-- **Parse complex JSON** with type safety and validation
-- **Stream partial results** for real-time processing
-- **Support multiple LLM providers** with consistent API
+- Extract structured data from LLM responses reliably
+- Validate outputs against Pydantic schemas automatically
+- Retry failed extractions with automatic error handling
+- Parse complex JSON with type safety and validation
+- Stream partial results for real-time processing
+- Support multiple LLM providers with consistent API
 
-**GitHub Stars**: 15,000+ | **Battle-tested**: 100,000+ developers
+GitHub Stars: 15,000+ | Battle-tested: 100,000+ developers
 
 ## Installation
 
@@ -38,7 +44,7 @@ pip install "instructor[openai]"     # OpenAI
 pip install "instructor[all]"        # All providers
 ```
 
-## Quick Start
+## Procedure
 
 ### Basic Example: Extract User Data
 
@@ -114,7 +120,7 @@ article = client.messages.create(
 )
 ```
 
-**Benefits:**
+Benefits:
 - Type safety with Python type hints
 - Automatic validation (word_count > 0)
 - Self-documenting with Field descriptions
@@ -274,7 +280,7 @@ user = client.messages.create(
 # LLM tries again with better extraction
 ```
 
-**How it works:**
+How it works:
 1. LLM generates output
 2. Pydantic validates
 3. If invalid: Error message sent back to LLM
@@ -717,28 +723,37 @@ class PartialData(BaseModel):
 | Multi-Provider | ✅ Yes | ⚠️ Manual | ✅ Yes | ✅ Yes |
 | Learning Curve | Low | Low | Medium | High |
 
-**When to choose Instructor:**
+When to choose Instructor:
 - Need structured, validated outputs
 - Want type safety and IDE support
 - Require automatic retries
 - Building data extraction systems
 
-**When to choose alternatives:**
+When to choose alternatives:
 - DSPy: Need prompt optimization
 - LangChain: Building complex chains
 - Manual: Simple, one-off extractions
 
+## Pitfalls
+- Pydantic validates shape/constraints, not truth; keep source evidence and domain checks.
+- Provider modes and structured-output support differ; configure the matching Instructor wrapper/mode.
+- Set bounded `max_retries` and catch `ValidationError`/API failures; do not retry sensitive or impossible inputs forever.
+- Redact prompts, responses, and traces when they contain personal or credential data.
+
+## Verification
+- run a minimal extraction with a known fixture and inspect a typed instance
+- exercise invalid output, bounded retry, and provider error handling
+- test streaming/batch paths when used and verify redaction
+
 ## Resources
 
-- **Documentation**: https://python.useinstructor.com
-- **GitHub**: https://github.com/jxnl/instructor (15k+ stars)
-- **Cookbook**: https://python.useinstructor.com/examples
-- **Discord**: Community support available
+- Documentation: https://python.useinstructor.com
+- GitHub: https://github.com/jxnl/instructor (15k+ stars)
+- Cookbook: https://python.useinstructor.com/examples
+- Discord: Community support available
 
 ## See Also
 
 - `references/validation.md` - Advanced validation patterns
 - `references/providers.md` - Provider-specific configuration
 - `references/examples.md` - Real-world use cases
-
-

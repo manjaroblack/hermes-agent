@@ -14,27 +14,33 @@ metadata:
 
 # PEFT (Parameter-Efficient Fine-Tuning)
 
+role: PEFT LoRA/QLoRA fine-tuning operator
+do: select adapter method; configure targets/rank/alpha; load/quantize model; tokenize data; train/evaluate; save/load/merge/serve adapters
+inputs: base model/tokenizer; dataset; adapter method/rank/targets; quantization/dtype; batch/sequence/LR; GPU and output path
+outputs: small adapter; merged model; metrics; multi-adapter serving config; memory/quality comparison
+¬: claim full fine-tuning equivalence; use mismatched target modules; merge before held-out evaluation; assume 70B fits every 24GB GPU; expose Hub tokens
+
 Fine-tune LLMs by training <1% of parameters using LoRA, QLoRA, and 25+ adapter methods.
 
-## When to use PEFT
+## When to Use
 
-**Use PEFT/LoRA when:**
+Use PEFT/LoRA when:
 - Fine-tuning 7B-70B models on consumer GPUs (RTX 4090, A100)
 - Need to train <1% parameters (6MB adapters vs 14GB full model)
 - Want fast iteration with multiple task-specific adapters
 - Deploying multiple fine-tuned variants from one base model
 
-**Use QLoRA (PEFT + quantization) when:**
+Use QLoRA (PEFT + quantization) when:
 - Fine-tuning 70B models on single 24GB GPU
 - Memory is the primary constraint
 - Can accept ~5% quality trade-off vs full fine-tuning
 
-**Use full fine-tuning instead when:**
+Use full fine-tuning instead when:
 - Training small models (<1B parameters)
 - Need maximum quality and have compute budget
 - Significant domain shift requires updating all weights
 
-## Quick start
+## Procedure
 
 ### Installation
 
@@ -158,8 +164,8 @@ model = get_peft_model(model, lora_config)
 | Rank | Trainable Params | Memory | Quality | Use Case |
 |------|-----------------|--------|---------|----------|
 | 4 | ~3M | Minimal | Lower | Simple tasks, prototyping |
-| **8** | ~7M | Low | Good | **Recommended starting point** |
-| **16** | ~14M | Medium | Better | **General fine-tuning** |
+| 8 | ~7M | Low | Good | Recommended starting point |
+| 16 | ~14M | Medium | Better | General fine-tuning |
 | 32 | ~27M | Higher | High | Complex tasks |
 | 64 | ~54M | High | Highest | Domain adaptation, 70B models |
 
@@ -252,8 +258,8 @@ with model.disable_adapter():
 
 | Method | Trainable % | Memory | Speed | Best For |
 |--------|------------|--------|-------|----------|
-| **LoRA** | 0.1-1% | Low | Fast | General fine-tuning |
-| **QLoRA** | 0.1-1% | Very Low | Medium | Memory-constrained |
+| LoRA | 0.1-1% | Low | Fast | General fine-tuning |
+| QLoRA | 0.1-1% | Very Low | Medium | Memory-constrained |
 | AdaLoRA | 0.1-1% | Low | Medium | Automatic rank selection |
 | IA3 | 0.01% | Minimal | Fastest | Few-shot adaptation |
 | Prefix Tuning | 0.1% | Low | Medium | Generation control |
@@ -363,7 +369,7 @@ outputs = llm.generate(
 | Llama 2-7B | 45.3 | 44.8 | 44.1 |
 | Llama 2-13B | 54.8 | 54.2 | 53.5 |
 
-## Common issues
+## Pitfalls
 
 ### CUDA OOM during training
 
@@ -413,23 +419,28 @@ TrainingArguments(learning_rate=1e-4)
 
 ## Best practices
 
-1. **Start with r=8-16**, increase if quality insufficient
-2. **Use alpha = 2 * rank** as starting point
-3. **Target attention + MLP layers** for best quality/efficiency
-4. **Enable gradient checkpointing** for memory savings
-5. **Save adapters frequently** (small files, easy rollback)
-6. **Evaluate on held-out data** before merging
-7. **Use QLoRA for 70B+ models** on consumer hardware
+1. Start with r=8-16, increase if quality insufficient
+2. Use alpha = 2 * rank as starting point
+3. Target attention + MLP layers for best quality/efficiency
+4. Enable gradient checkpointing for memory savings
+5. Save adapters frequently (small files, easy rollback)
+6. Evaluate on held-out data before merging
+7. Use QLoRA for 70B+ models on consumer hardware
 
 ## References
 
-- **[Advanced Usage](references/advanced-usage.md)** - DoRA, LoftQ, rank stabilization, custom modules
-- **[Troubleshooting](references/troubleshooting.md)** - Common errors, debugging, optimization
+- [Advanced Usage](references/advanced-usage.md) - DoRA, LoftQ, rank stabilization, custom modules
+- [Troubleshooting](references/troubleshooting.md) - Common errors, debugging, optimization
+
+## Verification
+- load base model/tokenizer and print trainable parameters
+- run a bounded training step and inspect loss/checkpoint
+- reload adapter, test inference, and compare merged/unmerged behavior
 
 ## Resources
 
-- **GitHub**: https://github.com/huggingface/peft
-- **Docs**: https://huggingface.co/docs/peft
-- **LoRA Paper**: arXiv:2106.09685
-- **QLoRA Paper**: arXiv:2305.14314
-- **Models**: https://huggingface.co/models?library=peft
+- GitHub: https://github.com/huggingface/peft
+- Docs: https://huggingface.co/docs/peft
+- LoRA Paper: arXiv:2106.09685
+- QLoRA Paper: arXiv:2305.14314
+- Models: https://huggingface.co/models?library=peft

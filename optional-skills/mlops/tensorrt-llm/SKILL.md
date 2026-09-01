@@ -14,28 +14,34 @@ metadata:
 
 # TensorRT-LLM
 
+role: TensorRT-LLM NVIDIA inference/deployment operator
+do: select CUDA/TensorRT/image; compile or load model; configure TP/PP/quantization/batching; serve; call endpoint; benchmark throughput/latency
+inputs: NVIDIA GPU topology; model ID/path; CUDA/TensorRT/Python versions; dtype/quantization; batch/token limits; serving target
+outputs: optimized engine or served model; OpenAI-compatible response; throughput/latency; memory and compatibility report
+¬: run on unsupported hardware; confuse NGC with Docker Hub; skip compilation/version checks; claim benchmark without workload; expose model credentials
+
 NVIDIA's open-source library for optimizing LLM inference with high performance on NVIDIA GPUs.
 
-## When to use TensorRT-LLM
+## When to Use
 
-**Use TensorRT-LLM when:**
+Use TensorRT-LLM when:
 - Deploying on NVIDIA GPUs (A100, H100, GB200)
 - Need maximum throughput (24,000+ tokens/sec on Llama 3)
 - Require low latency for real-time applications
 - Working with quantized models (FP8, INT4, FP4)
 - Scaling across multiple GPUs or nodes
 
-**Use vLLM instead when:**
+Use vLLM instead when:
 - Need simpler setup and Python-first API
 - Want PagedAttention without TensorRT compilation
 - Working with AMD GPUs or non-NVIDIA hardware
 
-**Use llama.cpp instead when:**
+Use llama.cpp instead when:
 - Deploying on CPU or Apple Silicon
 - Need edge deployment without NVIDIA GPUs
 - Want simpler GGUF quantization format
 
-## Quick start
+## Procedure
 
 ### Installation
 
@@ -97,22 +103,22 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 ## Key features
 
 ### Performance optimizations
-- **In-flight batching**: Dynamic batching during generation
-- **Paged KV cache**: Efficient memory management
-- **Flash Attention**: Optimized attention kernels
-- **Quantization**: FP8, INT4, FP4 for 2-4× faster inference
-- **CUDA graphs**: Reduced kernel launch overhead
+- In-flight batching: Dynamic batching during generation
+- Paged KV cache: Efficient memory management
+- Flash Attention: Optimized attention kernels
+- Quantization: FP8, INT4, FP4 for 2-4× faster inference
+- CUDA graphs: Reduced kernel launch overhead
 
 ### Parallelism
-- **Tensor parallelism (TP)**: Split model across GPUs
-- **Pipeline parallelism (PP)**: Layer-wise distribution
-- **Expert parallelism**: For Mixture-of-Experts models
-- **Multi-node**: Scale beyond single machine
+- Tensor parallelism (TP): Split model across GPUs
+- Pipeline parallelism (PP): Layer-wise distribution
+- Expert parallelism: For Mixture-of-Experts models
+- Multi-node: Scale beyond single machine
 
 ### Advanced features
-- **Speculative decoding**: Faster generation with draft models
-- **LoRA serving**: Efficient multi-adapter deployment
-- **Disaggregated serving**: Separate prefill and generation
+- Speculative decoding: Faster generation with draft models
+- LoRA serving: Efficient multi-adapter deployment
+- Disaggregated serving: Separate prefill and generation
 
 ## Common patterns
 
@@ -159,35 +165,44 @@ outputs = llm.generate(
 
 ## Performance benchmarks
 
-**Meta Llama 3-8B** (H100 GPU):
+Meta Llama 3-8B (H100 GPU):
 - Throughput: 24,000 tokens/sec
 - Latency: ~10ms per token
-- vs PyTorch: **100× faster**
+- vs PyTorch: 100× faster
 
-**Llama 3-70B** (8× A100 80GB):
+Llama 3-70B (8× A100 80GB):
 - FP8 quantization: 2× faster than FP16
 - Memory: 50% reduction with FP8
 
 ## Supported models
 
-- **LLaMA family**: Llama 2, Llama 3, CodeLlama
-- **GPT family**: GPT-2, GPT-J, GPT-NeoX
-- **Qwen**: Qwen, Qwen2, QwQ
-- **DeepSeek**: DeepSeek-V2, DeepSeek-V3
-- **Mixtral**: Mixtral-8x7B, Mixtral-8x22B
-- **Vision**: LLaVA, Phi-3-vision
-- **100+ models** on HuggingFace
+- LLaMA family: Llama 2, Llama 3, CodeLlama
+- GPT family: GPT-2, GPT-J, GPT-NeoX
+- Qwen: Qwen, Qwen2, QwQ
+- DeepSeek: DeepSeek-V2, DeepSeek-V3
+- Mixtral: Mixtral-8x7B, Mixtral-8x22B
+- Vision: LLaVA, Phi-3-vision
+- 100+ models on HuggingFace
 
 ## References
 
-- **[Optimization Guide](references/optimization.md)** - Quantization, batching, KV cache tuning
-- **[Multi-GPU Setup](references/multi-gpu.md)** - Tensor/pipeline parallelism, multi-node
-- **[Serving Guide](references/serving.md)** - Production deployment, monitoring, autoscaling
+- [Optimization Guide](references/optimization.md) - Quantization, batching, KV cache tuning
+- [Multi-GPU Setup](references/multi-gpu.md) - Tensor/pipeline parallelism, multi-node
+- [Serving Guide](references/serving.md) - Production deployment, monitoring, autoscaling
+
+## Pitfalls
+- TensorRT-LLM requires NVIDIA/CUDA/TensorRT compatibility; AMD, CPU, and Apple Silicon need another backend.
+- Docker images are on NGC; choose a real release tag instead of the `x.y.z` placeholder.
+- Tensor parallel size and GPU count must match the deployment topology.
+- Quantization, engine compilation, and benchmark results are model/workload-specific.
+
+## Verification
+- confirm CUDA, TensorRT, Python, and GPU versions before install/compile
+- run a minimal `LLM.generate` or HTTP request
+- measure representative throughput/latency and inspect server errors
 
 ## Resources
 
-- **Docs**: https://nvidia.github.io/TensorRT-LLM/
-- **GitHub**: https://github.com/NVIDIA/TensorRT-LLM
-- **Models**: https://huggingface.co/models?library=tensorrt_llm
-
-
+- Docs: https://nvidia.github.io/TensorRT-LLM/
+- GitHub: https://github.com/NVIDIA/TensorRT-LLM
+- Models: https://huggingface.co/models?library=tensorrt_llm

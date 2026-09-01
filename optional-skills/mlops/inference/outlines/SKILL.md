@@ -14,25 +14,31 @@ metadata:
 
 # Outlines: Structured Text Generation
 
-## When to Use This Skill
+role: Outlines constrained-generation operator
+do: wrap supported backend; choose output type/JSON/Pydantic/regex/Literal; generate; validate JSON strings; batch; tune local/vLLM/llama.cpp backend
+inputs: local/API model; tokenizer/backend; prompt(s); output type/schema/regex; generation limits; device/quantization
+outputs: grammar-constrained text; JSON string; validated Pydantic object; literal/regex/numeric result; backend/performance status
+¬: use removed pre-1.0 APIs; assume remote APIs enforce token-level constraints; treat JSON string as parsed object; claim zero overhead without a benchmark; expose keys
+
+## When to Use
 
 Use Outlines when you need to:
-- **Guarantee valid JSON/XML/code** structure during generation
-- **Use Pydantic models** for type-safe outputs
-- **Support local models** (Transformers, llama.cpp, vLLM)
-- **Maximize inference speed** with zero-overhead structured generation
-- **Generate against JSON schemas** automatically
-- **Control token sampling** at the grammar level
+- Guarantee valid JSON/XML/code structure during generation
+- Use Pydantic models for type-safe outputs
+- Support local models (Transformers, llama.cpp, vLLM)
+- Maximize inference speed with zero-overhead structured generation
+- Generate against JSON schemas automatically
+- Control token sampling at the grammar level
 
-**GitHub Stars**: 12,000+ | **From**: dottxt.ai (formerly .txt)
+GitHub Stars: 12,000+ | From: dottxt.ai (formerly .txt)
 
-> **API note (Outlines 1.x):** This skill targets the current v1 API.
+> API note (Outlines 1.x): This skill targets the current v1 API.
 > The pre-1.0 helpers (`outlines.models.transformers(...)`,
-> `outlines.generate.json/choice/regex/...`) have been **removed**. In v1 you
+> `outlines.generate.json/choice/regex/...`) have been removed. In v1 you
 > create a model with `outlines.from_transformers(...)` (or `from_vllm`,
-> `from_llamacpp`, `from_openai`) and then **call the model directly** with an
+> `from_llamacpp`, `from_openai`) and then call the model directly with an
 > output type: `model(prompt, output_type)`. JSON/Pydantic outputs are returned
-> as a **JSON string** — validate with `YourModel.model_validate_json(result)`.
+> as a JSON string — validate with `YourModel.model_validate_json(result)`.
 
 ## Installation
 
@@ -46,7 +52,7 @@ pip install outlines llama-cpp-python  # llama.cpp
 pip install outlines vllm  # vLLM for high-throughput
 ```
 
-## Quick Start
+## Procedure
 
 ### Basic Example: Classification
 
@@ -102,19 +108,18 @@ print(user.email)  # "john@example.com"
 
 ### 1. Constrained Token Sampling
 
-Outlines constrains token generation at the logit level using a compiled
-automaton derived from your output type.
+Outlines constrains token generation at the logit level using a compiled automaton derived from your output type.
 
-**How it works:**
+How it works:
 1. Convert the output type (JSON/Pydantic/regex/`Literal`) to a schema/grammar
 2. Compile the grammar into a token-level automaton
 3. Filter invalid tokens at each step during generation
 4. Fast-forward when only one valid token exists
 
-**Benefits:**
-- **Zero overhead**: Filtering happens at token level
-- **Speed improvement**: Fast-forward through deterministic paths
-- **Guaranteed validity**: Invalid outputs impossible
+Benefits:
+- Zero overhead: Filtering happens at token level
+- Speed improvement: Fast-forward through deterministic paths
+- Guaranteed validity: Invalid outputs impossible
 
 ```python
 import outlines
@@ -136,7 +141,7 @@ person = Person.model_validate_json(result)
 
 ### 2. Output Types
 
-In v1 you pass the desired **output type** directly as the second argument.
+In v1 you pass the desired output type directly as the second argument.
 
 #### Multiple choice (`Literal`)
 
@@ -234,8 +239,7 @@ result = model(prompt, YourModel)
 
 ### 4. Pydantic Integration
 
-Outlines has first-class Pydantic support with automatic schema translation.
-Generation returns a JSON string; call `model_validate_json` to get an instance.
+Outlines has first-class Pydantic support with automatic schema translation. Generation returns a JSON string; call `model_validate_json` to get an instance.
 
 #### Basic Models
 
@@ -619,41 +623,52 @@ article = Article.model_validate_json(result)  # Article instance
 | Automatic Retrying | ❌ No | ✅ Yes | ❌ No | ❌ No |
 | Learning Curve | Low | Low | Low | High |
 
-**When to choose Outlines:**
+When to choose Outlines:
 - Using local models (Transformers, llama.cpp, vLLM)
 - Need maximum inference speed
 - Want Pydantic model support
 - Require zero-overhead structured generation
 - Control token sampling process
 
-**When to choose alternatives:**
+When to choose alternatives:
 - Instructor: Need API models with automatic retrying
 - Guidance: Need token healing and complex workflows
 - LMQL: Prefer declarative query syntax
 
 ## Performance Characteristics
 
-**Speed:**
-- **Zero overhead**: Structured generation as fast as unconstrained
-- **Fast-forward optimization**: Skips deterministic tokens
-- **1.2-2x faster** than post-generation validation approaches
+Speed:
+- Zero overhead: Structured generation as fast as unconstrained
+- Fast-forward optimization: Skips deterministic tokens
+- 1.2-2x faster than post-generation validation approaches
 
-**Memory:**
+Memory:
 - Automaton compiled once per output type (cached)
 - Minimal runtime overhead
 - Efficient with vLLM for high throughput
 
-**Accuracy:**
-- **100% valid outputs** (guaranteed by the constrained automaton)
+Accuracy:
+- 100% valid outputs (guaranteed by the constrained automaton)
 - No retry loops needed
 - Deterministic token filtering
 
+## Pitfalls
+- Outlines 1.x uses `from_transformers`/`from_vllm`/`from_llamacpp`/`from_openai` and direct model calls; older `outlines.models.*`/`outlines.generate.*` helpers were removed.
+- Pydantic/JSON generation returns a JSON string; call `model_validate_json`.
+- Backend support differs; test constraints on the actual backend/model rather than assuming API parity.
+- Automaton caching, batch behavior, and speed depend on output type and workload.
+
+## Verification
+- import the selected backend and generate one constrained output
+- validate JSON/Pydantic results and assert Literal/regex/type constraints
+- run representative local/API performance and error checks
+
 ## Resources
 
-- **Documentation**: https://dottxt-ai.github.io/outlines/
-- **GitHub**: https://github.com/dottxt-ai/outlines (12k+ stars)
-- **Discord**: https://discord.gg/R9DSu34mGd
-- **Blog**: https://blog.dottxt.co
+- Documentation: https://dottxt-ai.github.io/outlines/
+- GitHub: https://github.com/dottxt-ai/outlines (12k+ stars)
+- Discord: https://discord.gg/R9DSu34mGd
+- Blog: https://blog.dottxt.co
 
 ## See Also
 

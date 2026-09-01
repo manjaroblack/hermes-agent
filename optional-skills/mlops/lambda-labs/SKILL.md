@@ -14,11 +14,17 @@ metadata:
 
 # Lambda Labs GPU Cloud
 
+role: Lambda Labs GPU-cloud operations operator
+do: set up account/API/SSH; choose GPU/region; launch/list/terminate instances; attach persistent filesystem; connect/train/infer; monitor cost and network
+inputs: Lambda account/API key; SSH key; region/GPU; filesystem; repo/dependencies; training/inference command; termination intent
+outputs: instance IDs/IP/status; SSH/storage setup; training artifacts/checkpoints; API response; cost/availability/network diagnostics
+¬: expose API/SSH keys; leave billable idle instances; store checkpoints on ephemeral home; assume GPU availability/prices; open unnecessary ports; delete persistent data
+
 Guide to running ML workloads on Lambda Labs GPU cloud with on-demand instances and 1-Click Clusters.
 
-## When to use Lambda Labs
+## When to Use
 
-**Use Lambda Labs when:**
+Use Lambda Labs when:
 - Need dedicated GPU instances with full SSH access
 - Running long training jobs (hours to days)
 - Want simple pricing with no egress fees
@@ -26,21 +32,21 @@ Guide to running ML workloads on Lambda Labs GPU cloud with on-demand instances 
 - Require high-performance multi-node clusters (16-512 GPUs)
 - Want pre-installed ML stack (Lambda Stack with PyTorch, CUDA, NCCL)
 
-**Key features:**
-- **GPU variety**: B200, H100, GH200, A100, A10, A6000, V100
-- **Lambda Stack**: Pre-installed PyTorch, TensorFlow, CUDA, cuDNN, NCCL
-- **Persistent filesystems**: Keep data across instance restarts
-- **1-Click Clusters**: 16-512 GPU Slurm clusters with InfiniBand
-- **Simple pricing**: Pay-per-minute, no egress fees
-- **Global regions**: 12+ regions worldwide
+Key features:
+- GPU variety: B200, H100, GH200, A100, A10, A6000, V100
+- Lambda Stack: Pre-installed PyTorch, TensorFlow, CUDA, cuDNN, NCCL
+- Persistent filesystems: Keep data across instance restarts
+- 1-Click Clusters: 16-512 GPU Slurm clusters with InfiniBand
+- Simple pricing: Pay-per-minute, no egress fees
+- Global regions: 12+ regions worldwide
 
-**Use alternatives instead:**
-- **Modal**: For serverless, auto-scaling workloads
-- **SkyPilot**: For multi-cloud orchestration and cost optimization
-- **RunPod**: For cheaper spot instances and serverless endpoints
-- **Vast.ai**: For GPU marketplace with lowest prices
+Use alternatives instead:
+- Modal: For serverless, auto-scaling workloads
+- SkyPilot: For multi-cloud orchestration and cost optimization
+- RunPod: For cheaper spot instances and serverless endpoints
+- Vast.ai: For GPU marketplace with lowest prices
 
-## Quick start
+## Procedure
 
 ### Account setup
 
@@ -515,17 +521,17 @@ python inference.py \
 
 ### Reduce costs
 
-1. **Use filesystems**: Avoid re-downloading data
-2. **Checkpoint frequently**: Resume interrupted training
-3. **Right-size**: Don't over-provision GPUs
-4. **Terminate idle**: No auto-stop, manually terminate
+1. Use filesystems: Avoid re-downloading data
+2. Checkpoint frequently: Resume interrupted training
+3. Right-size: Don't over-provision GPUs
+4. Terminate idle: No auto-stop, manually terminate
 
 ### Monitor usage
 
 - Dashboard shows real-time GPU utilization
 - API for programmatic monitoring
 
-## Common issues
+## Pitfalls
 
 | Issue | Solution |
 |-------|----------|
@@ -537,13 +543,18 @@ python inference.py \
 
 ## References
 
-- **[Advanced Usage](references/advanced-usage.md)** - Multi-node training, API automation
-- **[Troubleshooting](references/troubleshooting.md)** - Common issues and solutions
+- [Advanced Usage](references/advanced-usage.md) - Multi-node training, API automation
+- [Troubleshooting](references/troubleshooting.md) - Common issues and solutions
+
+## Verification
+- confirm account, region, GPU, SSH key, filesystem, and estimated cost before launch
+- check instance status/IP, SSH, `nvidia-smi`, PyTorch/CUDA, and storage
+- verify checkpoint persistence and terminate/retain resources per user intent
 
 ## Resources
 
-- **Documentation**: https://docs.lambda.ai
-- **Console**: https://cloud.lambda.ai
-- **Pricing**: https://lambda.ai/instances
-- **Support**: https://support.lambdalabs.com
-- **Blog**: https://lambda.ai/blog
+- Documentation: https://docs.lambda.ai
+- Console: https://cloud.lambda.ai
+- Pricing: https://lambda.ai/instances
+- Support: https://support.lambdalabs.com
+- Blog: https://lambda.ai/blog

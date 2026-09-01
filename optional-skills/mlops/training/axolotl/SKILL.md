@@ -14,13 +14,13 @@ metadata:
 
 # Axolotl Skill
 
-## What's inside
+role: Axolotl YAML fine-tuning operator
+do: validate YAML; select model/method; configure LoRA/QLoRA/DPO/KTO/ORPO/GRPO/multimodal training; launch; monitor; save and reload artifacts
+inputs: Axolotl config; model/tokenizer; dataset format; adapter/method; GPU topology; output/checkpoint path
+outputs: validated config; training checkpoint/adapter; logs/metrics; dataset/model compatibility findings
+¬: guess config keys; treat examples as current without validation; violate GPU divisibility; train without checkpointing; expose tokens or overwrite outputs
 
-Expert guidance for fine-tuning LLMs with Axolotl — YAML configs, 100+ models, LoRA/QLoRA, DPO/KTO/ORPO/GRPO, multimodal support.
-
-Assistance with axolotl development, generated from official documentation.
-
-## When to Use This Skill
+## When to Use
 
 This skill should be triggered when:
 - Working with axolotl
@@ -29,17 +29,27 @@ This skill should be triggered when:
 - Debugging axolotl code
 - Learning axolotl best practices
 
+
+## Procedure
+- follow the selected workflow below; preserve documented commands, APIs, and version constraints
+
+## What's inside
+
+Expert guidance for fine-tuning LLMs with Axolotl — YAML configs, 100+ models, LoRA/QLoRA, DPO/KTO/ORPO/GRPO, multimodal support.
+
+Assistance with axolotl development, generated from official documentation.
+
 ## Quick Reference
 
 ### Common Patterns
 
-**Pattern 1:** To validate that acceptable data transfer speeds exist for your training job, running NCCL Tests can help pinpoint bottlenecks, for example:
+Pattern 1: To validate that acceptable data transfer speeds exist for your training job, running NCCL Tests can help pinpoint bottlenecks, for example:
 
 ```
 ./build/all_reduce_perf -b 8 -e 128M -f 2 -g 3
 ```
 
-**Pattern 2:** Configure your model to use FSDP in the Axolotl yaml. For example:
+Pattern 2: Configure your model to use FSDP in the Axolotl yaml. For example:
 
 ```
 fsdp_version: 2
@@ -51,31 +61,31 @@ fsdp_config:
   reshard_after_forward: true
 ```
 
-**Pattern 3:** The context_parallel_size should be a divisor of the total number of GPUs. For example:
+Pattern 3: The context_parallel_size should be a divisor of the total number of GPUs. For example:
 
 ```
 context_parallel_size
 ```
 
-**Pattern 4:** For example: - With 8 GPUs and no sequence parallelism: 8 different batches processed per step - With 8 GPUs and context_parallel_size=4: Only 2 different batches processed per step (each split across 4 GPUs) - If your per-GPU micro_batch_size is 2, the global batch size decreases from 16 to 4
+Pattern 4: For example: - With 8 GPUs and no sequence parallelism: 8 different batches processed per step - With 8 GPUs and context_parallel_size=4: Only 2 different batches processed per step (each split across 4 GPUs) - If your per-GPU micro_batch_size is 2, the global batch size decreases from 16 to 4
 
 ```
 context_parallel_size=4
 ```
 
-**Pattern 5:** Setting save_compressed: true in your configuration enables saving models in a compressed format, which: - Reduces disk space usage by approximately 40% - Maintains compatibility with vLLM for accelerated inference - Maintains compatibility with llmcompressor for further optimization (example: quantization)
+Pattern 5: Setting save_compressed: true in your configuration enables saving models in a compressed format, which: - Reduces disk space usage by approximately 40% - Maintains compatibility with vLLM for accelerated inference - Maintains compatibility with llmcompressor for further optimization (example: quantization)
 
 ```
 save_compressed: true
 ```
 
-**Pattern 6:** Note It is not necessary to place your integration in the integrations folder. It can be in any location, so long as it’s installed in a package in your python env. See this repo for an example: https://github.com/axolotl-ai-cloud/diff-transformer
+Pattern 6: Note It is not necessary to place your integration in the integrations folder. It can be in any location, so long as it’s installed in a package in your python env. See this repo for an example: https://github.com/axolotl-ai-cloud/diff-transformer
 
 ```
 integrations
 ```
 
-**Pattern 7:** Handle both single-example and batched data. - single example: sample[‘input_ids’] is a list[int] - batched data: sample[‘input_ids’] is a list[list[int]]
+Pattern 7: Handle both single-example and batched data. - single example: sample[‘input_ids’] is a list[int] - batched data: sample[‘input_ids’] is a list[list[int]]
 
 ```
 utils.trainer.drop_long_seq(sample, sequence_len=2048, min_sequence_len=2)
@@ -83,17 +93,17 @@ utils.trainer.drop_long_seq(sample, sequence_len=2048, min_sequence_len=2)
 
 ### Example Code Patterns
 
-**Example 1** (python):
+Example 1 (python):
 ```python
 cli.cloud.modal_.ModalCloud(config, app=None)
 ```
 
-**Example 2** (python):
+Example 2 (python):
 ```python
 cli.cloud.modal_.run_cmd(cmd, run_folder, volumes=None)
 ```
 
-**Example 3** (python):
+Example 3 (python):
 ```python
 core.trainers.base.AxolotlTrainer(
     *_args,
@@ -104,12 +114,12 @@ core.trainers.base.AxolotlTrainer(
 )
 ```
 
-**Example 4** (python):
+Example 4 (python):
 ```python
 core.trainers.base.AxolotlTrainer.log(logs, start_time=None)
 ```
 
-**Example 5** (python):
+Example 5 (python):
 ```python
 prompt_strategies.input_output.RawInputOutputPrompter()
 ```
@@ -118,11 +128,11 @@ prompt_strategies.input_output.RawInputOutputPrompter()
 
 This skill includes comprehensive documentation in `references/`:
 
-- **api.md** - Api documentation
-- **dataset-formats.md** - Dataset-Formats documentation
-- **other.md** - Other documentation
+- api.md - Api documentation
+- dataset-formats.md - Dataset-Formats documentation
+- other.md - Other documentation
 
-Use `view` to read specific reference files when detailed information is needed.
+Use `read_file` to read specific reference files when detailed information is needed.
 
 ## Working with This Skill
 
@@ -134,6 +144,17 @@ Use the appropriate category reference file (api, guides, etc.) for detailed inf
 
 ### For Code Examples
 The quick reference section above contains common patterns extracted from the official docs.
+
+## Pitfalls
+- Context parallel size must divide total GPU count; verify global-batch effects before launch.
+- FSDP, compressed checkpoints, and custom integrations depend on the installed Axolotl version.
+- Handle both single-example and batched `input_ids` shapes when writing dataset helpers.
+- NCCL tests and multi-GPU checks should precede expensive training.
+
+## Verification
+- parse/validate the YAML with the installed Axolotl version
+- run a one-step or tiny-dataset training smoke test
+- confirm checkpoint output and a reload/inference path
 
 ## Resources
 
@@ -162,5 +183,3 @@ Add templates, boilerplate, or example projects here.
 To refresh this skill with updated documentation:
 1. Re-run the scraper with the same configuration
 2. The skill will be rebuilt with the latest information
-
-

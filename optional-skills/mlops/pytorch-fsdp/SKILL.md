@@ -14,9 +14,13 @@ metadata:
 
 # Pytorch-Fsdp Skill
 
-Assistance with pytorch-fsdp development, generated from official documentation.
+role: PyTorch FSDP large-model distributed-training operator
+do: load linked FSDP patterns; wrap modules; choose sharding/mixed precision/offload; launch distributed training; checkpoint/load/reshard; inspect memory
+inputs: PyTorch/Transformers model; process/GPU topology; auto-wrap policy; sharding strategy; precision/offload; checkpoint format/path
+outputs: distributed checkpoint; training metrics; memory/throughput profile; load/reshard result; configuration guidance
+¬: reconstruct APIs from stale snippets; wrap after optimizer creation; change topology without checkpoint plan; expose model data; claim scale without a real run
 
-## When to Use This Skill
+## When to Use
 
 This skill should be triggered when:
 - Working with pytorch-fsdp
@@ -25,20 +29,23 @@ This skill should be triggered when:
 - Debugging pytorch-fsdp code
 - Learning pytorch-fsdp best practices
 
+
+Assistance with pytorch-fsdp development, generated from official documentation.
+
+## Procedure
+- follow the selected workflow below; preserve documented commands, APIs, and version constraints
+
 ## Quick Reference
 
-The full common-patterns catalog (~157k chars of runnable FSDP snippets) lives in
-`references/common-patterns.md` — load it with `read_file` when you need wrapping,
-sharding-strategy, checkpoint, or mixed-precision examples. Start there rather than
-reconstructing FSDP incantations from memory.
+The full common-patterns catalog (~157k chars of runnable FSDP snippets) lives in `references/common-patterns.md` — load it with `read_file` when you need wrapping, sharding-strategy, checkpoint, or mixed-precision examples. Start there rather than reconstructing FSDP incantations from memory.
 
 ## Reference Files
 
 This skill includes comprehensive documentation in `references/`:
 
-- **other.md** - Other documentation
+- other.md - Other documentation
 
-Use `view` to read specific reference files when detailed information is needed.
+Use `read_file` to read specific reference files when detailed information is needed.
 
 ## Working with This Skill
 
@@ -50,6 +57,17 @@ Use the appropriate category reference file (api, guides, etc.) for detailed inf
 
 ### For Code Examples
 The quick reference section above contains common patterns extracted from the official docs.
+
+## Pitfalls
+- The runnable common-patterns catalog is in `references/common-patterns.md`; read it for current wrapping/checkpoint examples.
+- FSDP wrapping, optimizer creation, state-dict type, and distributed initialization order matter.
+- CPU offload and sharding reduce memory with communication/performance trade-offs.
+- Checkpoint state-dict and world-size changes require tested reshard/load paths.
+
+## Verification
+- resolve the installed PyTorch/Transformers FSDP API and reference examples
+- run a bounded multi-process smoke test with a tiny model
+- save/load a checkpoint and inspect memory plus synchronization errors
 
 ## Resources
 
@@ -78,5 +96,3 @@ Add templates, boilerplate, or example projects here.
 To refresh this skill with updated documentation:
 1. Re-run the scraper with the same configuration
 2. The skill will be rebuilt with the latest information
-
-

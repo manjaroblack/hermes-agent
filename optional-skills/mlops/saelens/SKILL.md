@@ -14,29 +14,39 @@ metadata:
 
 # SAELens: Sparse Autoencoders for Mechanistic Interpretability
 
-SAELens is the primary library for training and analyzing Sparse Autoencoders (SAEs) - a technique for decomposing polysemantic neural network activations into sparse, interpretable features. Based on Anthropic's groundbreaking research on monosemanticity.
+role: SAELens sparse-autoencoder interpretability operator
+do: load matching TransformerLens model/SAE; collect activations; encode/decode; train SAE; analyze features; attribute/steer; evaluate reconstruction and sparsity
+inputs: model/release/SAE ID; hook layer; text/tokens; SAE architecture/config; training data/hyperparameters; steering strength
+outputs: sparse features; reconstruction metrics; feature examples/attributions; steering outputs; checkpoints and analysis tables
+¬: treat feature labels as proof; mismatch model/hook/SAE dimensions; confuse reconstruction with interpretability; steer without baseline comparison; expose sensitive prompts
 
-**GitHub**: [jbloomAus/SAELens](https://github.com/jbloomAus/SAELens) (1,100+ stars)
+## When to Use
 
-## The Problem: Polysemanticity & Superposition
-
-Individual neurons in neural networks are **polysemantic** - they activate in multiple, semantically distinct contexts. This happens because models use **superposition** to represent more features than they have neurons, making interpretability difficult.
-
-**SAEs solve this** by decomposing dense activations into sparse, monosemantic features - typically only a small number of features activate for any given input, and each feature corresponds to an interpretable concept.
-
-## When to Use SAELens
-
-**Use SAELens when you need to:**
+Use SAELens when you need to:
 - Discover interpretable features in model activations
 - Understand what concepts a model has learned
 - Study superposition and feature geometry
 - Perform feature-based steering or ablation
 - Analyze safety-relevant features (deception, bias, harmful content)
 
-**Consider alternatives when:**
-- You need basic activation analysis → Use **TransformerLens** directly
-- You want causal intervention experiments → Use **pyvene** or **TransformerLens**
+Consider alternatives when:
+- You need basic activation analysis → Use TransformerLens directly
+- You want causal intervention experiments → Use pyvene or TransformerLens
 - You need production steering → Consider direct activation engineering
+
+
+SAELens is the primary library for training and analyzing Sparse Autoencoders (SAEs) - a technique for decomposing polysemantic neural network activations into sparse, interpretable features. Based on Anthropic's groundbreaking research on monosemanticity.
+
+GitHub: [jbloomAus/SAELens](https://github.com/jbloomAus/SAELens) (1,100+ stars)
+
+## Procedure
+- follow the selected workflow below; preserve documented commands, APIs, and version constraints
+
+## The Problem: Polysemanticity & Superposition
+
+Individual neurons in neural networks are polysemantic - they activate in multiple, semantically distinct contexts. This happens because models use superposition to represent more features than they have neurons, making interpretability difficult.
+
+SAEs solve this by decomposing dense activations into sparse, monosemantic features - typically only a small number of features activate for any given input, and each feature corresponds to an interpretable concept.
 
 ## Installation
 
@@ -59,11 +69,11 @@ Input Activation → Encoder → Sparse Features → Decoder → Reconstructed A
                  penalty                          loss
 ```
 
-**Loss Function**: `MSE(original, reconstructed) + L1_coefficient × L1(features)`
+Loss Function: `MSE(original, reconstructed) + L1_coefficient × L1(features)`
 
 ### Key Validation (Anthropic Research)
 
-In "Towards Monosemanticity", human evaluators found **70% of SAE features genuinely interpretable**. Features discovered include:
+In "Towards Monosemanticity", human evaluators found 70% of SAE features genuinely interpretable. Features discovered include:
 - DNA sequences, legal language, HTTP requests
 - Hebrew text, nutrition statements, code syntax
 - Sentiment, named entities, grammatical structures
@@ -182,7 +192,7 @@ print(f"L0 (avg active features): {trainer.metrics['l0']}")
 print(f"CE Loss Recovered: {trainer.metrics['ce_loss_score']}")
 ```
 
-> **v6 migration note:** For other SAE types swap the `sae=` sub-config —
+> v6 migration note: For other SAE types swap the `sae=` sub-config —
 > `GatedTrainingSAEConfig`, `TopKTrainingSAEConfig` (set `k` directly), or
 > `JumpReLUTrainingSAEConfig` (uses `l0_coefficient`). Legacy flat options
 > (`architecture`, `expansion_factor`, `hook_layer`, `activation_fn`/`activation_fn_kwargs`,
@@ -201,10 +211,10 @@ print(f"CE Loss Recovered: {trainer.metrics['ce_loss_score']}")
 
 | Metric | Target | Meaning |
 |--------|--------|---------|
-| **L0** | 50-200 | Average active features per token |
-| **CE Loss Score** | 80-95% | Cross-entropy recovered vs original |
-| **Dead Features** | <5% | Features that never activate |
-| **Explained Variance** | >90% | Reconstruction quality |
+| L0 | 50-200 | Average active features per token |
+| CE Loss Score | 80-95% | Cross-entropy recovered vs original |
+| Dead Features | <5% | Features that never activate |
+| Explained Variance | >90% | Reconstruction quality |
 
 ### Checklist
 - [ ] Choose target layer and hook point
@@ -297,7 +307,7 @@ for idx, val in zip(top_features.indices, top_features.values):
     print(f"  Feature {idx.item()}: {val.item():.3f}")
 ```
 
-## Common Issues & Solutions
+## Pitfalls
 
 > All examples below use the v6 nested config: SAE-specific options go in the `sae=`
 > sub-config (`StandardTrainingSAEConfig` / `TopKTrainingSAEConfig` / etc.), training
@@ -408,9 +418,9 @@ For detailed API documentation, tutorials, and advanced usage, see the `referenc
 
 | Architecture | Description | Use Case |
 |--------------|-------------|----------|
-| **Standard** | ReLU + L1 penalty | General purpose |
-| **Gated** | Learned gating mechanism | Better sparsity control |
-| **TopK** | Exactly K active features | Consistent sparsity |
+| Standard | ReLU + L1 penalty | General purpose |
+| Gated | Learned gating mechanism | Better sparsity control |
+| TopK | Exactly K active features | Consistent sparsity |
 
 ```python
 from sae_lens import LanguageModelSAERunnerConfig, TopKTrainingSAEConfig
@@ -420,3 +430,8 @@ cfg = LanguageModelSAERunnerConfig(
     sae=TopKTrainingSAEConfig(d_in=768, d_sae=768*8, k=50),
 )
 ```
+
+## Verification
+- load model and SAE at the intended hook and inspect tensor shapes
+- measure reconstruction, L0/CE recovery, dead features, and explained variance
+- compare feature/steering behavior against baseline prompts

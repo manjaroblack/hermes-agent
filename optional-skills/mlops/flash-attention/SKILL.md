@@ -14,11 +14,32 @@ metadata:
 
 # Flash Attention - Fast Memory-Efficient Attention
 
-## Quick start
+role: Flash Attention performance-optimization operator
+do: check PyTorch/CUDA/GPU; enable SDPA or flash-attn; select layout/causal/window/precision; build FA3 only on Hopper; benchmark speed/memory/accuracy
+inputs: Q/K/V tensors/layout; sequence length/heads/dtype; mask/causal/window; GPU/CUDA/PyTorch version; baseline implementation
+outputs: attention output; speed/memory measurements; max-difference check; compatibility/install diagnosis
+¬: use float32/V100 unsupported paths; assume pip flash-attn includes FA3; benchmark only short sequences; swap tensor layout silently; claim accuracy without comparison
+
+## When to Use
+
+Use Flash Attention when:
+- Training transformers with sequences >512 tokens
+- Running inference with long context (>2K tokens)
+- GPU memory constrained (OOM with standard attention)
+- Need 2-4x speedup without accuracy loss
+- Using PyTorch 2.2+ or can install flash-attn
+
+Use alternatives instead:
+- Standard attention: Sequences <256 tokens (overhead not worth it)
+- xFormers: Need more attention variants (not just speed)
+- Memory-efficient attention: CPU inference (Flash Attention needs GPU)
+
+
+## Procedure
 
 Flash Attention provides 2-4x speedup and 10-20x memory reduction for transformer attention through IO-aware tiling and recomputation.
 
-**PyTorch native (easiest, PyTorch 2.2+)**:
+PyTorch native (easiest, PyTorch 2.2+):
 ```python
 import torch
 import torch.nn.functional as F
@@ -31,7 +52,7 @@ v = torch.randn(2, 8, 512, 64, device='cuda', dtype=torch.float16)
 out = F.scaled_dot_product_attention(q, k, v)
 ```
 
-**flash-attn library (more features)**:
+flash-attn library (more features):
 ```bash
 pip install flash-attn --no-build-isolation
 ```
@@ -57,7 +78,7 @@ Flash Attention Integration:
 - [ ] Step 4: Test accuracy matches baseline
 ```
 
-**Step 1: Check PyTorch version**
+Step 1: Check PyTorch version
 
 ```bash
 python -c "import torch; print(torch.__version__)"
@@ -69,7 +90,7 @@ If <2.2, upgrade:
 pip install --upgrade torch
 ```
 
-**Step 2: Enable Flash Attention backend**
+Step 2: Enable Flash Attention backend
 
 Replace standard attention:
 ```python
@@ -82,8 +103,7 @@ import torch.nn.functional as F
 out = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
 ```
 
-Force Flash Attention backend (`torch.backends.cuda.sdp_kernel` is deprecated; use
-`torch.nn.attention.sdpa_kernel` with `SDPBackend`):
+Force Flash Attention backend (`torch.backends.cuda.sdp_kernel` is deprecated; use `torch.nn.attention.sdpa_kernel` with `SDPBackend`):
 ```python
 from torch.nn.attention import SDPBackend, sdpa_kernel
 
@@ -91,7 +111,7 @@ with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
     out = F.scaled_dot_product_attention(q, k, v)
 ```
 
-**Step 3: Verify speedup with profiling**
+Step 3: Verify speedup with profiling
 
 ```python
 import torch.utils.benchmark as benchmark
@@ -117,7 +137,7 @@ print(f"Standard: {t_standard.timeit(100).mean:.3f}s")
 
 Expected: 2-4x speedup for sequences >512 tokens.
 
-**Step 4: Test accuracy matches baseline**
+Step 4: Test accuracy matches baseline
 
 ```python
 # Compare outputs
@@ -150,7 +170,7 @@ flash-attn Library Setup:
 - [ ] Step 4: Benchmark performance
 ```
 
-**Step 1: Install flash-attn library**
+Step 1: Install flash-attn library
 
 ```bash
 # NVIDIA GPUs (CUDA 12.0+)
@@ -160,7 +180,7 @@ pip install flash-attn --no-build-isolation
 python -c "from flash_attn import flash_attn_func; print('Success')"
 ```
 
-**Step 2: Modify attention code**
+Step 2: Modify attention code
 
 ```python
 from flash_attn import flash_attn_func
@@ -182,7 +202,7 @@ out = flash_attn_func(
 out = out.transpose(1, 2)  # Back to [batch, heads, seq, dim]
 ```
 
-**Step 3: Enable advanced features**
+Step 3: Enable advanced features
 
 Multi-query attention (shared K/V across heads):
 ```python
@@ -203,7 +223,7 @@ out = flash_attn_func(
 )
 ```
 
-**Step 4: Benchmark performance**
+Step 4: Benchmark performance
 
 ```python
 import torch
@@ -232,11 +252,11 @@ print(f"Memory allocated: {torch.cuda.max_memory_allocated()/1e9:.2f}GB")
 
 For maximum performance on Hopper GPUs (H100).
 
-> **Important:** The pip package `flash-attn` (2.8.x) ships **FlashAttention-2 only** — it does
-> **not** contain FA3 or FP8 H100 kernels, and `flash_attn_func` does **not** auto-use FP8.
-> FlashAttention-3 is a separate **beta** build compiled from source from the repo's `hopper/`
+> Important: The pip package `flash-attn` (2.8.x) ships FlashAttention-2 only — it does
+> not contain FA3 or FP8 H100 kernels, and `flash_attn_func` does not auto-use FP8.
+> FlashAttention-3 is a separate beta build compiled from source from the repo's `hopper/`
 > directory, exposed via the `flash_attn_interface` module. FA3 supports FP16/BF16 forward+backward
-> and **FP8 forward only**.
+> and FP8 forward only.
 
 ```
 FP8 Setup:
@@ -245,14 +265,14 @@ FP8 Setup:
 - [ ] Step 3: Use the FA3 interface (FP8 forward)
 ```
 
-**Step 1: Verify H100 GPU**
+Step 1: Verify H100 GPU
 
 ```bash
 nvidia-smi --query-gpu=name --format=csv
 # Should show "H100" or "H800"
 ```
 
-**Step 2: Build & install FlashAttention-3 from source**
+Step 2: Build & install FlashAttention-3 from source
 
 FA3 is NOT included in `pip install flash-attn`. Build it from the `hopper/` subdirectory:
 
@@ -263,10 +283,9 @@ python setup.py install
 # (compilation is heavy and requires a CUDA toolchain + Hopper GPU)
 ```
 
-**Step 3: Use the FA3 interface (FP8 forward)**
+Step 3: Use the FA3 interface (FP8 forward)
 
-FA3 exposes its own module `flash_attn_interface` (distinct from the FA2 `flash_attn`).
-FP8 is a **forward-only** path and expects `float8_e4m3fn` inputs:
+FA3 exposes its own module `flash_attn_interface` (distinct from the FA2 `flash_attn`). FP8 is a forward-only path and expects `float8_e4m3fn` inputs:
 
 ```python
 import torch
@@ -286,23 +305,9 @@ out = flash_attn_func(q_fp8, k_fp8, v_fp8, causal=True)
 # FP16/BF16 forward+backward is also supported by the FA3 interface.
 ```
 
-## When to use vs alternatives
+## Pitfalls
 
-**Use Flash Attention when:**
-- Training transformers with sequences >512 tokens
-- Running inference with long context (>2K tokens)
-- GPU memory constrained (OOM with standard attention)
-- Need 2-4x speedup without accuracy loss
-- Using PyTorch 2.2+ or can install flash-attn
-
-**Use alternatives instead:**
-- **Standard attention**: Sequences <256 tokens (overhead not worth it)
-- **xFormers**: Need more attention variants (not just speed)
-- **Memory-efficient attention**: CPU inference (Flash Attention needs GPU)
-
-## Common issues
-
-**Issue: ImportError: cannot import flash_attn**
+Issue: ImportError: cannot import flash_attn
 
 Install with no-build-isolation flag:
 ```bash
@@ -315,7 +320,7 @@ conda install cuda -c nvidia
 pip install flash-attn --no-build-isolation
 ```
 
-**Issue: Slower than expected (no speedup)**
+Issue: Slower than expected (no speedup)
 
 Flash Attention benefits increase with sequence length:
 - <512 tokens: Minimal speedup (10-20%)
@@ -324,7 +329,7 @@ Flash Attention benefits increase with sequence length:
 
 Check sequence length is sufficient.
 
-**Issue: RuntimeError: CUDA error**
+Issue: RuntimeError: CUDA error
 
 Verify GPU supports Flash Attention:
 ```python
@@ -338,7 +343,7 @@ Flash Attention requires:
 - Turing (T4): ✅ Supported
 - Volta (V100): ❌ Not supported
 
-**Issue: Accuracy degradation**
+Issue: Accuracy degradation
 
 Check dtype is float16 or bfloat16 (not float32):
 ```python
@@ -349,18 +354,23 @@ Flash Attention uses float16/bfloat16 for speed. Float32 not supported.
 
 ## Advanced topics
 
-**Integration with HuggingFace Transformers**: See [references/transformers-integration.md](references/transformers-integration.md) for enabling Flash Attention in BERT, GPT, Llama models.
+Integration with HuggingFace Transformers: See [references/transformers-integration.md](references/transformers-integration.md) for enabling Flash Attention in BERT, GPT, Llama models.
 
-**Performance benchmarks**: See [references/benchmarks.md](references/benchmarks.md) for detailed speed and memory comparisons across GPUs and sequence lengths.
+Performance benchmarks: See [references/benchmarks.md](references/benchmarks.md) for detailed speed and memory comparisons across GPUs and sequence lengths.
 
 ## Hardware requirements
 
-- **GPU**: NVIDIA Ampere+ (A100, A10, A30) or AMD MI200+
-- **VRAM**: Same as standard attention (Flash Attention doesn't increase memory)
-- **CUDA**: 12.0+ (11.8 minimum)
-- **PyTorch**: 2.2+ for native support
+- GPU: NVIDIA Ampere+ (A100, A10, A30) or AMD MI200+
+- VRAM: Same as standard attention (Flash Attention doesn't increase memory)
+- CUDA: 12.0+ (11.8 minimum)
+- PyTorch: 2.2+ for native support
 
-**Not supported**: V100 (Volta), CPU inference
+Not supported: V100 (Volta), CPU inference
+
+## Verification
+- print/check GPU, CUDA, PyTorch, and flash-attn versions
+- run baseline versus Flash Attention with synchronized timing
+- assert output difference within the documented dtype tolerance and inspect memory
 
 ## Resources
 
@@ -369,6 +379,3 @@ Flash Attention uses float16/bfloat16 for speed. Float32 not supported.
 - Blog: https://tridao.me/blog/2024/flash3/
 - GitHub: https://github.com/Dao-AILab/flash-attention
 - PyTorch docs: https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
-
-
-

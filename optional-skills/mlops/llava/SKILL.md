@@ -14,11 +14,17 @@ metadata:
 
 # LLaVA - Large Language and Vision Assistant
 
+role: LLaVA vision-language inference operator
+do: install/load model; preprocess images; build conversation; answer VQA/caption/document prompts; run CLI/Gradio; quantize/train; inspect limitations
+inputs: model path/size; image or document; prompt/history; dtype/quantization; GPU/VRAM; output length
+outputs: image-grounded response; caption/VQA/dialogue transcript; model/VRAM settings; benchmark/limitation notes
+¬: claim unseen objects/text; treat output as authoritative; skip image preprocessing; run large models without VRAM check; expose private images or prompts
+
 Open-source vision-language model for conversational image understanding.
 
-## When to use LLaVA
+## When to Use
 
-**Use when:**
+Use when:
 - Building vision-language chatbots
 - Visual question answering (VQA)
 - Image description and captioning
@@ -26,19 +32,19 @@ Open-source vision-language model for conversational image understanding.
 - Visual instruction following
 - Document understanding with images
 
-**Metrics**:
-- **23,000+ GitHub stars**
+Metrics:
+- 23,000+ GitHub stars
 - GPT-4V level capabilities (targeted)
 - Apache 2.0 License
 - Multiple model sizes (7B-34B params)
 
-**Use alternatives instead**:
-- **GPT-4V**: Highest quality, API-based
-- **CLIP**: Simple zero-shot classification
-- **BLIP-2**: Better for captioning only
-- **Flamingo**: Research, not open-source
+Use alternatives instead:
+- GPT-4V: Highest quality, API-based
+- CLIP: Simple zero-shot classification
+- BLIP-2: Better for captioning only
+- Flamingo: Research, not open-source
 
-## Quick start
+## Procedure
 
 ### Installation
 
@@ -229,14 +235,14 @@ load_8bit=True  # Reduces VRAM ~2×
 
 ## Best practices
 
-1. **Start with 7B model** - Good quality, manageable VRAM
-2. **Use 4-bit quantization** - Reduces VRAM significantly
-3. **GPU required** - CPU inference extremely slow
-4. **Clear prompts** - Specific questions get better answers
-5. **Multi-turn conversations** - Maintain conversation context
-6. **Temperature 0.2-0.7** - Balance creativity/consistency
-7. **max_new_tokens 512-1024** - For detailed responses
-8. **Batch processing** - Process multiple images sequentially
+1. Start with 7B model - Good quality, manageable VRAM
+2. Use 4-bit quantization - Reduces VRAM significantly
+3. GPU required - CPU inference extremely slow
+4. Clear prompts - Specific questions get better answers
+5. Multi-turn conversations - Maintain conversation context
+6. Temperature 0.2-0.7 - Balance creativity/consistency
+7. max_new_tokens 512-1024 - For detailed responses
+8. Batch processing - Process multiple images sequentially
 
 ## Performance
 
@@ -251,19 +257,19 @@ load_8bit=True  # Reduces VRAM ~2×
 ## Benchmarks
 
 LLaVA achieves competitive scores on:
-- **VQAv2**: 78.5%
-- **GQA**: 62.0%
-- **MM-Vet**: 35.4%
-- **MMBench**: 64.3%
+- VQAv2: 78.5%
+- GQA: 62.0%
+- MM-Vet: 35.4%
+- MMBench: 64.3%
 
 ## Limitations
 
-1. **Hallucinations** - May describe things not in image
-2. **Spatial reasoning** - Struggles with precise locations
-3. **Small text** - Difficulty reading fine print
-4. **Object counting** - Imprecise for many objects
-5. **VRAM requirements** - Need powerful GPU
-6. **Inference speed** - Slower than CLIP
+1. Hallucinations - May describe things not in image
+2. Spatial reasoning - Struggles with precise locations
+3. Small text - Difficulty reading fine print
+4. Object counting - Imprecise for many objects
+5. VRAM requirements - Need powerful GPU
+6. Inference speed - Slower than CLIP
 
 ## Integration with frameworks
 
@@ -297,12 +303,21 @@ demo = gr.ChatInterface(
 demo.launch()
 ```
 
+## Pitfalls
+- LLaVA responses can hallucinate, miscount objects, and struggle with spatial relations or small text.
+- GPU inference is expected; choose 7B/4-bit first when VRAM is limited.
+- Keep the image token/conversation template and processor/model pairing consistent.
+- Benchmarks and GPT-4V comparisons are targeted metrics, not guarantees for a specific image.
+
+## Verification
+- load a supported checkpoint and process one representative image
+- run a bounded question and inspect decoded output
+- test a follow-up turn/quantized path when requested and report limitations
+
 ## Resources
 
-- **GitHub**: https://github.com/haotian-liu/LLaVA ⭐ 23,000+
-- **Paper**: https://arxiv.org/abs/2304.08485
-- **Demo**: https://llava.hliu.cc
-- **Models**: https://huggingface.co/liuhaotian
-- **License**: Apache 2.0
-
-
+- GitHub: https://github.com/haotian-liu/LLaVA ⭐ 23,000+
+- Paper: https://arxiv.org/abs/2304.08485
+- Demo: https://llava.hliu.cc
+- Models: https://huggingface.co/liuhaotian
+- License: Apache 2.0

@@ -14,9 +14,13 @@ metadata:
 
 # Unsloth Skill
 
-Assistance with unsloth development, generated from official documentation.
+role: Unsloth LoRA/QLoRA fine-tuning operator
+do: install/check Unsloth; select supported model; configure LoRA/QLoRA dataset/trainer; run/save training; inspect metrics; export adapter or merged model
+inputs: base model; instruction/preference dataset; LoRA rank/targets; batch/sequence/LR/epochs; GPU and output path
+outputs: adapter or merged checkpoint; tokenizer; training logs/metrics; reproducible config; VRAM/compatibility status
+¬: train before checking CUDA/VRAM; treat placeholder patterns as a complete recipe; overwrite base weights; expose Hub tokens; claim speed/quality without a benchmark
 
-## When to Use This Skill
+## When to Use
 
 This skill should be triggered when:
 - Working with unsloth
@@ -24,6 +28,12 @@ This skill should be triggered when:
 - Implementing unsloth solutions
 - Debugging unsloth code
 - Learning unsloth best practices
+
+
+Assistance with unsloth development, generated from official documentation.
+
+## Procedure
+- follow the selected workflow below; preserve documented commands, APIs, and version constraints
 
 ## Quick Reference
 
@@ -35,9 +45,9 @@ This skill should be triggered when:
 
 This skill includes full documentation in `references/`:
 
-- **llms-txt.md** - Llms-Txt documentation
+- llms-txt.md - Llms-Txt documentation
 
-Use `view` to read specific reference files when detailed information is needed.
+Use `read_file` to read specific reference files when detailed information is needed.
 
 ## Working with This Skill
 
@@ -49,6 +59,17 @@ Use the appropriate category reference file (api, guides, etc.) for detailed inf
 
 ### For Code Examples
 The quick reference section above contains common patterns extracted from the official docs.
+
+## Pitfalls
+- The quick-reference section is intentionally a placeholder; load linked reference files for detailed API guidance.
+- Check Unsloth, PyTorch, Transformers, TRL, and CUDA compatibility before a long run.
+- Use QLoRA, smaller sequence/batch settings, or gradient accumulation when VRAM is insufficient.
+- Save adapters/checkpoints frequently and validate on held-out data before merging.
+
+## Verification
+- confirm imports and the selected model/dataset load
+- run a bounded smoke-training step and inspect loss/log output
+- reload the saved adapter/checkpoint and verify inference
 
 ## Resources
 
@@ -79,6 +100,3 @@ To refresh this skill with updated documentation:
 2. The skill will be rebuilt with the latest information
 
 <!-- Trigger re-upload 1763621536 -->
-
-
-

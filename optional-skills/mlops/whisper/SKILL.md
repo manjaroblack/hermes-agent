@@ -14,11 +14,17 @@ metadata:
 
 # Whisper - Robust Speech Recognition
 
+role: speech transcription/translation operator
+do: install/load Whisper; transcribe/translate; select model/language/task; emit segments/timestamps/subtitles; batch/stream; validate quality and VRAM fit
+inputs: audio/video path; model size; language/task; timestamp/output format; CPU/GPU target
+outputs: text; segments; word timestamps; SRT/VTT/JSON; language metadata; quality/latency caveats
+¬: claim diarization; ignore >30-minute accuracy decay; expose audio or credentials; treat hallucinated text as source truth; exceed VRAM
+
 OpenAI's multilingual speech recognition model.
 
-## When to use Whisper
+## When to Use
 
-**Use when:**
+Use when:
 - Speech-to-text transcription (99 languages)
 - Podcast/video transcription
 - Meeting notes automation
@@ -26,18 +32,18 @@ OpenAI's multilingual speech recognition model.
 - Noisy audio transcription
 - Multilingual audio processing
 
-**Metrics**:
-- **72,900+ GitHub stars**
+Metrics:
+- 72,900+ GitHub stars
 - 99 languages supported
 - Trained on 680,000 hours of audio
 - MIT License
 
-**Use alternatives instead**:
-- **AssemblyAI**: Managed API, speaker diarization
-- **Deepgram**: Real-time streaming ASR
-- **Google Speech-to-Text**: Cloud-based
+Use alternatives instead:
+- AssemblyAI: Managed API, speaker diarization
+- Deepgram: Real-time streaming ASR
+- Google Speech-to-Text: Cloud-based
 
-## Quick start
+## Procedure
 
 ### Installation
 
@@ -89,7 +95,7 @@ model = whisper.load_model("turbo")  # Fastest, good quality
 | large | 1550M | ✗ | ✓ | 1x | ~10 GB |
 | turbo | 809M | ✗ | ✓ | ~8x | ~6 GB |
 
-**Recommendation**: Use `turbo` for best speed/quality, `base` for prototyping
+Recommendation: Use `turbo` for best speed/quality, `base` for prototyping
 
 ## Transcription options
 
@@ -263,16 +269,16 @@ whisper audio.wav
 
 ## Best practices
 
-1. **Use turbo model** - Best speed/quality for English
-2. **Specify language** - Faster than auto-detect
-3. **Add initial prompt** - Improves technical terms
-4. **Use GPU** - 10-20× faster
-5. **Batch process** - More efficient
-6. **Convert to WAV** - Better compatibility
-7. **Split long audio** - <30 min chunks
-8. **Check language support** - Quality varies by language
-9. **Use faster-whisper** - 4× faster than openai-whisper
-10. **Monitor VRAM** - Scale model size to hardware
+1. Use turbo model - Best speed/quality for English
+2. Specify language - Faster than auto-detect
+3. Add initial prompt - Improves technical terms
+4. Use GPU - 10-20× faster
+5. Batch process - More efficient
+6. Convert to WAV - Better compatibility
+7. Split long audio - <30 min chunks
+8. Check language support - Quality varies by language
+9. Use faster-whisper - 4× faster than openai-whisper
+10. Monitor VRAM - Scale model size to hardware
 
 ## Performance
 
@@ -303,19 +309,28 @@ Full list: 99 languages total
 
 ## Limitations
 
-1. **Hallucinations** - May repeat or invent text
-2. **Long-form accuracy** - Degrades on >30 min audio
-3. **Speaker identification** - No diarization
-4. **Accents** - Quality varies
-5. **Background noise** - Can affect accuracy
-6. **Real-time latency** - Not suitable for live captioning
+1. Hallucinations - May repeat or invent text
+2. Long-form accuracy - Degrades on >30 min audio
+3. Speaker identification - No diarization
+4. Accents - Quality varies
+5. Background noise - Can affect accuracy
+6. Real-time latency - Not suitable for live captioning
+
+## Pitfalls
+- Whisper may hallucinate, repeat, or invent text; check long/noisy outputs against audio.
+- Long-form accuracy degrades beyond 30 minutes; split audio before transcription.
+- No speaker diarization; accents, noise, and language coverage change quality.
+- GPU is 10-20× faster; scale model size to available VRAM.
+
+## Verification
+- run a small representative audio file and inspect text plus segments
+- confirm requested language/task and output format
+- spot-check timestamps against audio and report limitations
 
 ## Resources
 
-- **GitHub**: https://github.com/openai/whisper ⭐ 72,900+
-- **Paper**: https://arxiv.org/abs/2212.04356
-- **Model Card**: https://github.com/openai/whisper/blob/main/model-card.md
-- **Colab**: Available in repo
-- **License**: MIT
-
-
+- GitHub: https://github.com/openai/whisper ⭐ 72,900+
+- Paper: https://arxiv.org/abs/2212.04356
+- Model Card: https://github.com/openai/whisper/blob/main/model-card.md
+- Colab: Available in repo
+- License: MIT

@@ -14,11 +14,17 @@ metadata:
 
 # Segment Anything Model (SAM)
 
+role: SAM image-segmentation operator
+do: download/checkpoint; load predictor/generator; preprocess RGB image; segment by points/boxes/masks; filter automatic masks; export ONNX/COCO; benchmark
+inputs: image(s); checkpoint/model variant; point/box/mask prompts; thresholds; device/precision; ONNX output target
+outputs: binary masks; scores/logits; bounding boxes/areas; COCO RLE or ONNX results; quality/performance notes
+¬: treat masks as ground-truth labels; swap BGR/RGB silently; ignore checkpoint/model size; expose private images; claim video support for SAM 1
+
 Guide to using Meta AI's Segment Anything Model for zero-shot image segmentation.
 
-## When to use SAM
+## When to Use
 
-**Use SAM when:**
+Use SAM when:
 - Need to segment any object in images without task-specific training
 - Building interactive annotation tools with point/box prompts
 - Generating training data for other vision models
@@ -26,21 +32,21 @@ Guide to using Meta AI's Segment Anything Model for zero-shot image segmentation
 - Building object detection/segmentation pipelines
 - Processing medical, satellite, or domain-specific images
 
-**Key features:**
-- **Zero-shot segmentation**: Works on any image domain without fine-tuning
-- **Flexible prompts**: Points, bounding boxes, or previous masks
-- **Automatic segmentation**: Generate all object masks automatically
-- **High quality**: Trained on 1.1 billion masks from 11 million images
-- **Multiple model sizes**: ViT-B (fastest), ViT-L, ViT-H (most accurate)
-- **ONNX export**: Deploy in browsers and edge devices
+Key features:
+- Zero-shot segmentation: Works on any image domain without fine-tuning
+- Flexible prompts: Points, bounding boxes, or previous masks
+- Automatic segmentation: Generate all object masks automatically
+- High quality: Trained on 1.1 billion masks from 11 million images
+- Multiple model sizes: ViT-B (fastest), ViT-L, ViT-H (most accurate)
+- ONNX export: Deploy in browsers and edge devices
 
-**Use alternatives instead:**
-- **YOLO/Detectron2**: For real-time object detection with classes
-- **Mask2Former**: For semantic/panoptic segmentation with categories
-- **GroundingDINO + SAM**: For text-prompted segmentation
-- **SAM 2**: For video segmentation tasks
+Use alternatives instead:
+- YOLO/Detectron2: For real-time object detection with classes
+- Mask2Former: For semantic/panoptic segmentation with categories
+- GroundingDINO + SAM: For text-prompted segmentation
+- SAM 2: For video segmentation tasks
 
-## Quick start
+## Procedure
 
 ### Installation
 
@@ -482,7 +488,7 @@ mask_generator = SamAutomaticMaskGenerator(
 # Export with --return-single-mask for faster inference
 ```
 
-## Common issues
+## Pitfalls
 
 | Issue | Solution |
 |-------|----------|
@@ -494,13 +500,18 @@ mask_generator = SamAutomaticMaskGenerator(
 
 ## References
 
-- **[Advanced Usage](references/advanced-usage.md)** - Batching, fine-tuning, integration
-- **[Troubleshooting](references/troubleshooting.md)** - Common issues and solutions
+- [Advanced Usage](references/advanced-usage.md) - Batching, fine-tuning, integration
+- [Troubleshooting](references/troubleshooting.md) - Common issues and solutions
+
+## Verification
+- load checkpoint and process one RGB image
+- check mask shape, score, prompt geometry, and original-size post-processing
+- spot-check masks visually/against labels and validate ONNX outputs if exported
 
 ## Resources
 
-- **GitHub**: https://github.com/facebookresearch/segment-anything
-- **Paper**: https://arxiv.org/abs/2304.02643
-- **Demo**: https://segment-anything.com
-- **SAM 2 (Video)**: https://github.com/facebookresearch/segment-anything-2
-- **HuggingFace**: https://huggingface.co/facebook/sam-vit-huge
+- GitHub: https://github.com/facebookresearch/segment-anything
+- Paper: https://arxiv.org/abs/2304.02643
+- Demo: https://segment-anything.com
+- SAM 2 (Video): https://github.com/facebookresearch/segment-anything-2
+- HuggingFace: https://huggingface.co/facebook/sam-vit-huge

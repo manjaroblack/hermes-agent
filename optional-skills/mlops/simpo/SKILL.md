@@ -14,11 +14,38 @@ metadata:
 
 # SimPO - Simple Preference Optimization
 
-## Quick start
+role: SimPO reference-free preference-alignment operator
+do: provision alignment-handbook/Flash Attention; prepare preference data; configure beta/margin/loss/SFT; launch Accelerate/DeepSpeed training; evaluate and tune
+inputs: base/instruct model; chosen/rejected dataset; SimPO YAML; learning rate/beta/margin; GPU/ZeRO topology; output path
+outputs: aligned checkpoint; training metrics; preference-separation/evaluation results; reproducible config; VRAM/cost notes
+¬: use malformed preference pairs; confuse SimPO with DPO/reference-model training; trust divergent loss; skip held-out evaluation; expose tokens
+
+## When to Use
+
+Use SimPO when:
+- Want simpler training than DPO (no reference model)
+- Have preference data (chosen/rejected pairs)
+- Need better performance than DPO
+- Limited compute resources
+- Single-node training sufficient
+
+Algorithm selection:
+- SimPO: Simplest, best performance, no reference model
+- DPO: Need reference model baseline, more conservative
+- PPO: Maximum control, need reward model, complex setup
+- GRPO: Memory-efficient RL, no critic
+
+Use alternatives instead:
+- OpenRLHF: Multi-node distributed training, PPO/GRPO
+- TRL: Need multiple methods in one framework
+- DPO: Established baseline comparison
+
+
+## Procedure
 
 SimPO is a reference-free preference optimization method that outperforms DPO without needing a reference model.
 
-**Installation**:
+Installation:
 ```bash
 # Create environment
 conda create -n simpo python=3.10 && conda activate simpo
@@ -35,7 +62,7 @@ python -m pip install .
 python -m pip install flash-attn --no-build-isolation
 ```
 
-**Training** (Mistral 7B):
+Training (Mistral 7B):
 ```bash
 ACCELERATE_LOG_LEVEL=info accelerate launch \
   --config_file accelerate_configs/deepspeed_zero3.yaml \
@@ -47,7 +74,7 @@ ACCELERATE_LOG_LEVEL=info accelerate launch \
 
 ### Workflow 1: Train from base model (Mistral 7B)
 
-**Config** (`mistral-7b-base-simpo.yaml`):
+Config (`mistral-7b-base-simpo.yaml`):
 ```yaml
 # Model
 model_name_or_path: mistralai/Mistral-7B-v0.1
@@ -76,7 +103,7 @@ gradient_accumulation_steps: 8
 output_dir: ./outputs/mistral-7b-simpo
 ```
 
-**Launch training**:
+Launch training:
 ```bash
 accelerate launch --config_file accelerate_configs/deepspeed_zero3.yaml \
   scripts/run_simpo.py training_configs/mistral-7b-base-simpo.yaml
@@ -84,7 +111,7 @@ accelerate launch --config_file accelerate_configs/deepspeed_zero3.yaml \
 
 ### Workflow 2: Fine-tune instruct model (Llama 3 8B)
 
-**Config** (`llama3-8b-instruct-simpo.yaml`):
+Config (`llama3-8b-instruct-simpo.yaml`):
 ```yaml
 model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct
 
@@ -102,7 +129,7 @@ gradient_accumulation_steps: 4
 output_dir: ./outputs/llama3-8b-simpo
 ```
 
-**Launch**:
+Launch:
 ```bash
 accelerate launch --config_file accelerate_configs/deepspeed_zero3.yaml \
   scripts/run_simpo.py training_configs/llama3-8b-instruct-simpo.yaml
@@ -110,7 +137,7 @@ accelerate launch --config_file accelerate_configs/deepspeed_zero3.yaml \
 
 ### Workflow 3: Reasoning-intensive tasks (lower LR)
 
-**For math/code tasks**:
+For math/code tasks:
 ```yaml
 model_name_or_path: deepseek-ai/deepseek-math-7b-base
 
@@ -127,29 +154,9 @@ per_device_train_batch_size: 1
 gradient_accumulation_steps: 16
 ```
 
-## When to use vs alternatives
+## Pitfalls
 
-**Use SimPO when**:
-- Want simpler training than DPO (no reference model)
-- Have preference data (chosen/rejected pairs)
-- Need better performance than DPO
-- Limited compute resources
-- Single-node training sufficient
-
-**Algorithm selection**:
-- **SimPO**: Simplest, best performance, no reference model
-- **DPO**: Need reference model baseline, more conservative
-- **PPO**: Maximum control, need reward model, complex setup
-- **GRPO**: Memory-efficient RL, no critic
-
-**Use alternatives instead**:
-- **OpenRLHF**: Multi-node distributed training, PPO/GRPO
-- **TRL**: Need multiple methods in one framework
-- **DPO**: Established baseline comparison
-
-## Common issues
-
-**Issue: Loss divergence**
+Issue: Loss divergence
 
 Reduce learning rate:
 ```yaml
@@ -161,14 +168,14 @@ Reduce beta:
 beta: 1.0  # Reduce from 2.0
 ```
 
-**Issue: Model forgets capabilities**
+Issue: Model forgets capabilities
 
 Add SFT regularization:
 ```yaml
 sft_weight: 0.1  # Add SFT loss component
 ```
 
-**Issue: Poor preference separation**
+Issue: Poor preference separation
 
 Increase beta and margin:
 ```yaml
@@ -176,7 +183,7 @@ beta: 5.0            # Increase from 2.0
 gamma_beta_ratio: 0.8  # Increase from 0.5
 ```
 
-**Issue: OOM during training**
+Issue: OOM during training
 
 Reduce batch size:
 ```yaml
@@ -191,26 +198,31 @@ gradient_checkpointing: true
 
 ## Advanced topics
 
-**Loss functions**: See [references/loss-functions.md](references/loss-functions.md) for sigmoid vs hinge loss, mathematical formulations, and when to use each.
+Loss functions: See [references/loss-functions.md](references/loss-functions.md) for sigmoid vs hinge loss, mathematical formulations, and when to use each.
 
-**Hyperparameter tuning**: See [references/hyperparameters.md](references/hyperparameters.md) for beta, gamma, learning rate selection guide, and model-size-specific recommendations.
+Hyperparameter tuning: See [references/hyperparameters.md](references/hyperparameters.md) for beta, gamma, learning rate selection guide, and model-size-specific recommendations.
 
-**Dataset preparation**: See [references/datasets.md](references/datasets.md) for preference data formats, quality filtering, and custom dataset creation.
+Dataset preparation: See [references/datasets.md](references/datasets.md) for preference data formats, quality filtering, and custom dataset creation.
 
 ## Hardware requirements
 
-- **GPU**: NVIDIA A100/H100 recommended
-- **VRAM**:
+- GPU: NVIDIA A100/H100 recommended
+- VRAM:
   - 7B model: 1× A100 40GB (DeepSpeed ZeRO-3)
   - 8B model: 2× A100 40GB
   - 70B model: 8× A100 80GB
-- **Single-node**: DeepSpeed ZeRO-3 sufficient
-- **Mixed precision**: BF16 recommended
+- Single-node: DeepSpeed ZeRO-3 sufficient
+- Mixed precision: BF16 recommended
 
-**Memory optimization**:
+Memory optimization:
 - DeepSpeed ZeRO-3 (default config)
 - Gradient checkpointing
 - Flash Attention 2
+
+## Verification
+- validate YAML and preference fields before launch
+- run a bounded Accelerate smoke step and inspect loss/checkpoint
+- compare alignment and capability metrics against the base model
 
 ## Resources
 
@@ -218,6 +230,3 @@ gradient_checkpointing: true
 - GitHub: https://github.com/princeton-nlp/SimPO
 - Models: https://huggingface.co/princeton-nlp
 - Alignment Handbook: https://github.com/huggingface/alignment-handbook
-
-
-

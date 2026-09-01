@@ -14,11 +14,33 @@ metadata:
 
 # TorchTitan - PyTorch Native Distributed LLM Pretraining
 
-## Quick start
+role: TorchTitan large-scale PyTorch pretraining operator
+do: install/download HF assets; select registry config; configure FSDP2/TP/PP/CP/Float8; launch single/multi-node training; monitor TensorBoard; checkpoint/reshard
+inputs: model/config registry name; tokenizer/HF token; dataset; node/GPU topology; optimizer/schedule; sequence/batch; checkpoint path
+outputs: pretraining checkpoint; logs/TensorBoard; parallelism/throughput metrics; resharded or converted artifacts
+¬: pass a TOML path when registry names are required; launch 4D training without seed checkpoint; mis-size parallel degrees; leak HF tokens; assume experimental models are production-ready
+
+## When to Use
+
+Use TorchTitan when:
+- Pretraining LLMs from scratch (8B to 405B+)
+- Need PyTorch-native solution without third-party dependencies
+- Require composable 4D parallelism (FSDP2, TP, PP, CP)
+- Training on H100s with Float8 support
+- Want interoperable checkpoints with torchtune/HuggingFace
+
+Use alternatives instead:
+- Megatron-LM: Maximum performance for NVIDIA-only deployments
+- DeepSpeed: Broader ZeRO optimization ecosystem, inference support
+- Axolotl/TRL: Fine-tuning rather than pretraining
+- LitGPT: Educational, smaller-scale training
+
+
+## Procedure
 
 TorchTitan is PyTorch's official platform for large-scale LLM pretraining with composable 4D parallelism (FSDP2, TP, PP, CP), achieving 65%+ speedups over baselines on H100 GPUs.
 
-**Installation**:
+Installation:
 ```bash
 # From PyPI (stable)
 pip install torchtitan
@@ -29,13 +51,13 @@ cd torchtitan
 pip install -r requirements.txt
 ```
 
-**Download tokenizer**:
+Download tokenizer:
 ```bash
 # Get HF token from https://huggingface.co/settings/tokens
 python scripts/download_hf_assets.py --repo_id meta-llama/Llama-3.1-8B --assets tokenizer --hf_token=...
 ```
 
-**Start training on 8 GPUs**:
+Start training on 8 GPUs:
 ```bash
 # Configs are selected by name from the Python config registry
 # (torchtitan/models/llama3/config_registry.py), not by TOML path
@@ -56,7 +78,7 @@ Single Node Pretraining:
 - [ ] Step 4: Monitor and checkpoint
 ```
 
-**Step 1: Download tokenizer**
+Step 1: Download tokenizer
 
 ```bash
 python scripts/download_hf_assets.py \
@@ -65,15 +87,11 @@ python scripts/download_hf_assets.py \
   --hf_token=YOUR_HF_TOKEN
 ```
 
-**Step 2: Configure training**
+Step 2: Configure training
 
-In torchtitan's current layout, run configs are defined in a Python **config registry**
-(`torchtitan/models/llama3/config_registry.py`) and selected by name via `CONFIG=<name>`
-(or `--config <name>`). To customize, register your own config in the registry, or override
-individual fields on the command line (e.g. `--optimizer.lr 3e-4 --training.steps 1000`).
+In torchtitan's current layout, run configs are defined in a Python config registry (`torchtitan/models/llama3/config_registry.py`) and selected by name via `CONFIG=<name>` (or `--config <name>`). To customize, register your own config in the registry, or override individual fields on the command line (e.g. `--optimizer.lr 3e-4 --training.steps 1000`).
 
-The equivalent settings for an 8B run look like this (shown as fields; set them in the
-registry entry or as `--section.key value` overrides):
+The equivalent settings for an 8B run look like this (shown as fields; set them in the registry entry or as `--section.key value` overrides):
 
 ```toml
 # fields for a llama3 8B run (register in config_registry.py or pass as --overrides)
@@ -84,7 +102,7 @@ description = "Llama 3.1 8B training"
 [model]
 name = "llama3"
 flavor = "8B"
-hf_assets_path = "./assets/hf/Llama-3.1-8B"
+hf_assets_path = "./assets/hf/<model>"
 
 [optimizer]
 name = "AdamW"
@@ -113,7 +131,7 @@ folder = "checkpoint"
 interval = 500
 ```
 
-**Step 3: Launch training**
+Step 3: Launch training
 
 ```bash
 # 8 GPUs on single node (config selected by name from the registry)
@@ -128,7 +146,7 @@ torchrun --nproc_per_node=8 \
   --module llama3 --config llama3_8b
 ```
 
-**Step 4: Monitor and checkpoint**
+Step 4: Monitor and checkpoint
 
 TensorBoard logs are saved to `./outputs/tb/`:
 ```bash
@@ -145,7 +163,7 @@ Multi-Node Training:
 - [ ] Step 4: Resume from checkpoint
 ```
 
-**Step 1: Configure parallelism for scale**
+Step 1: Configure parallelism for scale
 
 For 70B model on 256 GPUs (32 nodes):
 ```toml
@@ -156,7 +174,7 @@ pipeline_parallel_degree = 1      # No PP for 70B
 context_parallel_degree = 1       # Increase for long sequences
 ```
 
-**Step 2: Set up SLURM script**
+Step 2: Set up SLURM script
 
 ```bash
 #!/bin/bash
@@ -174,13 +192,13 @@ srun torchrun \
   --module llama3 --config llama3_70b
 ```
 
-**Step 3: Submit job**
+Step 3: Submit job
 
 ```bash
 sbatch multinode_trainer.slurm
 ```
 
-**Step 4: Resume from checkpoint**
+Step 4: Resume from checkpoint
 
 Training auto-resumes if checkpoint exists in configured folder.
 
@@ -195,17 +213,15 @@ Float8 Training:
 - [ ] Step 3: Launch with compile
 ```
 
-**Step 1: Install torchao**
+Step 1: Install torchao
 
 ```bash
 USE_CPP=0 pip install git+https://github.com/pytorch/ao.git
 ```
 
-**Step 2: Configure Float8**
+Step 2: Configure Float8
 
-In the current torchtitan, Float8 is applied at config time via the `quantization`
-parameter in your `model_registry()` call inside the config registry (not via a
-`[quantize.linear.float8]` TOML section). Add a `Float8LinearConverter.Config`:
+In the current torchtitan, Float8 is applied at config time via the `quantization` parameter in your `model_registry()` call inside the config registry (not via a `[quantize.linear.float8]` TOML section). Add a `Float8LinearConverter.Config`:
 
 ```python
 # in torchtitan/models/llama3/config_registry.py (your model_registry(...) call)
@@ -230,7 +246,7 @@ enable = true
 components = ["model", "loss"]
 ```
 
-**Step 3: Launch with compile**
+Step 3: Launch with compile
 
 ```bash
 # Float8 config is baked into the registered config; just select it and enable compile
@@ -246,7 +262,7 @@ MODULE=llama3 CONFIG=llama3_8b ./run_train.sh --compile.enable
 - [ ] Step 3: Launch on 512 GPUs
 ```
 
-**Step 1: Create seed checkpoint**
+Step 1: Create seed checkpoint
 
 Required for consistent initialization across PP stages:
 ```bash
@@ -258,7 +274,7 @@ NGPU=1 MODULE=llama3 CONFIG=llama3_405b ./run_train.sh \
   --parallelism.pipeline_parallel_degree 1
 ```
 
-**Step 2: Configure 4D parallelism**
+Step 2: Configure 4D parallelism
 
 ```toml
 [parallelism]
@@ -272,7 +288,7 @@ local_batch_size = 32
 seq_len = 8192
 ```
 
-**Step 3: Launch on 512 GPUs**
+Step 3: Launch on 512 GPUs
 
 ```bash
 # 64 nodes x 8 GPUs = 512 GPUs
@@ -281,24 +297,9 @@ srun torchrun --nnodes=64 --nproc_per_node=8 \
   --module llama3 --config llama3_405b
 ```
 
-## When to use vs alternatives
+## Pitfalls
 
-**Use TorchTitan when:**
-- Pretraining LLMs from scratch (8B to 405B+)
-- Need PyTorch-native solution without third-party dependencies
-- Require composable 4D parallelism (FSDP2, TP, PP, CP)
-- Training on H100s with Float8 support
-- Want interoperable checkpoints with torchtune/HuggingFace
-
-**Use alternatives instead:**
-- **Megatron-LM**: Maximum performance for NVIDIA-only deployments
-- **DeepSpeed**: Broader ZeRO optimization ecosystem, inference support
-- **Axolotl/TRL**: Fine-tuning rather than pretraining
-- **LitGPT**: Educational, smaller-scale training
-
-## Common issues
-
-**Issue: Out of memory on large models**
+Issue: Out of memory on large models
 
 Enable activation checkpointing and reduce batch size:
 ```toml
@@ -316,14 +317,14 @@ local_batch_size = 1
 global_batch_size = 32  # Accumulates gradients
 ```
 
-**Issue: TP causes high memory with async collectives**
+Issue: TP causes high memory with async collectives
 
 Set environment variable:
 ```bash
 export TORCH_NCCL_AVOID_RECORD_STREAMS=1
 ```
 
-**Issue: Float8 training not faster**
+Issue: Float8 training not faster
 
 Float8 only benefits large GEMMs. Filter small layers via the converter's `filter_fqns`:
 ```python
@@ -336,7 +337,7 @@ Float8LinearConverter.Config(
 )
 ```
 
-**Issue: Checkpoint loading fails after parallelism change**
+Issue: Checkpoint loading fails after parallelism change
 
 Use DCP's resharding capability:
 ```bash
@@ -345,7 +346,7 @@ python -m torch.distributed.checkpoint.format_utils \
   dcp_to_torch checkpoint/step-1000 checkpoint.pt
 ```
 
-**Issue: Pipeline parallelism initialization**
+Issue: Pipeline parallelism initialization
 
 Create seed checkpoint first (see Workflow 4, Step 1).
 
@@ -371,13 +372,18 @@ Create seed checkpoint first (see Workflow 4, Step 1).
 
 ## Advanced topics
 
-**FSDP2 configuration**: See [references/fsdp.md](references/fsdp.md) for detailed FSDP2 vs FSDP1 comparison and ZeRO equivalents.
+FSDP2 configuration: See [references/fsdp.md](references/fsdp.md) for detailed FSDP2 vs FSDP1 comparison and ZeRO equivalents.
 
-**Float8 training**: See [references/float8.md](references/float8.md) for tensorwise vs rowwise scaling recipes.
+Float8 training: See [references/float8.md](references/float8.md) for tensorwise vs rowwise scaling recipes.
 
-**Checkpointing**: See [references/checkpoint.md](references/checkpoint.md) for HuggingFace conversion and async checkpointing.
+Checkpointing: See [references/checkpoint.md](references/checkpoint.md) for HuggingFace conversion and async checkpointing.
 
-**Adding custom models**: See [references/custom-models.md](references/custom-models.md) for TrainSpec protocol.
+Adding custom models: See [references/custom-models.md](references/custom-models.md) for TrainSpec protocol.
+
+## Verification
+- download tokenizer/assets and resolve the named config
+- run a bounded multi-GPU or dry training smoke path with logs
+- confirm checkpoint creation, TensorBoard output, and reload/reshard behavior
 
 ## Resources
 
@@ -385,4 +391,3 @@ Create seed checkpoint first (see Workflow 4, Step 1).
 - Paper: https://arxiv.org/abs/2410.06511
 - ICLR 2025: https://iclr.cc/virtual/2025/poster/29620
 - PyTorch Forum: https://discuss.pytorch.org/c/distributed/torchtitan/44
-

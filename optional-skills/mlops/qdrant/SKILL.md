@@ -14,11 +14,17 @@ metadata:
 
 # Qdrant - Vector Similarity Search Engine
 
+role: Qdrant vector-search/RAG operator
+do: install/connect; create collections; upsert/query/filter/batch; integrate embeddings; use named/sparse vectors; tune HNSW/quantization/indexes; operate cloud/server
+inputs: Qdrant URL/credentials; collection/vector dimensions; embeddings/documents/metadata; query/filter; deployment/storage target
+outputs: points/scores/payloads; collection/index status; RAG context; batch/quantized search results; performance diagnostics
+¬: use removed `client.search`; mix vector dimensions; expose API keys; return vectors unnecessarily; delete production collections without confirmation; treat scores as calibrated probabilities
+
 High-performance vector database written in Rust for production RAG and semantic search.
 
-## When to use Qdrant
+## When to Use
 
-**Use Qdrant when:**
+Use Qdrant when:
 - Building production RAG systems requiring low latency
 - Need hybrid search (vectors + metadata filtering)
 - Require horizontal scaling with sharding/replication
@@ -26,21 +32,21 @@ High-performance vector database written in Rust for production RAG and semantic
 - Need multi-vector storage per record (dense + sparse)
 - Building real-time recommendation systems
 
-**Key features:**
-- **Rust-powered**: Memory-safe, high performance
-- **Rich filtering**: Filter by any payload field during search
-- **Multiple vectors**: Dense, sparse, multi-dense per point
-- **Quantization**: Scalar, product, binary for memory efficiency
-- **Distributed**: Raft consensus, sharding, replication
-- **REST + gRPC**: Both APIs with full feature parity
+Key features:
+- Rust-powered: Memory-safe, high performance
+- Rich filtering: Filter by any payload field during search
+- Multiple vectors: Dense, sparse, multi-dense per point
+- Quantization: Scalar, product, binary for memory efficiency
+- Distributed: Raft consensus, sharding, replication
+- REST + gRPC: Both APIs with full feature parity
 
-**Use alternatives instead:**
-- **Chroma**: Simpler setup, embedded use cases
-- **FAISS**: Maximum raw speed, research/batch processing
-- **Pinecone**: Fully managed, zero ops preferred
-- **Weaviate**: GraphQL preference, built-in vectorizers
+Use alternatives instead:
+- Chroma: Simpler setup, embedded use cases
+- FAISS: Maximum raw speed, research/batch processing
+- Pinecone: Fully managed, zero ops preferred
+- Weaviate: GraphQL preference, built-in vectorizers
 
-## Quick start
+## Procedure
 
 ### Installation
 
@@ -449,16 +455,16 @@ client.update_collection(
 
 ## Best practices
 
-1. **Batch operations** - Use batch upsert/search for efficiency
-2. **Payload indexing** - Index fields used in filters
-3. **Quantization** - Enable for large collections (>1M vectors)
-4. **Sharding** - Use for collections >10M vectors
-5. **On-disk storage** - Enable `on_disk_payload` for large payloads
-6. **Connection pooling** - Reuse client instances
+1. Batch operations - Use batch upsert/search for efficiency
+2. Payload indexing - Index fields used in filters
+3. Quantization - Enable for large collections (>1M vectors)
+4. Sharding - Use for collections >10M vectors
+5. On-disk storage - Enable `on_disk_payload` for large payloads
+6. Connection pooling - Reuse client instances
 
-## Common issues
+## Pitfalls
 
-**Slow search with filters:**
+Slow search with filters:
 ```python
 # Create payload index for filtered fields
 client.create_payload_index(
@@ -468,7 +474,7 @@ client.create_payload_index(
 )
 ```
 
-**Out of memory:**
+Out of memory:
 ```python
 # Enable quantization and on-disk storage
 client.create_collection(
@@ -479,7 +485,7 @@ client.create_collection(
 )
 ```
 
-**Connection issues:**
+Connection issues:
 ```python
 # Use timeout and retry
 client = QdrantClient(
@@ -492,14 +498,19 @@ client = QdrantClient(
 
 ## References
 
-- **[Advanced Usage](references/advanced-usage.md)** - Distributed mode, hybrid search, recommendations
-- **[Troubleshooting](references/troubleshooting.md)** - Common issues, debugging, performance tuning
+- [Advanced Usage](references/advanced-usage.md) - Distributed mode, hybrid search, recommendations
+- [Troubleshooting](references/troubleshooting.md) - Common issues, debugging, performance tuning
+
+## Verification
+- create or inspect a test collection and verify vector configuration
+- upsert sample points, query, and inspect IDs/scores/payloads
+- test relevant filters/indexes and report latency/errors
 
 ## Resources
 
-- **GitHub**: https://github.com/qdrant/qdrant (22k+ stars)
-- **Docs**: https://qdrant.tech/documentation/
-- **Python Client**: https://github.com/qdrant/qdrant-client
-- **Cloud**: https://cloud.qdrant.io
-- **Version**: 1.14.0+
-- **License**: Apache 2.0
+- GitHub: https://github.com/qdrant/qdrant (22k+ stars)
+- Docs: https://qdrant.tech/documentation/
+- Python Client: https://github.com/qdrant/qdrant-client
+- Cloud: https://cloud.qdrant.io
+- Version: 1.14.0+
+- License: Apache 2.0

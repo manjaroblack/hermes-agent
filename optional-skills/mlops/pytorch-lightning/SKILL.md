@@ -14,16 +14,45 @@ metadata:
 
 # PyTorch Lightning - High-Level Training Framework
 
-## Quick start
+role: Lightning training-loop and distributed-training operator
+do: convert PyTorch modules; implement steps/optimizers; configure Trainer/callbacks/precision/strategy; train/validate/test; checkpoint and profile
+inputs: LightningModule; dataloaders; optimizer/scheduler; accelerator/devices/nodes; callbacks; precision; checkpoint path
+outputs: checkpoints; TensorBoard/log metrics; validation/test scores; distributed run status; profiling findings
+¬: assume Trainer fixes model/data bugs; omit validation loader; move tensors incorrectly; overclaim DDP/TPU support; ignore device/precision compatibility
+
+## When to Use
+
+Use PyTorch Lightning when:
+- Want clean, organized code
+- Need production-ready training loops
+- Switching between single GPU, multi-GPU, TPU
+- Want built-in callbacks and logging
+- Team collaboration (standardized structure)
+
+Key advantages:
+- Organized: Separates research code from engineering
+- Automatic: DDP, FSDP, DeepSpeed with 1 line
+- Callbacks: Modular training extensions
+- Reproducible: Less boilerplate = fewer bugs
+- Tested: 1M+ downloads/month, battle-tested
+
+Use alternatives instead:
+- Accelerate: Minimal changes to existing code, more flexibility
+- Ray Train: Multi-node orchestration, hyperparameter tuning
+- Raw PyTorch: Maximum control, learning purposes
+- Keras: TensorFlow ecosystem
+
+
+## Procedure
 
 PyTorch Lightning organizes PyTorch code to eliminate boilerplate while maintaining flexibility.
 
-**Installation**:
+Installation:
 ```bash
 pip install lightning
 ```
 
-**Convert PyTorch to Lightning** (3 steps):
+Convert PyTorch to Lightning (3 steps):
 
 ```python
 import lightning as L
@@ -60,7 +89,7 @@ model = LitModel()
 trainer.fit(model, train_loader)
 ```
 
-**That's it!** Trainer handles:
+That's it! Trainer handles:
 - GPU/TPU/CPU switching
 - Distributed training (DDP, FSDP, DeepSpeed)
 - Mixed precision (FP16, BF16)
@@ -73,7 +102,7 @@ trainer.fit(model, train_loader)
 
 ### Workflow 1: From PyTorch to Lightning
 
-**Original PyTorch code**:
+Original PyTorch code:
 ```python
 model = MyModel()
 optimizer = torch.optim.Adam(model.parameters())
@@ -88,7 +117,7 @@ for epoch in range(max_epochs):
         optimizer.step()
 ```
 
-**Lightning version**:
+Lightning version:
 ```python
 class LitModel(L.LightningModule):
     def __init__(self):
@@ -107,7 +136,7 @@ trainer = L.Trainer(max_epochs=10, accelerator='gpu')
 trainer.fit(LitModel(), train_loader)
 ```
 
-**Benefits**: 40+ lines → 15 lines, no device management, automatic distributed
+Benefits: 40+ lines → 15 lines, no device management, automatic distributed
 
 ### Workflow 2: Validation and testing
 
@@ -149,7 +178,7 @@ trainer.fit(model, train_loader, val_loader)
 trainer.test(model, test_loader)
 ```
 
-**Automatic features**:
+Automatic features:
 - Validation runs every epoch by default
 - Metrics logged to TensorBoard
 - Best model checkpointing based on val_loss
@@ -170,13 +199,13 @@ trainer = L.Trainer(
 trainer.fit(model, train_loader)
 ```
 
-**Launch**:
+Launch:
 ```bash
 # Single command, Lightning handles the rest
 python train.py
 ```
 
-**No changes needed**:
+No changes needed:
 - Automatic data distribution
 - Gradient synchronization
 - Multi-node support (just set `num_nodes=2`)
@@ -211,7 +240,7 @@ trainer = L.Trainer(
 trainer.fit(model, train_loader, val_loader)
 ```
 
-**Result**:
+Result:
 - Auto-saves best 3 models
 - Stops early if no improvement for 5 epochs
 - Logs learning rate to TensorBoard
@@ -246,31 +275,9 @@ trainer = L.Trainer(max_epochs=100)
 trainer.fit(model, train_loader)
 ```
 
-## When to use vs alternatives
+## Pitfalls
 
-**Use PyTorch Lightning when**:
-- Want clean, organized code
-- Need production-ready training loops
-- Switching between single GPU, multi-GPU, TPU
-- Want built-in callbacks and logging
-- Team collaboration (standardized structure)
-
-**Key advantages**:
-- **Organized**: Separates research code from engineering
-- **Automatic**: DDP, FSDP, DeepSpeed with 1 line
-- **Callbacks**: Modular training extensions
-- **Reproducible**: Less boilerplate = fewer bugs
-- **Tested**: 1M+ downloads/month, battle-tested
-
-**Use alternatives instead**:
-- **Accelerate**: Minimal changes to existing code, more flexibility
-- **Ray Train**: Multi-node orchestration, hyperparameter tuning
-- **Raw PyTorch**: Maximum control, learning purposes
-- **Keras**: TensorFlow ecosystem
-
-## Common issues
-
-**Issue: Loss not decreasing**
+Issue: Loss not decreasing
 
 Check data and model setup:
 ```python
@@ -283,7 +290,7 @@ def training_step(self, batch, batch_idx):
     return loss
 ```
 
-**Issue: Out of memory**
+Issue: Out of memory
 
 Reduce batch size or use gradient accumulation:
 ```python
@@ -293,7 +300,7 @@ trainer = L.Trainer(
 )
 ```
 
-**Issue: Validation not running**
+Issue: Validation not running
 
 Ensure you pass val_loader:
 ```python
@@ -304,7 +311,7 @@ trainer.fit(model, train_loader)
 trainer.fit(model, train_loader, val_loader)
 ```
 
-**Issue: DDP spawns multiple processes unexpectedly**
+Issue: DDP spawns multiple processes unexpectedly
 
 Lightning auto-detects GPUs. Explicitly set devices:
 ```python
@@ -317,26 +324,31 @@ trainer = L.Trainer(accelerator='gpu', devices=1)
 
 ## Advanced topics
 
-**Callbacks**: See [references/callbacks.md](references/callbacks.md) for EarlyStopping, ModelCheckpoint, custom callbacks, and callback hooks.
+Callbacks: See [references/callbacks.md](references/callbacks.md) for EarlyStopping, ModelCheckpoint, custom callbacks, and callback hooks.
 
-**Distributed strategies**: See [references/distributed.md](references/distributed.md) for DDP, FSDP, DeepSpeed ZeRO integration, multi-node setup.
+Distributed strategies: See [references/distributed.md](references/distributed.md) for DDP, FSDP, DeepSpeed ZeRO integration, multi-node setup.
 
-**Hyperparameter tuning**: See [references/hyperparameter-tuning.md](references/hyperparameter-tuning.md) for integration with Optuna, Ray Tune, and WandB sweeps.
+Hyperparameter tuning: See [references/hyperparameter-tuning.md](references/hyperparameter-tuning.md) for integration with Optuna, Ray Tune, and WandB sweeps.
 
 ## Hardware requirements
 
-- **CPU**: Works (good for debugging)
-- **Single GPU**: Works
-- **Multi-GPU**: DDP (default), FSDP, or DeepSpeed
-- **Multi-node**: DDP, FSDP, DeepSpeed
-- **TPU**: Supported (8 cores)
-- **Apple MPS**: Supported
+- CPU: Works (good for debugging)
+- Single GPU: Works
+- Multi-GPU: DDP (default), FSDP, or DeepSpeed
+- Multi-node: DDP, FSDP, DeepSpeed
+- TPU: Supported (8 cores)
+- Apple MPS: Supported
 
-**Precision options**:
+Precision options:
 - FP32 (default)
 - FP16 (V100, older GPUs)
 - BF16 (A100/H100, recommended)
 - FP8 (H100)
+
+## Verification
+- run one CPU/small-batch training and validation step before scaling
+- confirm logs, callbacks, checkpoint, and test invocation
+- compare distributed/precision results against a baseline
 
 ## Resources
 
@@ -346,5 +358,3 @@ trainer = L.Trainer(accelerator='gpu', devices=1)
 - Examples: https://github.com/Lightning-AI/pytorch-lightning/tree/master/examples
 - Discord: https://discord.gg/lightning-ai
 - Used by: Kaggle winners, research labs, production teams
-
-

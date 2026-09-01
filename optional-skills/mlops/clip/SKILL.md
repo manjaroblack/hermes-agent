@@ -14,11 +14,17 @@ metadata:
 
 # CLIP - Contrastive Language-Image Pre-Training
 
+role: CLIP zero-shot multimodal retrieval operator
+do: load model/preprocess; encode images/text; normalize embeddings; classify/search/moderate; batch; store/query vector DB; compare confidence/limitations
+inputs: image(s); candidate labels/text; model variant; device; vector-store schema; moderation/search policy
+outputs: zero-shot probabilities/similarities; image/text embeddings; ranked results; vector records; performance/limitations
+¬: treat softmax as calibrated safety truth; omit normalization for cosine; claim captions/bounding boxes/spatial reasoning; expose private images; use vague labels without caveat
+
 OpenAI's model that understands images from natural language.
 
-## When to use CLIP
+## When to Use
 
-**Use when:**
+Use when:
 - Zero-shot image classification (no training data needed)
 - Image-text similarity/matching
 - Semantic image search
@@ -26,18 +32,18 @@ OpenAI's model that understands images from natural language.
 - Visual question answering
 - Cross-modal retrieval (image→text, text→image)
 
-**Metrics**:
-- **25,300+ GitHub stars**
+Metrics:
+- 25,300+ GitHub stars
 - Trained on 400M image-text pairs
 - Matches ResNet-50 on ImageNet (zero-shot)
 - MIT License
 
-**Use alternatives instead**:
-- **BLIP-2**: Better captioning
-- **LLaVA**: Vision-language chat
-- **Segment Anything**: Image segmentation
+Use alternatives instead:
+- BLIP-2: Better captioning
+- LLaVA: Vision-language chat
+- Segment Anything: Image segmentation
 
-## Quick start
+## Procedure
 
 ### Installation
 
@@ -223,13 +229,13 @@ results = collection.query(
 
 ## Best practices
 
-1. **Use ViT-B/32 for most cases** - Good balance
-2. **Normalize embeddings** - Required for cosine similarity
-3. **Batch processing** - More efficient
-4. **Cache embeddings** - Expensive to recompute
-5. **Use descriptive labels** - Better zero-shot performance
-6. **GPU recommended** - 10-50× faster
-7. **Preprocess images** - Use provided preprocess function
+1. Use ViT-B/32 for most cases - Good balance
+2. Normalize embeddings - Required for cosine similarity
+3. Batch processing - More efficient
+4. Cache embeddings - Expensive to recompute
+5. Use descriptive labels - Better zero-shot performance
+6. GPU recommended - 10-50× faster
+7. Preprocess images - Use provided preprocess function
 
 ## Performance
 
@@ -241,17 +247,26 @@ results = collection.query(
 
 ## Limitations
 
-1. **Not for fine-grained tasks** - Best for broad categories
-2. **Requires descriptive text** - Vague labels perform poorly
-3. **Biased on web data** - May have dataset biases
-4. **No bounding boxes** - Whole image only
-5. **Limited spatial understanding** - Position/counting weak
+1. Not for fine-grained tasks - Best for broad categories
+2. Requires descriptive text - Vague labels perform poorly
+3. Biased on web data - May have dataset biases
+4. No bounding boxes - Whole image only
+5. Limited spatial understanding - Position/counting weak
+
+## Pitfalls
+- CLIP is broad zero-shot matching, not fine-grained detection, captioning, or bounding-box segmentation.
+- Normalize image/text embeddings before cosine similarity and use the same model/preprocess for indexing/query.
+- Labels, prompts, web-data bias, and domain shift materially affect results; probabilities are not calibrated risk scores.
+- GPU batching improves speed but does not remove privacy or moderation review needs.
+
+## Verification
+- load model and preprocess one known image/text batch
+- check embedding shapes/norms and ranked labels/similarities
+- compare representative CPU/GPU or vector-store results and report limitations
 
 ## Resources
 
-- **GitHub**: https://github.com/openai/CLIP ⭐ 25,300+
-- **Paper**: https://arxiv.org/abs/2103.00020
-- **Colab**: https://colab.research.google.com/github/openai/clip/
-- **License**: MIT
-
-
+- GitHub: https://github.com/openai/CLIP ⭐ 25,300+
+- Paper: https://arxiv.org/abs/2103.00020
+- Colab: https://colab.research.google.com/github/openai/clip/
+- License: MIT

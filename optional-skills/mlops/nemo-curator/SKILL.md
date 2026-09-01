@@ -14,28 +14,34 @@ metadata:
 
 # NeMo Curator - GPU-Accelerated Data Curation
 
+role: NeMo Curator training-data curation operator
+do: install modality extras; compose quality filters/dedup/PII/classifier stages; run Ray/GPU pipelines; curate text/image/video/audio; write and audit datasets
+inputs: Parquet/JSONL/CSV/WebDataset; modality; filter/dedup thresholds; PII policy; GPU/Ray topology; output path
+outputs: curated dataset; filtered/deduped/redacted records; quality metrics; Ray/GPU logs; cost/performance report
+¬: copy 0.x APIs as 1.x runnable code; skip PII policy; expose raw personal data; compare benchmarks without workload context; run destructive overwrite
+
 NVIDIA's toolkit for preparing high-quality training data for LLMs.
 
-## When to use NeMo Curator
+## When to Use
 
-**Use NeMo Curator when:**
+Use NeMo Curator when:
 - Preparing LLM training data from web scrapes (Common Crawl)
 - Need fast deduplication (16× faster than CPU)
 - Curating multi-modal datasets (text, images, video, audio)
 - Filtering low-quality or toxic content
 - Scaling data processing across GPU cluster
 
-**Performance**:
-- **16× faster** fuzzy deduplication (8TB RedPajama v2)
-- **40% lower TCO** vs CPU alternatives
-- **Near-linear scaling** across GPU nodes
+Performance:
+- 16× faster fuzzy deduplication (8TB RedPajama v2)
+- 40% lower TCO vs CPU alternatives
+- Near-linear scaling across GPU nodes
 
-**Use alternatives instead**:
-- **datatrove**: CPU-based, open-source data processing
-- **dolma**: Allen AI's data toolkit
-- **Ray Data**: General ML data processing (no curation focus)
+Use alternatives instead:
+- datatrove: CPU-based, open-source data processing
+- dolma: Allen AI's data toolkit
+- Ray Data: General ML data processing (no curation focus)
 
-## Quick start
+## Procedure
 
 ### Installation
 
@@ -55,12 +61,12 @@ uv pip install "nemo-curator[text-cpu]"
 
 ### Basic text curation pipeline
 
-> **Major version rewrite (1.x):** NeMo Curator was rewritten around a **Ray-based
-> pipeline/stage architecture**. The old `DocumentDataset` + `nemo_curator.modules.*` /
+> Major version rewrite (1.x): NeMo Curator was rewritten around a Ray-based
+> pipeline/stage architecture. The old `DocumentDataset` + `nemo_curator.modules.*` /
 > `ScoreFilter` / `Modify` call-the-object-on-a-dataset API from 0.x is gone. In 1.x you
 > compose `ProcessingStage`s into a `Pipeline` and run it with an executor. The exact
 > stage/import surface differs per modality — treat the examples in this skill below as
-> **conceptual** (0.x-style) and follow the current
+> conceptual (0.x-style) and follow the current
 > [quickstart](https://github.com/NVIDIA-NeMo/Curator/blob/main/tutorials/quickstart.py)
 > and [text guide](https://docs.nvidia.com/nemo/curator/latest/get-started/text) for the
 > exact 1.x APIs rather than copying imports verbatim.
@@ -85,9 +91,7 @@ pipeline.run(XennaExecutor())
 client.stop()
 ```
 
-The 0.x-style snippets in the sections that follow illustrate the *concepts* (quality
-filtering, exact/fuzzy/semantic dedup, PII redaction, classifier filtering). For runnable
-1.x code, map each concept onto the corresponding stage from the modality guide.
+The 0.x-style snippets in the sections that follow illustrate the *concepts* (quality filtering, exact/fuzzy/semantic dedup, PII redaction, classifier filtering). For runnable 1.x code, map each concept onto the corresponding stage from the modality guide.
 
 ## Data curation pipeline
 
@@ -116,7 +120,7 @@ dataset = dataset.filter(UrlRatioFilter(max_url_ratio=0.2))
 
 ### Stage 2: Deduplication
 
-**Exact deduplication**:
+Exact deduplication:
 ```python
 from nemo_curator.modules import ExactDuplicates
 
@@ -124,7 +128,7 @@ from nemo_curator.modules import ExactDuplicates
 deduped = ExactDuplicates(id_field="id", text_field="text")(dataset)
 ```
 
-**Fuzzy deduplication** (16× faster on GPU):
+Fuzzy deduplication (16× faster on GPU):
 ```python
 from nemo_curator.modules import FuzzyDuplicates
 
@@ -140,7 +144,7 @@ fuzzy_dedup = FuzzyDuplicates(
 deduped = fuzzy_dedup(dataset)
 ```
 
-**Semantic deduplication**:
+Semantic deduplication:
 ```python
 from nemo_curator.modules import SemanticDuplicates
 
@@ -343,59 +347,67 @@ cluster.close()
 
 ### Fuzzy deduplication (8TB RedPajama v2)
 
-- **CPU (256 cores)**: 120 hours
-- **GPU (8× A100)**: 7.5 hours
-- **Speedup**: 16×
+- CPU (256 cores): 120 hours
+- GPU (8× A100): 7.5 hours
+- Speedup: 16×
 
 ### Exact deduplication (1TB)
 
-- **CPU (64 cores)**: 8 hours
-- **GPU (4× A100)**: 0.5 hours
-- **Speedup**: 16×
+- CPU (64 cores): 8 hours
+- GPU (4× A100): 0.5 hours
+- Speedup: 16×
 
 ### Quality filtering (100GB)
 
-- **CPU (32 cores)**: 2 hours
-- **GPU (2× A100)**: 0.2 hours
-- **Speedup**: 10×
+- CPU (32 cores): 2 hours
+- GPU (2× A100): 0.2 hours
+- Speedup: 10×
 
 ## Cost comparison
 
-**CPU-based curation** (AWS c5.18xlarge × 10):
+CPU-based curation (AWS c5.18xlarge × 10):
 - Cost: $3.60/hour × 10 = $36/hour
 - Time for 8TB: 120 hours
-- **Total**: $4,320
+- Total: $4,320
 
-**GPU-based curation** (AWS p4d.24xlarge × 2):
+GPU-based curation (AWS p4d.24xlarge × 2):
 - Cost: $32.77/hour × 2 = $65.54/hour
 - Time for 8TB: 7.5 hours
-- **Total**: $491.55
+- Total: $491.55
 
-**Savings**: 89% reduction ($3,828 saved)
+Savings: 89% reduction ($3,828 saved)
 
 ## Supported data formats
 
-- **Input**: Parquet, JSONL, CSV
-- **Output**: Parquet (recommended), JSONL
-- **WebDataset**: TAR archives for multi-modal
+- Input: Parquet, JSONL, CSV
+- Output: Parquet (recommended), JSONL
+- WebDataset: TAR archives for multi-modal
 
 ## Use cases
 
-**Production deployments**:
+Production deployments:
 - NVIDIA used NeMo Curator to prepare Nemotron-4 training data
 - Open-source datasets curated: RedPajama v2, The Pile
 
 ## References
 
-- **[Filtering Guide](references/filtering.md)** - 30+ quality filters, heuristics
-- **[Deduplication Guide](references/deduplication.md)** - Exact, fuzzy, semantic methods
+- [Filtering Guide](references/filtering.md) - 30+ quality filters, heuristics
+- [Deduplication Guide](references/deduplication.md) - Exact, fuzzy, semantic methods
+
+## Pitfalls
+- NeMo Curator 1.x is a Ray-based Pipeline/ProcessingStage rewrite; follow current modality guides for exact imports.
+- The later snippets illustrate 0.x concepts and are not necessarily runnable 1.x code.
+- PII redaction, NSFW filtering, and quality thresholds are policy decisions; measure false positives/negatives.
+- GPU speed/cost claims depend on corpus, hardware, serialization, and cluster utilization.
+
+## Verification
+- resolve installed NeMo Curator version and modality extras
+- run a tiny dataset through each selected stage and inspect counts/fields
+- confirm output format, redaction/dedup metrics, and cleanup of Ray/GPU resources
 
 ## Resources
 
-- **GitHub**: https://github.com/NVIDIA-NeMo/Curator
-- **Docs**: https://docs.nvidia.com/nemo/curator/latest/
-- **Version**: 1.2.0 (1.x is a Ray-based pipeline rewrite — see the quickstart before copying 0.x snippets)
-- **License**: Apache 2.0
-
-
-
+- GitHub: https://github.com/NVIDIA-NeMo/Curator
+- Docs: https://docs.nvidia.com/nemo/curator/latest/
+- Version: 1.2.0 (1.x is a Ray-based pipeline rewrite — see the quickstart before copying 0.x snippets)
+- License: Apache 2.0

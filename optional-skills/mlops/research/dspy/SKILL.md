@@ -14,17 +14,23 @@ metadata:
 
 # DSPy: Declarative Language Model Programming
 
-## When to Use This Skill
+role: DSPy declarative LM-program operator
+do: configure provider; define signatures/modules; compose RAG/agent pipelines; compile with optimizers; evaluate metrics; trace/save/load programs
+inputs: LM/provider; signature inputs/outputs; tools/retriever; train/dev examples; metric; optimizer budget
+outputs: modular LM program; optimized prompts/demos; typed predictions; evaluation scores/traces; saved program artifacts
+¬: expose API keys; optimize without representative data/metric; trust generated code/tool calls; confuse traces with ground truth; hardcode provider assumptions
+
+## When to Use
 
 Use DSPy when you need to:
-- **Build complex AI systems** with multiple components and workflows
-- **Program LMs declaratively** instead of manual prompt engineering
-- **Optimize prompts automatically** using data-driven methods
-- **Create modular AI pipelines** that are maintainable and portable
-- **Improve model outputs systematically** with optimizers
-- **Build RAG systems, agents, or classifiers** with better reliability
+- Build complex AI systems with multiple components and workflows
+- Program LMs declaratively instead of manual prompt engineering
+- Optimize prompts automatically using data-driven methods
+- Create modular AI pipelines that are maintainable and portable
+- Improve model outputs systematically with optimizers
+- Build RAG systems, agents, or classifiers with better reliability
 
-**GitHub Stars**: 22,000+ | **Created By**: Stanford NLP
+GitHub Stars: 22,000+ | Created By: Stanford NLP
 
 ## Installation
 
@@ -41,7 +47,7 @@ pip install dspy[anthropic]     # Anthropic Claude
 pip install dspy[all]           # All providers
 ```
 
-## Quick Start
+## Procedure
 
 ### Basic Example: Question Answering
 
@@ -107,9 +113,9 @@ class Summarize(dspy.Signature):
 summarizer = dspy.ChainOfThought(Summarize)
 ```
 
-**When to use each:**
-- **Inline**: Quick prototyping, simple tasks
-- **Class**: Complex tasks, type hints, better documentation
+When to use each:
+- Inline: Quick prototyping, simple tasks
+- Class: Complex tasks, type hints, better documentation
 
 ### 2. Modules
 
@@ -566,29 +572,38 @@ for call in dspy.settings.trace:
 | Portability | Low | Medium | High |
 | Learning Curve | Low | Medium | Medium-High |
 
-**When to choose DSPy:**
+When to choose DSPy:
 - You have training data or can generate it
 - You need systematic prompt improvement
 - You're building complex multi-stage systems
 - You want to optimize across different LMs
 
-**When to choose alternatives:**
+When to choose alternatives:
 - Quick prototypes (manual prompting)
 - Simple chains with existing tools (LangChain)
 - Custom optimization logic needed
 
+## Pitfalls
+- Provider/model configuration, model names, and optimizer APIs are version-sensitive; validate imports and calls.
+- `ReAct`/ProgramOfThought tool or code execution needs explicit sandboxing and input controls.
+- Optimize against representative train/dev data and inspect before/after metrics; a compile call is not proof of quality.
+- Keep API keys out of source, prompts, traces, and saved artifacts.
+
+## Verification
+- run a minimal signature/module call with the configured LM
+- evaluate baseline and optimized programs on held-out examples
+- inspect traces, save/load the optimized artifact, and report score changes
+
 ## Resources
 
-- **Documentation**: https://dspy.ai
-- **GitHub**: https://github.com/stanfordnlp/dspy (22k+ stars)
-- **Discord**: https://discord.gg/XCGy2WDCQB
-- **Twitter**: @DSPyOSS
-- **Paper**: "DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines"
+- Documentation: https://dspy.ai
+- GitHub: https://github.com/stanfordnlp/dspy (22k+ stars)
+- Discord: https://discord.gg/XCGy2WDCQB
+- Twitter: @DSPyOSS
+- Paper: "DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines"
 
 ## See Also
 
 - `references/modules.md` - Detailed module guide (Predict, ChainOfThought, ReAct, ProgramOfThought)
 - `references/optimizers.md` - Optimization algorithms (BootstrapFewShot, MIPRO, BootstrapFinetune)
 - `references/examples.md` - Real-world examples (RAG, agents, classifiers)
-
-

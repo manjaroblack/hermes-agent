@@ -14,11 +14,17 @@ metadata:
 
 # Pinecone - Managed Vector Database
 
+role: Pinecone managed vector-search operator
+do: authenticate; create/describe/delete indexes; upsert/query/filter namespaces; normalize dense+sparse hybrid vectors; integrate RAG; monitor usage/cost
+inputs: Pinecone API key; index/dimension/metric/cloud/region; vectors/metadata/namespace; query/filter; embedding model
+outputs: index status; matches/scores/metadata; namespace stats; RAG retrieval; cost/latency diagnostics
+¬: expose API keys; mismatch embedding dimension; pass unsupported `alpha` to `index.query`; delete indexes without confirmation; treat SLA/pricing as timeless
+
 The vector database for production AI applications.
 
-## When to use Pinecone
+## When to Use
 
-**Use when:**
+Use when:
 - Need managed, serverless vector database
 - Production RAG applications
 - Auto-scaling required
@@ -26,18 +32,18 @@ The vector database for production AI applications.
 - Don't want to manage infrastructure
 - Need hybrid search (dense + sparse vectors)
 
-**Metrics**:
+Metrics:
 - Fully managed SaaS
 - Auto-scales to billions of vectors
-- **p95 latency <100ms**
+- p95 latency <100ms
 - 99.9% uptime SLA
 
-**Use alternatives instead**:
-- **Chroma**: Self-hosted, open-source
-- **FAISS**: Offline, pure similarity search
-- **Weaviate**: Self-hosted with more features
+Use alternatives instead:
+- Chroma: Self-hosted, open-source
+- FAISS: Offline, pure similarity search
+- Weaviate: Self-hosted with more features
 
-## Quick start
+## Procedure
 
 ### Installation
 
@@ -339,16 +345,16 @@ index.delete(delete_all=True)
 
 ## Best practices
 
-1. **Use serverless** - Auto-scaling, cost-effective
-2. **Batch upserts** - More efficient (100-200 per batch)
-3. **Add metadata** - Enable filtering
-4. **Use namespaces** - Isolate data by user/tenant
-5. **Monitor usage** - Check Pinecone dashboard
-6. **Optimize filters** - Index frequently filtered fields
-7. **Test with free tier** - 1 index, 100K vectors free
-8. **Use hybrid search** - Better quality
-9. **Set appropriate dimensions** - Match embedding model
-10. **Regular backups** - Export important data
+1. Use serverless - Auto-scaling, cost-effective
+2. Batch upserts - More efficient (100-200 per batch)
+3. Add metadata - Enable filtering
+4. Use namespaces - Isolate data by user/tenant
+5. Monitor usage - Check Pinecone dashboard
+6. Optimize filters - Index frequently filtered fields
+7. Test with free tier - 1 index, 100K vectors free
+8. Use hybrid search - Better quality
+9. Set appropriate dimensions - Match embedding model
+10. Regular backups - Export important data
 
 ## Performance
 
@@ -361,21 +367,30 @@ index.delete(delete_all=True)
 
 ## Pricing (as of 2025)
 
-**Serverless**:
+Serverless:
 - $0.096 per million read units
 - $0.06 per million write units
 - $0.06 per GB storage/month
 
-**Free tier**:
+Free tier:
 - 1 serverless index
 - 100K vectors (1536 dimensions)
 - Great for prototyping
 
+## Pitfalls
+- Install `pinecone`, not deprecated `pinecone-client`; current imports use `from pinecone import Pinecone`.
+- Hybrid weighting requires pre-scaling dense/sparse vectors; `index.query()` does not accept an `alpha` kwarg.
+- Index dimension must match embeddings; namespaces isolate data but do not replace authorization.
+- Pricing, limits, and API behavior change; inspect current usage and confirm destructive operations.
+
+## Verification
+- create/inspect a non-production index and confirm dimension/metric
+- upsert sample vectors and query with metadata/namespace filters
+- check matches, scores, stats, latency, and credential redaction
+
 ## Resources
 
-- **Website**: https://www.pinecone.io
-- **Docs**: https://docs.pinecone.io
-- **Console**: https://app.pinecone.io
-- **Pricing**: https://www.pinecone.io/pricing
-
-
+- Website: https://www.pinecone.io
+- Docs: https://docs.pinecone.io
+- Console: https://app.pinecone.io
+- Pricing: https://www.pinecone.io/pricing

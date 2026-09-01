@@ -14,11 +14,17 @@ metadata:
 
 # Chroma - Open-Source Embedding Database
 
+role: Chroma embedding-database/RAG operator
+do: create persistent/server client; manage collections; add/update/get/delete documents/embeddings; filter metadata; integrate embedding functions and RAG
+inputs: Chroma path/server; collection; documents/embeddings/IDs/metadata; embedding function; query/filter; API credentials
+outputs: stored/retrieved documents; IDs/metadatas/distances; persistent collection; RAG context; server/client diagnostics
+¬: use ephemeral client for durable data; mix embedding dimensions/functions; expose keys; delete collections without confirmation; treat distances as calibrated relevance
+
 The AI-native database for building LLM applications with memory.
 
-## When to use Chroma
+## When to Use
 
-**Use Chroma when:**
+Use Chroma when:
 - Building RAG (retrieval-augmented generation) applications
 - Need local/self-hosted vector database
 - Want open-source solution (Apache 2.0)
@@ -26,19 +32,19 @@ The AI-native database for building LLM applications with memory.
 - Semantic search over documents
 - Storing embeddings with metadata
 
-**Metrics**:
-- **24,300+ GitHub stars**
-- **1,900+ forks**
-- **v1.3.3** (stable, weekly releases)
-- **Apache 2.0 license**
+Metrics:
+- 24,300+ GitHub stars
+- 1,900+ forks
+- v1.3.3 (stable, weekly releases)
+- Apache 2.0 license
 
-**Use alternatives instead**:
-- **Pinecone**: Managed cloud, auto-scaling
-- **FAISS**: Pure similarity search, no metadata
-- **Weaviate**: Production ML-native database
-- **Qdrant**: High performance, Rust-based
+Use alternatives instead:
+- Pinecone: Managed cloud, auto-scaling
+- FAISS: Pure similarity search, no metadata
+- Weaviate: Production ML-native database
+- Qdrant: High performance, Rust-based
 
-## Quick start
+## Procedure
 
 ### Installation
 
@@ -380,16 +386,16 @@ collection = client.get_or_create_collection("my_docs")
 
 ## Best practices
 
-1. **Use persistent client** - Don't lose data on restart
-2. **Add metadata** - Enables filtering and tracking
-3. **Batch operations** - Add multiple docs at once
-4. **Choose right embedding model** - Balance speed/quality
-5. **Use filters** - Narrow search space
-6. **Unique IDs** - Avoid collisions
-7. **Regular backups** - Copy chroma_db directory
-8. **Monitor collection size** - Scale up if needed
-9. **Test embedding functions** - Ensure quality
-10. **Use server mode for production** - Better for multi-user
+1. Use persistent client - Don't lose data on restart
+2. Add metadata - Enables filtering and tracking
+3. Batch operations - Add multiple docs at once
+4. Choose right embedding model - Balance speed/quality
+5. Use filters - Narrow search space
+6. Unique IDs - Avoid collisions
+7. Regular backups - Copy chroma_db directory
+8. Monitor collection size - Scale up if needed
+9. Test embedding functions - Ensure quality
+10. Use server mode for production - Better for multi-user
 
 ## Performance
 
@@ -399,12 +405,21 @@ collection = client.get_or_create_collection("my_docs")
 | Query (top 10) | ~50-200ms | Depends on collection size |
 | Metadata filter | ~10-50ms | Fast with proper indexing |
 
+## Pitfalls
+- `chromadb.Client()` is in-memory; use `PersistentClient(path=...)` or server mode for persistence.
+- Embedding function/model and vector dimensions must stay consistent within a collection.
+- Metadata filters, IDs, batching, and collection size affect correctness/performance; test with representative data.
+- Server mode and production multi-user use need explicit auth, backup, and deletion policy.
+
+## Verification
+- create a test collection and add known documents/embeddings
+- query with text and metadata filters and inspect IDs/documents/distances
+- reload persistent/server client and confirm data survives
+
 ## Resources
 
-- **GitHub**: https://github.com/chroma-core/chroma ⭐ 24,300+
-- **Docs**: https://docs.trychroma.com
-- **Discord**: https://discord.gg/MMeYNTmh3x
-- **Version**: 1.3.3+
-- **License**: Apache 2.0
-
-
+- GitHub: https://github.com/chroma-core/chroma ⭐ 24,300+
+- Docs: https://docs.trychroma.com
+- Discord: https://discord.gg/MMeYNTmh3x
+- Version: 1.3.3+
+- License: Apache 2.0

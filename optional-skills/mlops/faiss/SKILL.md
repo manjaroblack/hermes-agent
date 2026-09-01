@@ -14,29 +14,35 @@ metadata:
 
 # FAISS - Efficient Similarity Search
 
+role: FAISS vector-similarity-search operator
+do: choose Flat/IVF/HNSW/PQ; train/add/search vectors; normalize for cosine; move indexes to GPU; persist/reload; integrate vector stores
+inputs: float32 vectors/dimension; query/k; index type/hyperparameters; GPU resources; persistence path; embedding/model integration
+outputs: nearest-neighbor IDs/distances; trained index; GPU/CPU benchmark; saved index; RAG retrieval results
+¬: expect metadata filtering; search untrained IVF/PQ; mix dimensions/dtypes; load untrusted indexes with dangerous deserialization; treat approximate scores as exact
+
 Facebook AI's library for billion-scale vector similarity search.
 
-## When to use FAISS
+## When to Use
 
-**Use FAISS when:**
+Use FAISS when:
 - Need fast similarity search on large vector datasets (millions/billions)
 - GPU acceleration required
 - Pure vector similarity (no metadata filtering needed)
 - High throughput, low latency critical
 - Offline/batch processing of embeddings
 
-**Metrics**:
-- **31,700+ GitHub stars**
+Metrics:
+- 31,700+ GitHub stars
 - Meta/Facebook AI Research
-- **Handles billions of vectors**
-- **C++** with Python bindings
+- Handles billions of vectors
+- C++ with Python bindings
 
-**Use alternatives instead**:
-- **Chroma/Pinecone**: Need metadata filtering
-- **Weaviate**: Need full database features
-- **Annoy**: Simpler, fewer features
+Use alternatives instead:
+- Chroma/Pinecone: Need metadata filtering
+- Weaviate: Need full database features
+- Annoy: Simpler, fewer features
 
-## Quick start
+## Procedure
 
 ### Installation
 
@@ -199,13 +205,13 @@ vector_store = FaissVectorStore(faiss_index=faiss_index)
 
 ## Best practices
 
-1. **Choose right index type** - Flat for <10K, IVF for 10K-1M, HNSW for quality
-2. **Normalize for cosine** - Use IndexFlatIP with normalized vectors
-3. **Use GPU for large datasets** - 10-100× faster
-4. **Save trained indices** - Training is expensive
-5. **Tune nprobe/ef_search** - Balance speed/accuracy
-6. **Monitor memory** - PQ for large datasets
-7. **Batch queries** - Better GPU utilization
+1. Choose right index type - Flat for <10K, IVF for 10K-1M, HNSW for quality
+2. Normalize for cosine - Use IndexFlatIP with normalized vectors
+3. Use GPU for large datasets - 10-100× faster
+4. Save trained indices - Training is expensive
+5. Tune nprobe/ef_search - Balance speed/accuracy
+6. Monitor memory - PQ for large datasets
+7. Batch queries - Better GPU utilization
 
 ## Performance
 
@@ -216,10 +222,19 @@ vector_store = FaissVectorStore(faiss_index=faiss_index)
 | HNSW | Slow | Fastest | High | 99% |
 | PQ | Medium | Fast | Low | 90-95% |
 
+## Pitfalls
+- IVF/PQ indexes require training before add/search; Flat is exact, HNSW/IVF/PQ trade recall, memory, and speed.
+- Cosine similarity needs normalized vectors with inner-product indexes.
+- FAISS does not provide payload/metadata filtering; pair it with an appropriate store when needed.
+- GPU/CPU index transfer, dimension, float32, and persistence compatibility must be tested.
+
+## Verification
+- build an index with known vectors and check nearest-neighbor IDs/distances
+- compare approximate results against Flat baseline
+- save/reload and, when used, benchmark GPU versus CPU
+
 ## Resources
 
-- **GitHub**: https://github.com/facebookresearch/faiss ⭐ 31,700+
-- **Wiki**: https://github.com/facebookresearch/faiss/wiki
-- **License**: MIT
-
-
+- GitHub: https://github.com/facebookresearch/faiss ⭐ 31,700+
+- Wiki: https://github.com/facebookresearch/faiss/wiki
+- License: MIT
