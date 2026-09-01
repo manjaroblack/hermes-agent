@@ -1,6 +1,6 @@
 ---
 name: github-issues
-description: "Create, triage, label, assign GitHub issues via gh or REST."
+description: Create, triage, label, assign GitHub issues via gh or REST.
 version: 1.1.0
 author: Hermes Agent
 license: MIT
@@ -11,14 +11,33 @@ metadata:
     related_skills: [github-auth, github-pr-workflow]
 ---
 
-# GitHub Issues Management
+# GitHub Issues
 
-Create, search, triage, and manage GitHub issues. Each section shows `gh` first, then the `curl` fallback.
+role: issue-management operator
+do: view/search/create/triage/edit/comment/close/reopen/link issues; use `gh` first, REST fallback
+inputs: authenticated `gh` or PAT, repository remote/owner/repo, issue payload, mutation approval
+outputs: issue state/metadata, labels/assignees/comments, triage decisions
+¬: assume `/issues` excludes PRs; mutate without scope/approval; expose PAT; bulk-close without explicit label/policy
+
+## When to Use
+
+- create or view a GitHub issue
+- search, label, assign, comment, close, or reopen
+- triage `needs-triage` issues
+- link an issue to a development branch/PR or perform an approved bulk operation
+
+## Procedure
+
+1. Resolve repository + authenticated path; inspect current issue state first.
+2. Choose view/search, create, manage, triage, or bulk workflow below.
+3. Preview mutation scope, labels, assignees, and policy; obtain required approval.
+4. Execute through `gh` or REST fallback; filter PR objects from `/issues`.
+5. Read back issue state and run Verification.
 
 ## Prerequisites
 
-- Authenticated with GitHub (see `github-auth` skill)
-- Inside a git repo with a GitHub remote, or specify the repo explicitly
+- authenticated GitHub access (`github-auth`)
+- git repository with GitHub remote, or explicit owner/repo
 
 ### Setup
 
@@ -42,11 +61,9 @@ OWNER=$(echo "$OWNER_REPO" | cut -d/ -f1)
 REPO=$(echo "$OWNER_REPO" | cut -d/ -f2)
 ```
 
----
+## View + Search
 
-## 1. Viewing Issues
-
-**With gh:**
+`gh`:
 
 ```bash
 gh issue list
@@ -56,7 +73,7 @@ gh issue list --search "authentication error" --state all
 gh issue view 42
 ```
 
-**With curl:**
+REST fallback (filter PR objects out of `/issues`):
 
 ```bash
 # List open issues
@@ -104,9 +121,9 @@ for i in json.load(sys.stdin)['items']:
     print(f\"#{i['number']}  {i['state']:6}  {i['title']}\")"
 ```
 
-## 2. Creating Issues
+## Create
 
-**With gh:**
+`gh`:
 
 ```bash
 gh issue create \
@@ -126,7 +143,7 @@ Respect the ?next= query parameter." \
   --assignee "username"
 ```
 
-**With curl:**
+REST:
 
 ```bash
 curl -s -X POST \
@@ -140,7 +157,7 @@ curl -s -X POST \
   }'
 ```
 
-### Bug Report Template
+### Bug template
 
 ```
 ## Bug Description
@@ -161,7 +178,7 @@ curl -s -X POST \
 - Version: <version>
 ```
 
-### Feature Request Template
+### Feature template
 
 ```
 ## Feature Description
@@ -177,18 +194,18 @@ curl -s -X POST \
 <Other approaches>
 ```
 
-## 3. Managing Issues
+## Manage
 
-### Add/Remove Labels
+### Labels
 
-**With gh:**
+`gh`:
 
 ```bash
 gh issue edit 42 --add-label "priority:high,bug"
 gh issue edit 42 --remove-label "needs-triage"
 ```
 
-**With curl:**
+REST:
 
 ```bash
 # Add labels
@@ -214,14 +231,10 @@ for l in json.load(sys.stdin):
 
 ### Assignment
 
-**With gh:**
-
 ```bash
 gh issue edit 42 --add-assignee username
 gh issue edit 42 --add-assignee @me
 ```
-
-**With curl:**
 
 ```bash
 curl -s -X POST \
@@ -230,15 +243,11 @@ curl -s -X POST \
   -d '{"assignees": ["username"]}'
 ```
 
-### Commenting
-
-**With gh:**
+### Comment
 
 ```bash
 gh issue comment 42 --body "Investigated — root cause is in auth middleware. Working on a fix."
 ```
-
-**With curl:**
 
 ```bash
 curl -s -X POST \
@@ -247,17 +256,13 @@ curl -s -X POST \
   -d '{"body": "Investigated — root cause is in auth middleware. Working on a fix."}'
 ```
 
-### Closing and Reopening
-
-**With gh:**
+### Close/reopen
 
 ```bash
 gh issue close 42
 gh issue close 42 --reason "not planned"
 gh issue reopen 42
 ```
-
-**With curl:**
 
 ```bash
 # Close
@@ -273,9 +278,9 @@ curl -s -X PATCH \
   -d '{"state": "open"}'
 ```
 
-### Linking Issues to PRs
+### Link to PR/branch
 
-Issues are automatically closed when a PR merges with the right keywords in the body:
+PR body keywords auto-close after merge:
 
 ```
 Closes #42
@@ -283,26 +288,20 @@ Fixes #42
 Resolves #42
 ```
 
-To create a branch from an issue:
-
-**With gh:**
+Create issue branch:
 
 ```bash
 gh issue develop 42 --checkout
 ```
-
-**With git (manual equivalent):**
 
 ```bash
 git checkout main && git pull origin main
 git checkout -b fix/issue-42-login-redirect
 ```
 
-## 4. Issue Triage Workflow
+## Triage Workflow
 
-When asked to triage issues:
-
-1. **List untriaged issues:**
+1. List open `needs-triage` issues:
 
 ```bash
 # With gh
@@ -319,19 +318,17 @@ for i in json.load(sys.stdin):
         print(f\"#{i['number']}  {i['title']}\")"
 ```
 
-2. **Read and categorize** each issue (view details, understand the bug/feature)
+2. Read and categorize every issue.
+3. Apply labels/priority.
+4. Assign when owner is clear.
+5. Comment triage notes when useful.
 
-3. **Apply labels and priority** (see Managing Issues above)
+## Bulk Operations
 
-4. **Assign** if the owner is clear
+Require explicit user-approved label and state scope; inspect the candidate set
+before mutation.
 
-5. **Comment with triage notes** if needed
-
-## 5. Bulk Operations
-
-For batch operations, combine API calls with shell scripting:
-
-**With gh:**
+`gh`:
 
 ```bash
 # Close all issues with a specific label
@@ -339,7 +336,7 @@ gh issue list --label "wontfix" --json number --jq '.[].number' | \
   xargs -I {} gh issue close {} --reason "not planned"
 ```
 
-**With curl:**
+REST:
 
 ```bash
 # List issue numbers with a label, then close each
@@ -356,7 +353,7 @@ curl -s \
   done
 ```
 
-## Quick Reference Table
+## Quick Reference
 
 | Action | gh | curl endpoint |
 |--------|-----|--------------|
@@ -368,3 +365,20 @@ curl -s \
 | Comment | `gh issue comment N --body ...` | `POST /repos/{o}/{r}/issues/N/comments` |
 | Close | `gh issue close N` | `PATCH /repos/{o}/{r}/issues/N` |
 | Search | `gh issue list --search "..."` | `GET /search/issues?q=...` |
+
+## Pitfalls
+
+- GitHub `/issues` includes pull requests; filter `pull_request`.
+- Search/REST pagination and `per_page` bound coverage; state gaps.
+- Labels with commas/spaces need exact quoting/encoding.
+- Closing is a mutation; verify title/number/state before bulk action.
+- Link keywords close only when the PR merges.
+
+## Verification
+
+- [ ] auth and owner/repo resolved without token exposure
+- [ ] views/searches distinguish issues from PRs
+- [ ] create/edit payload returned expected number/labels/assignees
+- [ ] comments and state changes are read back
+- [ ] triage dispositions/owners have reasons
+- [ ] bulk candidate set and approval scope were explicit

@@ -16,33 +16,40 @@ environments:
 
 # SDLC Review Skill
 
-Independently verify work handed from a Kanban implementation run to the review lane, then approve it, request changes, or escalate. This skill reviews the deliverable and its evidence; it does not take over the implementer's work.
+role: independent Kanban review worker
+do: inspect implementation/evidence; map acceptance criteria; run relevant checks; approve, request changes, or escalate
+inputs: task body, acceptance criteria, handoff, workspace/deliverable, prior review history
+outputs: one evidence-backed verdict through the Kanban lifecycle
+¬: take over implementation; edit deliverable; rubber-stamp summary; use blocker for ordinary rework
 
 ## When to Use
 
-Use this skill when all of the following are true:
+Use iff all hold:
 
-- the dispatcher spawned you for a task claimed from the `review` lane;
-- an implementer submitted a `review_requested` handoff;
-- the task needs an independent verdict before it can be completed.
+- dispatcher spawned this run from the `review` lane
+- implementer submitted a `review_requested` handoff
+- independent verdict is required before completion
 
-Do not use it for a separate downstream review card. A downstream card is ordinary implementation work with a review-oriented specification and completes through its own lifecycle.
+¬use for a separate downstream review card: that card is ordinary scoped work
+with review-oriented acceptance criteria and its own lifecycle.
 
 ## Prerequisites
 
-- A Kanban worker context with the current task and run identifiers.
-- Native Kanban tools: `kanban_show`, `kanban_comment`, `kanban_complete`, `kanban_request_changes`, and `kanban_block`.
-- Workspace access through `read_file`, `search_files`, and `terminal` when the deliverable is code.
-- The task's original specification, acceptance criteria, handoff summary, and prior run history must be available through `kanban_show`.
+- current Kanban worker context/task/run identifiers
+- native tools: `kanban_show`, `kanban_comment`, `kanban_complete`,
+  `kanban_request_changes`, `kanban_block`
+- code workspace access via `read_file`, `search_files`, `terminal`
+- original specification, acceptance criteria, handoff, and prior runs via
+  `kanban_show`
 
 ## How to Run
 
-This skill is loaded automatically by the review dispatcher. Start with `kanban_show` before inspecting files or choosing a verdict.
-
-1. Read the task specification and the latest `review_requested` handoff.
-2. Inspect the actual deliverable and run relevant verification.
-3. Choose exactly one verdict: approve, request changes, or escalate.
-4. Record concrete evidence in the terminal Kanban transition.
+1. Call `kanban_show`; inspect the complete task, handoff, prior attempts,
+   comments, and child cards.
+2. Inspect changed files with `read_file`/`search_files`; run focused checks via
+   `terminal` where the artifact permits.
+3. Record concrete evidence, then select exactly one terminal lifecycle action.
+Done when: the verdict is independently reproducible from task state and checks.
 
 ## Quick Reference
 
@@ -52,13 +59,15 @@ This skill is loaded automatically by the review dispatcher. Start with `kanban_
 | Request changes | Correctable implementation defects remain | `kanban_comment`, then `kanban_request_changes` |
 | Escalate | A human decision or external prerequisite is required | `kanban_block` |
 
-A requested-changes transition returns the task to its original implementer. When that implementer requests review again without naming a reviewer, the persisted reviewer provenance routes the re-review back to the same reviewer profile.
+A requested-changes transition returns the task to its original implementer.
+When that implementer requests review again without naming a reviewer, persisted
+reviewer provenance routes the re-review to the same reviewer profile.
 
 ## Review Lenses
 
-Vary how you look at the work on each round instead of repeating the same inspection. Decorrelated lenses catch different defect classes: a cold read of the artifact surfaces design and correctness problems that the implementer's narrative would have framed away, execution surfaces claims that do not reproduce, and a strict contract audit surfaces quiet scope drift. Repeating the round-1 lens on round 3 mostly re-finds what round 1 already found.
-
-Determine the current round from the history the task record already gives you: count the `changes_requested` entries in the "Prior attempts on this task" section of your worker context (also visible as prior runs in `kanban_show`). The current review round is that count plus one. Round 1 therefore shows zero `changes_requested` attempts; round 2 shows one; and so on.
+Current round = count `changes_requested` entries in prior attempts + 1.
+Baseline procedure remains required every round. Read Prior attempts on this task
+from the durable context; never infer the round from memory.
 
 | Round | Lens | How to apply it |
 |---|---|---|
@@ -66,49 +75,38 @@ Determine the current round from the history the task record already gives you: 
 | 2 | Execution | Check out the work and actually run it via `terminal`: build, test, and exercise the reported behavior yourself. Verify each handoff claim empirically instead of re-reading the artifact. |
 | 3+ | Contract | Re-read the ORIGINAL task body and acceptance criteria, then audit the deliverable strictly against them. Also verify that every item from every prior `kanban_request_changes` round actually landed. |
 
-The baseline duties in the Procedure section still apply on every round; the lens sets which inspection you lead with and weight most heavily.
-
-### Lens variation for ad-hoc review fan-outs
-
-The same principle applies outside the Kanban review lane. When spawning multiple parallel reviewers via `delegate_task`, give each reviewer a different lens — one diff-only brief, one full-context brief, one checkout-and-run brief — rather than identical briefs. Identical briefs produce correlated verdicts and duplicate findings; varied briefs cover more defect classes for the same review spend.
+For ad-hoc `delegate_task` review fan-outs, assign distinct lenses (diff-only,
+full-context, checkout-and-run); identical briefs yield correlated findings.
 
 ## Procedure
 
-### 1. Orient from the durable task record
+### 1. Orient from durable state
 
-Call `kanban_show` and identify:
+Call `kanban_show` first. Extract original criteria; latest summary/metadata;
+changed paths, commit IDs, and tests; comments/decisions; prior findings.
+Treat handoff claims as hypotheses, not proof.
 
-- the original task body and acceptance criteria;
-- the latest implementation summary and structured metadata;
-- changed files, commit identifiers, and test evidence;
-- comments and decisions from earlier runs;
-- findings from prior review rounds.
+### 2. Map request to deliverable
 
-Treat the handoff as a claim to verify, not as proof that the work is correct.
+For each acceptance criterion identify concrete implementation/output evidence;
+record omissions, semantic changes, and unrelated scope.
 
-### 2. Compare requested behavior with delivered behavior
+Code path:
 
-Map every acceptance criterion to concrete implementation or output evidence. Note omissions, changed semantics, and unrelated scope before deciding whether to run deeper checks.
+1. Inspect changed files and callers with `read_file` + `search_files`.
+2. Inspect diff and run focused tests, lint, type checks, or build via
+   `terminal`.
+3. Exercise reported failure path plus an ordinary control path when practical.
+4. Check errors, edge cases, concurrency, data preservation, security,
+   cross-platform behavior.
+5. Reject tests that only snapshot source text or changeable constants.
 
-For code work:
+Non-code path: inspect the complete artifact; check correctness, completeness,
+format/provenance; validate material external references with native tools.
 
-1. Use `read_file` and `search_files` to inspect the changed paths and their callers.
-2. Use `terminal` to inspect the diff and run the project's existing focused tests, lint, type checks, or build commands.
-3. Exercise the reported failure path and at least one ordinary control path when practical.
-4. Check error handling, edge cases, concurrency boundaries, data preservation, security boundaries, and cross-platform behavior relevant to the change.
-5. Confirm that tests assert behavior rather than merely snapshotting source text or constants.
+### 3. Choose exactly one verdict
 
-For non-code work:
-
-1. Inspect the complete deliverable rather than only its summary.
-2. Check correctness, completeness, formatting, and provenance.
-3. Validate referenced URLs or external facts with the appropriate native tools when they affect the verdict.
-
-### 3. Choose one verdict
-
-#### Approve
-
-Approve only when the acceptance criteria are satisfied and the evidence is sufficient. Call:
+Approve iff criteria + evidence pass:
 
 ```text
 kanban_complete(
@@ -117,11 +115,9 @@ kanban_complete(
 )
 ```
 
-Include the exact checks that passed and any bounded caveat that does not block acceptance.
+Include exact passing checks and bounded non-blocking caveats.
 
-#### Request changes
-
-Use this for specific, correctable defects. First record actionable findings:
+Correctable defect → record actionable findings, then return the same card:
 
 ```text
 kanban_comment(
@@ -130,19 +126,15 @@ kanban_comment(
 )
 ```
 
-Then return the same task to its implementer:
-
 ```text
 kanban_request_changes(
     reason="<concise summary of the required corrections>"
 )
 ```
 
-State where the defect is, how it reproduces, why it violates the task, and what minimum outcome would resolve it. The transition does not use blocker recurrence accounting.
+State location, reproduction, violated criterion, and minimum correction.
 
-#### Escalate
-
-Use escalation only when the reviewer and implementer cannot resolve the problem without a human decision or external prerequisite:
+Human decision/external prerequisite only → escalate:
 
 ```text
 kanban_block(
@@ -150,32 +142,33 @@ kanban_block(
 )
 ```
 
-Explain the blocked decision and the smallest information needed to continue.
+State the smallest missing input. Requested changes do not use blocker
+recurrence accounting.
 
-### 4. Preserve role separation
+## Role Boundary
 
-Do not edit the implementation while acting as reviewer. Request changes and let the implementer produce the next candidate; then independently verify that candidate in the next review run.
+Do not edit implementation while reviewing. Return defects to the implementer;
+re-review the next candidate independently. A downstream child review is not a
+reason to request same-card review.
 
 ## Pitfalls
 
-- **Rubber-stamping:** A passing handoff summary is not independent evidence.
-- **Reviewer implementation:** Editing the deliverable hides ownership and weakens the re-review boundary.
-- **Vague findings:** “Needs work” does not give the implementer a reproducible correction target.
-- **Style-only blocking:** Do not request changes for preference-level nits when behavior and repository standards are satisfied.
-- **Skipping prior rounds:** Re-review must confirm both the requested corrections and preservation of previously passing behavior.
-- **Using blockers for ordinary rework:** Correctable defects belong in `kanban_request_changes`; reserve `kanban_block` for genuine external blockers or human decisions.
-- **Completing without evidence:** Every approval summary must name the checks or artifacts actually inspected.
+- passing handoff summary != independent evidence
+- reviewer edits hide ownership and weaken re-review
+- vague findings give no reproducible correction target
+- style-only preference != blocking defect
+- skipping earlier-round corrections risks regression
+- ordinary rework → `kanban_request_changes`; `kanban_block` only external/human
+- approval without named checks/artifacts is unsupported
 
 ## Verification
 
-Before submitting the verdict, confirm:
-
-- [ ] `kanban_show` was read for the current task and run.
-- [ ] Every acceptance criterion was mapped to evidence.
-- [ ] The actual deliverable was inspected.
-- [ ] Relevant focused checks were run or an explicit reason was recorded when execution was impossible.
-- [ ] Prior requested changes were re-tested on re-review.
-- [ ] Unrelated regressions and scope changes were considered.
-- [ ] The verdict uses exactly one terminal action.
-- [ ] The summary contains concrete, non-secret evidence.
-- [ ] No implementation files were edited by the reviewer.
+- [ ] `kanban_show` read for current task/run
+- [ ] every criterion mapped to evidence
+- [ ] complete deliverable inspected
+- [ ] focused checks run, or execution impossibility recorded
+- [ ] prior requested changes re-tested
+- [ ] unrelated regressions/scope considered
+- [ ] exactly one terminal lifecycle action selected
+- [ ] summary contains concrete non-secret evidence
+- [ ] reviewer edited no implementation files

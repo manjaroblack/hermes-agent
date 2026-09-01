@@ -1,6 +1,6 @@
 ---
 name: maps
-description: "Geocode, POIs, routes, timezones via OpenStreetMap/OSRM."
+description: Geocode, POIs, routes, timezones via OpenStreetMap/OSRM.
 version: 1.2.0
 author: Mibayy
 license: MIT
@@ -13,58 +13,62 @@ metadata:
     supersedes: [find-nearby]
 ---
 
-# Maps Skill
+# Maps
 
-Location intelligence using free, open data sources. 8 commands, 44 POI
-categories, zero dependencies (Python stdlib only), no API key required.
+role: OpenStreetMap/OSRM location-intelligence operator
+do: geocode/reverse; find nearby POIs; route/distance/directions; resolve timezone; query area/bbox; present tap-to-open links
+inputs: place/address/coordinates/location pin, category/radius, origin/destination, mode, bbox
+outputs: coordinates/address, POIs/tags/links, road+straight-line distance, duration/steps, timezone/offset/local time, bbox/area
+¬: API key/install requirement (stdlib only); ignore Nominatim rate/ToS; treat OSM hours as authoritative; confuse `--to` destination; infer precise current availability from community data
 
-Data sources: OpenStreetMap/Nominatim, Overpass API, OSRM, TimeAPI.io.
-
-This skill supersedes the old `find-nearby` skill — all of find-nearby's
-functionality is covered by the `nearby` command below, with the same
-`--near "<place>"` shortcut and multi-category support.
+Data: OpenStreetMap/Nominatim, Overpass API, OSRM, TimeAPI.io. Stated scope:
+8 commands, 44 POI categories, zero dependencies, no API key. Supersedes
+`find-nearby`; `nearby` keeps `--near "<place>"` and multi-category support.
 
 ## When to Use
 
-- User sends a Telegram location pin (latitude/longitude in the message) → `nearby`
-- User wants coordinates for a place name → `search`
-- User has coordinates and wants the address → `reverse`
-- User asks for nearby restaurants, hospitals, pharmacies, hotels, etc. → `nearby`
-- User wants driving/walking/cycling distance or travel time → `distance`
-- User wants turn-by-turn directions between two places → `directions`
-- User wants timezone information for a location → `timezone`
-- User wants to search for POIs within a geographic area → `area` + `bbox`
+- Telegram location pin → `nearby`
+- place → coordinates → `search`; coordinates → address → `reverse`
+- nearby restaurant/hospital/pharmacy/hotel → `nearby`
+- travel distance/time → `distance`; turn-by-turn → `directions`
+- timezone → `timezone`; geographic area → `area` + `bbox`
+
+## Procedure
+
+1. Resolve the script + concrete place/coordinates/pin, category, radius, or route.
+2. Choose one command below; geocode addresses before coordinate-only operations.
+3. Run with bounded limit/radius/bbox and respect Nominatim/Overpass policies.
+4. Report source coordinates, tags, distance/time/offset, and uncertainty.
+5. Complete Verification; never infer real-time availability from OSM alone.
 
 ## Prerequisites
 
-Python 3.8+ (stdlib only — no pip installs needed).
-
-Script path: `~/.hermes/skills/maps/scripts/maps_client.py`
-
-## Commands
+Python 3.8+ stdlib only. Script: `~/.hermes/skills/maps/scripts/maps_client.py`.
 
 ```bash
 MAPS=~/.hermes/skills/maps/scripts/maps_client.py
 ```
 
-### search — Geocode a place name
+## Commands
+
+### search — geocode
 
 ```bash
 python $MAPS search "Eiffel Tower"
 python $MAPS search "1600 Pennsylvania Ave, Washington DC"
 ```
 
-Returns: lat, lon, display name, type, bounding box, importance score.
+Returns lat/lon, display name, type, bounding box, importance.
 
-### reverse — Coordinates to address
+### reverse — coordinates → address
 
 ```bash
 python $MAPS reverse 48.8584 2.2945
 ```
 
-Returns: full address breakdown (street, city, state, country, postcode).
+Returns street/city/state/country/postcode breakdown.
 
-### nearby — Find places by category
+### nearby — category search
 
 ```bash
 # By coordinates (from a Telegram location pin, for example)
@@ -79,20 +83,21 @@ python $MAPS nearby --near "90210" --category pharmacy
 python $MAPS nearby --near "downtown austin" --category restaurant --category bar --limit 10
 ```
 
-46 categories: restaurant, cafe, bar, hospital, pharmacy, hotel, guest_house,
-camp_site, supermarket, atm, gas_station, parking, museum, park, school,
-university, bank, police, fire_station, library, airport, train_station,
-bus_stop, church, mosque, synagogue, dentist, doctor, cinema, theatre, gym,
-swimming_pool, post_office, convenience_store, bakery, bookshop, laundry,
-car_wash, car_rental, bicycle_rental, taxi, veterinary, zoo, playground,
-stadium, nightclub.
+Categories:
 
-Each result includes: `name`, `address`, `lat`/`lon`, `distance_m`,
-`maps_url` (clickable Google Maps link), `directions_url` (Google Maps
-directions from the search point), and promoted tags when available —
-`cuisine`, `hours` (opening_hours), `phone`, `website`.
+restaurant, cafe, bar, hospital, pharmacy, hotel, guest_house, camp_site,
+supermarket, atm, gas_station, parking, museum, park, school, university,
+bank, police, fire_station, library, airport, train_station, bus_stop, church,
+mosque, synagogue, dentist, doctor, cinema, theatre, gym, swimming_pool,
+post_office, convenience_store, bakery, bookshop, laundry, car_wash,
+car_rental, bicycle_rental, taxi, veterinary, zoo, playground, stadium,
+nightclub.
 
-### distance — Travel distance and time
+Each result: `name`, `address`, `lat`/`lon`, `distance_m`, `maps_url`,
+`directions_url`, promoted tags `cuisine`, `hours` (`opening_hours`), `phone`,
+`website` when available.
+
+### distance — road + straight-line
 
 ```bash
 python $MAPS distance "Paris" --to "Lyon"
@@ -100,89 +105,71 @@ python $MAPS distance "New York" --to "Boston" --mode driving
 python $MAPS distance "Big Ben" --to "Tower Bridge" --mode walking
 ```
 
-Modes: driving (default), walking, cycling. Returns road distance, duration,
-and straight-line distance for comparison.
+Modes: driving default, walking, cycling. Returns road distance/duration +
+straight-line comparison.
 
-### directions — Turn-by-turn navigation
+### directions — turn-by-turn
 
 ```bash
 python $MAPS directions "Eiffel Tower" --to "Louvre Museum" --mode walking
 python $MAPS directions "JFK Airport" --to "Times Square" --mode driving
 ```
 
-Returns numbered steps with instruction, distance, duration, road name, and
-maneuver type (turn, depart, arrive, etc.).
+Returns numbered instruction, distance, duration, road, maneuver type.
 
-### timezone — Timezone for coordinates
+### timezone
 
 ```bash
 python $MAPS timezone 48.8584 2.2945
 python $MAPS timezone 35.6762 139.6503
 ```
 
-Returns timezone name, UTC offset, and current local time.
+Returns timezone, UTC offset, current local time.
 
-### area — Bounding box and area for a place
+### area — place bbox
 
 ```bash
 python $MAPS area "Manhattan, New York"
 python $MAPS area "London"
 ```
 
-Returns bounding box coordinates, width/height in km, and approximate area.
-Useful as input for the bbox command.
+Returns bbox, width/height km, approximate area; useful for `bbox`.
 
-### bbox — Search within a bounding box
+### bbox — rectangle POIs
 
 ```bash
 python $MAPS bbox 40.75 -74.00 40.77 -73.98 restaurant --limit 20
 ```
 
-Finds POIs within a geographic rectangle. Use `area` first to get the
-bounding box coordinates for a named place.
+Use `area` first for named place coordinates.
 
-## Working With Telegram Location Pins
+## Telegram Location Pins
 
-When a user sends a location pin, the message contains `latitude:` and
-`longitude:` fields. Extract those and pass them straight to `nearby`:
+Extract `latitude:`/`longitude:` and pass directly:
 
 ```bash
 # User sent a pin at 36.17, -115.14 and asked "find cafes nearby"
 python $MAPS nearby 36.17 -115.14 cafe --radius 1500
 ```
 
-Present results as a numbered list with names, distances, and the
-`maps_url` field so the user gets a tap-to-open link in chat. For "open
-now?" questions, check the `hours` field; if missing or unclear, verify
-with `web_search` since OSM hours are community-maintained and not always
-current.
+Present numbered names/distances + `maps_url`. For “open now?”, inspect
+`hours`; missing/unclear → `web_search` because OSM hours are community-maintained.
 
 ## Workflow Examples
 
-**"Find Italian restaurants near the Colosseum":**
-1. `nearby --near "Colosseum Rome" --category restaurant --radius 500`
-   — one command, auto-geocoded
-
-**"What's near this location pin they sent?":**
-1. Extract lat/lon from the Telegram message
-2. `nearby LAT LON cafe --radius 1500`
-
-**"How do I walk from hotel to conference center?":**
-1. `directions "Hotel Name" --to "Conference Center" --mode walking`
-
-**"What restaurants are in downtown Seattle?":**
-1. `area "Downtown Seattle"` → get bounding box
-2. `bbox S W N E restaurant --limit 30`
+- Italian near Colosseum: `nearby --near "Colosseum Rome" --category restaurant --radius 500`
+- location pin: extract lat/lon; `nearby LAT LON cafe --radius 1500`
+- walk hotel → conference: `directions "Hotel Name" --to "Conference Center" --mode walking`
+- downtown Seattle restaurants: `area "Downtown Seattle"`; then `bbox S W N E restaurant --limit 30`
 
 ## Pitfalls
 
-- Nominatim ToS: max 1 req/s (handled automatically by the script)
-- `nearby` requires lat/lon OR `--near "<address>"` — one of the two is needed
-- OSRM routing coverage is best for Europe and North America
-- Overpass API can be slow during peak hours; the script automatically
-  falls back between mirrors (overpass-api.de → overpass.kumi.systems)
-- `distance` and `directions` use `--to` flag for the destination (not positional)
-- If a zip code alone gives ambiguous results globally, include country/state
+- Nominatim ToS max 1 req/s (script handles)
+- `nearby` needs coordinates or `--near "<address>"`
+- OSRM coverage best Europe/North America
+- Overpass peak latency; script fallback: overpass-api.de → overpass.kumi.systems
+- `distance`/`directions` destination uses `--to`, not positional
+- ambiguous global zip → add country/state
 
 ## Verification
 
@@ -193,3 +180,8 @@ python ~/.hermes/skills/maps/scripts/maps_client.py search "Statue of Liberty"
 python ~/.hermes/skills/maps/scripts/maps_client.py nearby --near "Times Square" --category restaurant --limit 3
 # Should return a list of restaurants within ~500m of Times Square
 ```
+
+- [ ] coordinates/place and command mode are explicit
+- [ ] route result includes road distance/duration and source caveats
+- [ ] POI result includes names/distances/links; hours caveat stated
+- [ ] rate limits/fallbacks/coverage and ambiguous geocoding handled

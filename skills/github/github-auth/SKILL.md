@@ -11,16 +11,32 @@ metadata:
     related_skills: [github-pr-workflow, github-code-review, github-issues, github-repo-management]
 ---
 
-# GitHub Authentication Setup
+# GitHub Authentication
 
-This skill sets up authentication so the agent can work with GitHub repositories, PRs, issues, and CI. It covers two paths:
+role: GitHub authentication operator
+do: detect available auth; configure HTTPS PAT, SSH, or `gh`; verify API/git access and identity
+inputs: GitHub account, token or SSH key, optional `gh`, repository remote
+outputs: verified auth method + safe git/API access
+¬: request/print secrets in chat; use GitHub password as token; expose tokens in URLs/logs; infer success without `gh auth status` or `git ls-remote`
 
-- **`git` (always available)** — uses HTTPS personal access tokens or SSH keys
-- **`gh` CLI (if installed)** — richer GitHub API access with a simpler auth flow
+## When to Use
 
-## Detection Flow
+- GitHub repository, PR, issue, release, or Actions work needs authentication
+- `gh` is missing or installed but unauthenticated
+- headless/SSH/Windows PTY login needs a fallback
+- API access is needed without `gh`
 
-When a user asks you to work with GitHub, run this check first:
+## Procedure
+
+1. Run Detection; reuse verified auth when already available.
+2. Choose Git-only HTTPS/SSH or `gh` from installed tools + host topology.
+3. Configure only the selected method; keep tokens out of URLs, chat, and logs.
+4. Configure API fallback only when API work is required.
+5. Run Verification against an authorized repository and confirm identity.
+
+## Detection
+
+Run once before choosing a method:
 
 ```bash
 # Check what's available
@@ -32,35 +48,21 @@ gh auth status 2>/dev/null || echo "gh not authenticated"
 git config --global credential.helper 2>/dev/null || echo "no git credential helper"
 ```
 
-**Decision tree:**
-1. If `gh auth status` shows authenticated → you're good, use `gh` for everything
-2. If `gh` is installed but not authenticated → use "gh auth" method below
-3. If `gh` is not installed → use "git-only" method below (no sudo needed)
+Decision: authenticated `gh` → use `gh`; installed but unauthenticated →
+choose `gh auth`; absent `gh` → Git-only path. `git` remains the baseline.
 
----
+## Method 1: Git-Only (No `gh`, No sudo)
 
-## Method 1: Git-Only Authentication (No gh, No sudo)
+Works on any machine with `git`.
 
-This works on any machine with `git` installed. No root access needed.
+### HTTPS PAT
 
-### Option A: HTTPS with Personal Access Token (Recommended)
-
-This is the most portable method — works everywhere, no SSH config needed.
-
-**Step 1: Create a personal access token**
-
-Tell the user to go to: **https://github.com/settings/tokens**
-
-- Click "Generate new token (classic)"
-- Give it a name like "hermes-agent"
-- Select scopes:
-  - `repo` (full repository access — read, write, push, PRs)
-  - `workflow` (trigger and manage GitHub Actions)
-  - `read:org` (if working with organization repos)
-- Set expiration (90 days is a good default)
-- Copy the token — it won't be shown again
-
-**Step 2: Configure git to store the token**
+1. Direct user to https://github.com/settings/tokens.
+2. Generate a classic token, name it (for example `hermes-agent`), select:
+   `repo` (repository read/write/push/PR), `workflow` (Actions), and
+   `read:org` when organization repositories require it; choose expiry (90 days
+   is a reasonable default); copy once.
+3. Configure a credential helper and trigger a prompt:
 
 ```bash
 # Set up the credential helper to cache credentials
@@ -73,23 +75,23 @@ git config --global credential.helper store
 git ls-remote https://github.com/<their-username>/<any-repo>.git
 ```
 
-After entering credentials once, they're saved and reused for all future operations.
-
-**Alternative: cache helper (credentials expire from memory)**
+The token is saved and reused after the prompt. Prefer a memory-only helper
+when persistence is not wanted:
 
 ```bash
 # Cache in memory for 8 hours (28800 seconds) instead of saving to disk
 git config --global credential.helper 'cache --timeout=28800'
 ```
 
-**Alternative: set the token directly in the remote URL (per-repo)**
+Per-repository token-in-URL is supported but leaks through config/process/logs;
+use only with explicit risk acceptance:
 
 ```bash
 # Embed token in the remote URL (avoids credential prompts entirely)
 git remote set-url origin https://<username>:<token>@github.com/<owner>/<repo>.git
 ```
 
-**Step 3: Configure git identity**
+Set commit identity:
 
 ```bash
 # Required for commits — set name and email
@@ -97,7 +99,7 @@ git config --global user.name "Their Name"
 git config --global user.email "their-email@example.com"
 ```
 
-**Step 4: Verify**
+Verify:
 
 ```bash
 # Test push access (this should work without any prompts now)
@@ -108,17 +110,14 @@ git config --global user.name
 git config --global user.email
 ```
 
-### Option B: SSH Key Authentication
+### SSH key
 
-Good for users who prefer SSH or already have keys set up.
-
-**Step 1: Check for existing SSH keys**
+Check existing keys, generate ed25519 if needed, add the public key at
+https://github.com/settings/keys, then test:
 
 ```bash
 ls -la ~/.ssh/id_*.pub 2>/dev/null || echo "No SSH keys found"
 ```
-
-**Step 2: Generate a key if needed**
 
 ```bash
 # Generate an ed25519 key (modern, secure, fast)
@@ -128,41 +127,25 @@ ssh-keygen -t ed25519 -C "their-email@example.com" -f ~/.ssh/id_ed25519 -N ""
 cat ~/.ssh/id_ed25519.pub
 ```
 
-Tell the user to add the public key at: **https://github.com/settings/keys**
-- Click "New SSH key"
-- Paste the public key content
-- Give it a title like "hermes-agent-<machine-name>"
-
-**Step 3: Test the connection**
+Use a descriptive key title such as `hermes-agent-<machine-name>`.
 
 ```bash
 ssh -T git@github.com
 # Expected: "Hi <username>! You've successfully authenticated..."
 ```
 
-**Step 4: Configure git to use SSH for GitHub**
+Rewrite HTTPS remotes to SSH if desired, then set identity:
 
 ```bash
 # Rewrite HTTPS GitHub URLs to SSH automatically
 git config --global url."git@github.com:".insteadOf "https://github.com/"
 ```
 
-**Step 5: Configure git identity**
+## Method 2: `gh` CLI
 
-```bash
-git config --global user.name "Their Name"
-git config --global user.email "their-email@example.com"
-```
+`gh` combines GitHub API access and git credentials.
 
----
-
-## Method 2: gh CLI Authentication
-
-If `gh` is installed, it handles both API access and git credentials in one step.
-
-### Interactive Browser Login (Desktop)
-
-> **PITFALL (agent-driven sessions on Windows):** when driving `gh auth login` through a pty background process, answer prompts with `process(submit)` — never `process(write)` with a bare `\n`. Enter on a Windows PTY (ConPTY/pywinpty) is a carriage return; a lone `\n` is not delivered as a line terminator, so gh's "Press Enter to open the browser" prompt (a blocking line read) silently never returns and the login hangs. Also note the browser may not open on the user's desktop from a background session — if they report that, fall back to the device flow below.
+### Interactive browser login
 
 ```bash
 gh auth login
@@ -171,9 +154,16 @@ gh auth login
 # Authenticate via browser
 ```
 
-### Manual OAuth Device Flow (no TTY needed — PROVEN)
+Windows agent PTY pitfall: answer prompts with `process(submit)`, never
+`process(write)` containing a bare `\n`. ConPTY/pywinpty expects carriage-return
+Enter; browser launch may also fail from a background session, so use device
+flow when needed.
 
-Fallback when interactive login is impractical (agent-driven sessions, no browser launch, headless). Uses gh's public OAuth client id; the user just enters a code at github.com/login/device. Scopes: `repo,read:org,gist` is the documented minimum for `gh auth login --with-token`; append `,workflow` only if you need to push workflow files.
+### OAuth device flow (headless, no TTY)
+
+Use `repo,read:org,gist`; append `,workflow` only when workflow-file pushes are
+needed. Show the user the device URL/code before polling; respect interval and
+expiry.
 
 ```bash
 # 1. Request a device code (gh's official client_id)
@@ -211,32 +201,33 @@ while true; do
 done
 ```
 
-Note: on Windows winget installs, gh lands at `/c/Program Files/GitHub CLI` — add it to PATH in the same shell: `export PATH="$PATH:/c/Program Files/GitHub CLI"`.
+Windows winget path may require:
+`export PATH="$PATH:/c/Program Files/GitHub CLI"`.
 
-> **PITFALL (headless Linux): `gh auth login --with-token` can hang forever.**
-> On keyring-less/headless boxes (VPS, containers, no dbus session), gh's
-> credential storage may block indefinitely waiting on a secret-service
-> keyring — even with `--insecure-storage`, and with no output. If the
-> command doesn't return within ~20s (wrap it in `timeout 20 …` to detect
-> this), skip gh's login machinery and write the credential store directly:
->
-> ```bash
-> # $TOKEN = the access token from the device flow above (never echo it)
-> mkdir -p ~/.config/gh
-> LOGIN=$(curl -s -H "Authorization: token $TOKEN" https://api.github.com/user \
->   | sed 's/.*"login": *"\([^"]*\)".*/\1/')
-> printf 'github.com:\n    users:\n        %s:\n            oauth_token: %s\n    git_protocol: https\n    oauth_token: %s\n    user: %s\n' \
->   "$LOGIN" "$TOKEN" "$TOKEN" "$LOGIN" > ~/.config/gh/hosts.yml
-> chmod 600 ~/.config/gh/hosts.yml
-> gh auth status          # reads hosts.yml directly — verifies without the keyring
-> gh auth setup-git       # wires the git credential helper (does not hang)
-> ```
->
-> `gh auth status` and `setup-git` read the file store without touching the
-> keyring, so they work immediately. Proven on a headless x86_64 VPS
-> (gh 2.97.0, Aug 2026) after `--with-token` hung twice.
+#### Headless keyring fallback
 
-### Token-Based Login (Headless / SSH Servers)
+`gh auth login --with-token` can hang on keyring-less/headless VPS, containers,
+or no-dbus sessions, even with `--insecure-storage`. Wrap it in `timeout 20`;
+on exit 124, write the device-flow token directly to the file store. `$TOKEN`
+must never be echoed. The following fallback is the documented operational
+shape:
+
+```bash
+# $TOKEN = the access token from the device flow above (never echo it)
+mkdir -p ~/.config/gh
+LOGIN=$(curl -s -H "Authorization: token ***" https://api.github.com/user \
+  | sed 's/.*"login": *"\([^"]*\)".*/\1/')
+printf 'github.com:\n    users:\n        %s:\n            oauth_token: %s\n    git_protocol: https\n    oauth_token: %s\n    user: %s\n' \
+  "$LOGIN" "$TOKEN" "$TOKEN" "$LOGIN" > ~/.config/gh/hosts.yml
+chmod 600 ~/.config/gh/hosts.yml
+gh auth status          # reads hosts.yml directly — verifies without the keyring
+gh auth setup-git       # wires the git credential helper (does not hang)
+```
+
+The file-store approach was proven on a headless x86_64 VPS with gh 2.97.0 in
+Aug 2026. `gh auth status` and `gh auth setup-git` read it without keyring.
+
+### Token login
 
 ```bash
 echo "<THEIR_TOKEN>" | gh auth login --with-token
@@ -245,43 +236,34 @@ echo "<THEIR_TOKEN>" | gh auth login --with-token
 gh auth setup-git
 ```
 
-If `--with-token` hangs here, use the hosts.yml fallback from the pitfall above.
-
-### Verify
+If it hangs, use the hosts.yml fallback. Verify:
 
 ```bash
 gh auth status
 ```
 
----
+## GitHub API Without `gh`
 
-## Using the GitHub API Without gh
-
-When `gh` is not available, you can still access the full GitHub API using `curl` with a personal access token. This is how the other GitHub skills implement their fallbacks.
-
-### Setting the Token for API Calls
+Use `curl` with a PAT; prefer an environment variable and redacted auth header:
 
 ```bash
 # Option 1: Export as env var (preferred — keeps it out of commands)
 export GITHUB_TOKEN="<token>"
 
 # Then use in curl calls:
-curl -s -H "Authorization: token $GITHUB_TOKEN" \
+curl -s -H "Authorization: token ***" \
   https://api.github.com/user
 ```
 
-### Extracting the Token from Git Credentials
-
-If git credentials are already configured (via credential.helper store), the token can be extracted:
+Extract an existing git credential through the bundled helper, without printing
+the secret:
 
 ```bash
 # Read from git credential store
 uv run python "${HERMES_HOME:-$HOME/.hermes}/skills/github/github-auth/scripts/git-credential-token.py"
 ```
 
-### Helper: Detect Auth Method
-
-Use this pattern at the start of any GitHub workflow:
+### Detect auth method
 
 ```bash
 # Try gh first, fall back to git + curl
@@ -301,9 +283,9 @@ else
 fi
 ```
 
----
+## Pitfalls
 
-## Troubleshooting
+Troubleshooting:
 
 | Problem | Solution |
 |---------|----------|
@@ -314,3 +296,12 @@ fi
 | Credentials not persisting | Check `git config --global credential.helper` — must be `store` or `cache` |
 | Multiple GitHub accounts | Use SSH with different keys per host alias in `~/.ssh/config`, or per-repo credential URLs |
 | `gh: command not found` + no sudo | Use git-only Method 1 above — no installation needed |
+
+## Verification
+
+- [ ] detection identified `gh`/git/helper state
+- [ ] selected method configured without exposing the token
+- [ ] `gh auth status` or `ssh -T git@github.com` passes for the chosen path
+- [ ] `git ls-remote` succeeds against an authorized repository
+- [ ] commit identity is configured when commits are in scope
+- [ ] API fallback uses redacted auth headers and token-bearing output is not logged

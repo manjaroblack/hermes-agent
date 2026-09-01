@@ -1,6 +1,6 @@
 ---
 name: product-price-monitor
-description: "Watch product, flight, or listing prices; alert on target."
+description: Watch product, flight, or listing prices; alert on target.
 version: 0.1.0
 author: Ben Barclay (benbarclay), Hermes Agent
 license: MIT
@@ -13,31 +13,44 @@ metadata:
 
 # Product Price Monitor
 
-Monitor a concrete purchasable item and alert on a normalized all-in price or availability condition. Handle variants, taxes, fees, currencies, stock, cancellation terms, and duplicate alerts explicitly. Setup runs once in the foreground; the recurring check runs as a `cronjob` tick (the `price-watch` automation blueprint scaffolds this).
+role: normalized offer/availability watcher
+do: pin exact item; define alert; fetch foreground baseline; schedule; refetch/normalize; compare state; suppress duplicates; notify qualifying changes
+inputs: source URL/provider/ID, variant/quantity/location/dates/travelers, price/availability condition, currency/fees, cadence, destination
+outputs: state file, cron job, deterministic alert/silence, source/timestamp evidence
+¬: one-off current-price lookup (use `web_search`/`web_extract`); confuse variants; compare base to all-in; replace good state with errors; poll against site terms; claim inventory reserved
+
+Setup runs foreground once; recurring check is a cron tick. The `price-watch`
+automation blueprint scaffolds the job.
 
 ## When to Use
 
-- "Alert me when this laptop drops below $1,000."
-- "Watch these flights for a fare under $500."
-- "Tell me when this hotel has a refundable room."
-- "Track ticket/listing availability."
-- A cron tick fires for an existing price watch (steps 4-6).
-
-Don't use for: one-off "what does this cost right now" lookups (use `web_search`/`web_extract` directly).
+- alert laptop under $1,000
+- watch flights under $500
+- notify refundable hotel room
+- track ticket/listing availability
+- execute existing watch on cron tick
 
 ## Procedure — Setup (foreground, once)
 
-### 1. Define the exact item
+### 1. Pin item
 
-Record source URL/provider, product/listing ID where available, variant, quantity, location, dates, travelers/guests, membership/login assumptions, condition, seller, and acceptable substitutes. Done when two variants cannot be confused.
+Record source/provider, product/listing ID, variant, quantity, location, dates,
+travelers/guests, membership/login assumptions, condition, seller, substitutes.
+Two variants must not be confusable.
+Done when: source, exact variant, quantity, and location/date assumptions are pinned.
 
-### 2. Define the alert condition
+### 2. Define condition
 
-Specify currency, all-in vs pre-tax price, maximum price, availability/stock rule, shipping, refundability, cabin/room/ticket class, cooldown, and notification destination. Done when synthetic examples have deterministic alert decisions.
+Specify currency, all-in vs pre-tax, max price, stock/availability, shipping,
+taxes, refundability, cabin/room/ticket class, cooldown, destination. Synthetic
+examples must yield deterministic decisions.
+Done when: threshold, currency, all-in rule, availability, and cadence are explicit.
 
-### 3. Establish a live baseline, then schedule
+### 3. Baseline then schedule
 
-Fetch a bounded live result with `web_extract` or `browser_navigate` and record retrieval time, source price, fees/taxes, availability, and terms. Do not schedule until one foreground fetch works. Write the watch contract (item, condition, baseline observation) to a state file under `~/.hermes/price-watches/<watch-slug>.json`, then create the job:
+Fetch via `web_extract` or `browser_navigate`; record retrieval time, source
+price, fees/taxes, availability, and terms. Do not schedule until one foreground fetch works.
+Write contract under `~/.hermes/price-watches/<watch-slug>.json`, then create:
 
 ```
 cronjob(action="create",
@@ -46,34 +59,46 @@ cronjob(action="create",
         deliver=<user's destination>)
 ```
 
-Pick a cadence that respects rate limits and site terms. Done when the baseline matches the exact item contract and the job exists.
+Cadence must respect rate limits/site terms. Baseline must match exact contract;
+job must exist.
+Done when: contract is saved, baseline succeeds, and the scheduled job is present.
 
 ## Procedure — Tick (each scheduled run)
 
-### 4. Fetch and normalize
+### 4. Fetch + normalize
 
-Re-fetch the source. Convert currency only with a timestamped rate and retain the source currency. Separate base price, mandatory fees, shipping/taxes, total, and availability. Exclude volatile page metadata. A failed fetch means unknown state: report or skip, but never overwrite the last good observation with an error page. Done when the observation is comparable to the baseline or explicitly marked failed.
+Refetch. Convert currency only with timestamped rate and retain source currency.
+Separate base, mandatory fees, shipping/taxes, total, availability; exclude
+volatile metadata. Failed fetch = unknown: report/skip; never overwrite the last good observation with an error page.
+Done when: failed fetches remain unknown and last-good state is intact.
 
-### 5. Compare and suppress duplicates
+### 5. Compare + dedupe
 
-Alert on threshold entry, qualifying availability, material lower price, or recovery as requested. Store the last good observation and last alert fingerprint in the state file. Replaying the same offer must send no second alert; respect the cooldown. Done when the alert decision is deterministic against stored state.
+Alert on threshold entry, qualifying availability, material lower price, or
+requested recovery. Store last good observation + alert fingerprint. Replay of
+same offer sends no second alert; honor cooldown.
+Done when: fingerprint, cooldown, threshold decision, and last-good state are updated.
 
 ### 6. Deliver or stay silent
 
-When a condition is met, the alert includes: exact item/variant, observed all-in price and source currency, availability/terms, threshold, retrieval timestamp, source link, and important uncertainty. Never claim inventory is reserved. When nothing qualifies, stay silent — no "still watching" noise unless a periodic all-clear was requested. Done when the state file reflects this run.
+Alert includes exact item/variant, all-in price + source currency,
+availability/terms, threshold, retrieval timestamp, source link, uncertainty.
+Never claim reservation. If no qualify, stay silent unless all-clear requested.
+Update state file.
+Done when: alert/silence decision includes exact offer, terms, timestamp, and link.
 
 ## Pitfalls
 
-- Comparing a base fare with an all-in threshold.
-- Alerting on the wrong size, seller, cabin, dates, or room terms.
-- Overwriting a last-known-good value with an error page.
-- Polling aggressively enough to trigger blocking or violate site terms.
-- Scheduling before a single foreground fetch has succeeded.
+- base fare vs all-in threshold
+- wrong size/seller/cabin/dates/room terms
+- error page replacing last-known-good
+- aggressive polling or terms violation
+- scheduling before foreground success
 
 ## Verification
 
-- [ ] The watch contract pins the item so two variants cannot be confused.
-- [ ] One foreground fetch succeeded before any job was created.
-- [ ] Alert decisions replay deterministically from the state file; duplicates suppressed.
-- [ ] Failed fetches never replaced last-known-good state.
-- [ ] Alerts carry all-in price, source currency, timestamp, and source link.
+- [ ] Contract pins item/variant.
+- [ ] Foreground fetch succeeded before job.
+- [ ] State replay gives deterministic decision; duplicate alert suppressed.
+- [ ] Failed fetch preserves last-known-good.
+- [ ] Alert has all-in price, source currency, timestamp, source link.

@@ -1,6 +1,6 @@
 ---
 name: youtube-content
-description: "YouTube transcripts to summaries, threads, blogs."
+description: YouTube transcripts to summaries, threads, blogs.
 version: 1.0.0
 author: Teknium (teknium1), Hermes Agent
 license: MIT
@@ -11,26 +11,33 @@ metadata:
     related_skills: []
 ---
 
-# YouTube Content Tool
+# YouTube Content
 
-## When to use
+role: transcript fetcher + content transformer
+do: normalize video URL/ID; fetch transcript; validate language; chunk; produce requested format; verify output
+inputs: YouTube URL/ID, language fallback list, output format, transcript size
+outputs: transcript, chapters, summary, chapter summaries, X thread, blog, or timestamped quotes
+¬: invent unavailable transcript; silently switch language; summarize >50K characters without overlap/chunking; skip final coherence check
 
-Use when the user shares a YouTube URL or video link, asks to summarize a video, requests a transcript, or wants to extract and reformat content from any YouTube video. Transforms transcripts into structured content (chapters, summaries, threads, blog posts).
+## When to Use
 
-Extract transcripts from YouTube videos and convert them into useful formats.
+- user shares a YouTube URL/video link
+- user asks for transcript or video summary
+- user wants chapters, a thread, blog post, or quotes
+- content needs extraction/reformatting from a YouTube video
 
 ## Setup
 
-Use `uv` so the dependency is installed into the same Hermes-managed environment
-that runs the helper script:
+Use `uv` in the Hermes-managed environment:
 
 ```bash
 uv pip install youtube-transcript-api
 ```
 
-## Helper Script
+## Helper
 
-`SKILL_DIR` is the directory containing this SKILL.md file. The script accepts any standard YouTube URL format, short links (youtu.be), shorts, embeds, live links, or a raw 11-character video ID.
+`SKILL_DIR` = directory containing this skill. The helper accepts standard
+YouTube URLs, `youtu.be`, shorts, embeds, live links, and raw 11-character IDs.
 
 ```bash
 # JSON output with metadata
@@ -48,16 +55,14 @@ uv run python SKILL_DIR/scripts/fetch_transcript.py "URL" --language tr,en
 
 ## Output Formats
 
-After fetching the transcript, format it based on what the user asks for:
+- **chapters**: topic-shift groups with timestamps
+- **summary**: concise 5–10 sentence overview
+- **chapter summaries**: chapter list + short paragraph each
+- **thread**: numbered Twitter/X posts, each <280 chars
+- **blog post**: title, sections, key takeaways
+- **quotes**: notable quotes with timestamps
 
-- **Chapters**: Group by topic shifts, output timestamped chapter list
-- **Summary**: Concise 5-10 sentence overview of the entire video
-- **Chapter summaries**: Chapters with a short paragraph summary for each
-- **Thread**: Twitter/X thread format — numbered posts, each under 280 chars
-- **Blog post**: Full article with title, sections, and key takeaways
-- **Quotes**: Notable quotes with timestamps
-
-### Example — Chapters Output
+Example chapter shape:
 
 ```
 00:00 Introduction — host opens with the problem statement
@@ -67,17 +72,27 @@ After fetching the transcript, format it based on what the user asks for:
 31:55 Q&A — audience questions on scalability and next steps
 ```
 
-## Workflow
+## Procedure
 
-1. **Fetch** the transcript using the helper script with `--text-only --timestamps` via `uv run python`.
-2. **Validate**: confirm the output is non-empty and in the expected language. If empty, retry without `--language` to get any available transcript. If still empty, tell the user the video likely has transcripts disabled.
-3. **Chunk if needed**: if the transcript exceeds ~50K characters, split into overlapping chunks (~40K with 2K overlap) and summarize each chunk before merging.
-4. **Transform** into the requested output format. If the user did not specify a format, default to a summary.
-5. **Verify**: re-read the transformed output to check for coherence, correct timestamps, and completeness before presenting.
+1. Fetch with `--text-only --timestamps` via `uv run python`.
+2. Confirm non-empty output and expected language. If empty, retry without
+   `--language`; if still empty, report transcripts likely disabled.
+3. If >~50K characters, split into overlapping ~40K chunks with 2K overlap;
+   summarize chunks, then merge.
+4. Transform to requested format; default to summary when unspecified.
+5. Re-read result; check coherence, timestamps, completeness.
 
-## Error Handling
+## Pitfalls
 
-- **Transcript disabled**: tell the user; suggest they check if subtitles are available on the video page.
-- **Private/unavailable video**: relay the error and ask the user to verify the URL.
-- **No matching language**: retry without `--language` to fetch any available transcript, then note the actual language to the user.
-- **Dependency missing**: run `uv pip install youtube-transcript-api` and retry.
+- transcript disabled → tell user; suggest checking subtitles on video page
+- private/unavailable → relay error; ask user to verify URL
+- no matching language → retry without `--language`; report actual language
+- missing dependency → `uv pip install youtube-transcript-api`, then retry
+
+## Verification
+
+- [ ] URL/ID normalized and helper ran
+- [ ] transcript non-empty, language behavior reported
+- [ ] long transcript chunked with overlap
+- [ ] requested/default format constraints met
+- [ ] timestamps and final content re-read for coherence/completeness

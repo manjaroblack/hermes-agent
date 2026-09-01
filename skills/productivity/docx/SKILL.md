@@ -12,40 +12,38 @@ metadata:
     related_skills: [pdf, xlsx, powerpoint]
 ---
 
-# Docx Skill
+# Word `.docx`
 
-Create, read, edit, and template Microsoft Word `.docx` files with
-python-docx via small CLIs. It handles text, styles, lists, tables,
-images, headers/footers, `{{token}}` templating, tracked changes
-(list/accept/reject), comments (list/add/delete), TOC and page-number
-fields, and package health checks. It does not render documents itself
-(PDF needs LibreOffice — see Converting to PDF) or edit legacy `.doc`.
+role: OOXML document operator using `python-docx` helpers
+do: create/read/edit/template; manage styles/lists/tables/media/fields; inspect revisions/comments; convert via LibreOffice; validate package
+inputs: JSON spec, `.docx`/template, values, text/style/table/revision/comment operation, local images
+outputs: `.docx`, text/structure/images/revision/comment JSON, PDF when renderer exists, health result
+¬: edit legacy `.doc`, `.odt`, or WYSIWYG layouts; render with python-docx; unzip/edit XML; assume fields computed; resolve unsupported revision types silently; claim validation = XSD
+
+Handles text, styles, lists, tables, images, headers/footers, `{{token}}`
+templates, tracked-change list/accept/reject, comments list/add/delete, TOC and
+page-number fields, package health. PDF requires LibreOffice; `.doc` unsupported.
 
 ## When to Use
 
-- The user asks to generate a Word document (report, letter, contract).
-- You need the text, outline, styles, or embedded images of a `.docx`.
-- You must change an existing `.docx`: replace text, edit table cells,
-  insert/delete paragraphs, apply styles, merge fragmented runs.
-- You have a `.docx` template with `{{placeholders}}` to fill from data.
-- The document has tracked changes to review, accept, or reject.
-- You need to read reviewers' comments, or add/delete comments.
-- A `.docx` won't open or behaves oddly and you need corruption triage.
-- The document needs a table of contents or "Page X of Y" footers.
-- Not for: `.doc` (legacy), `.odt`, or WYSIWYG layout work.
+- create report/letter/contract
+- read text, outline, styles, images
+- replace text/table cells/paragraphs/styles/runs
+- fill template placeholders
+- review/accept/reject tracked changes or comments
+- diagnose a corrupt/unopenable package
+- add TOC or `Page X of Y`
 
 ## Prerequisites
 
-- Python 3.10+ with `python-docx` installed:
-  `pip install python-docx` (import name is `docx`; lxml comes with it).
-- Comments `add` uses the native API on python-docx >= 1.2 and an XML
-  fallback on older versions — both are automatic.
-- For image blocks: the image files must exist locally (PNG/JPEG).
+- Python 3.10+ + `python-docx` (`pip install python-docx`; import `docx`; lxml included)
+- comments `add`: native API python-docx >=1.2; XML fallback older, automatic
+- image blocks: local PNG/JPEG files
 
-## How to Run
+## Helpers
 
-All helpers live in `scripts/` next to this file. Run them with the
-`terminal` tool; each supports `--help` and prints JSON to stdout.
+Helpers are beside this file in `scripts/`; run via `terminal`; each supports
+`--help` and JSON stdout:
 
 ```bash
 python scripts/docx_create.py spec.json out.docx
@@ -57,7 +55,7 @@ python scripts/docx_comments.py list out.docx
 python scripts/docx_validate.py out.docx
 ```
 
-## Quick Reference
+## Command Map
 
 | Task | Command |
 | --- | --- |
@@ -86,111 +84,67 @@ python scripts/docx_validate.py out.docx
 
 ## Procedure
 
-1. **Create.** Write a JSON spec with `write_file`, then run
-   `scripts/docx_create.py`. The spec supports: `page` (size + margins in
-   mm), `header`/`footer` strings, `footer_page_numbers` (adds a
-   "Page X of Y" field footer), `styles` (custom paragraph styles with
-   font, size, bold/italic, hex `color`), and `blocks` — `heading`
-   (level 1-9), `paragraph` (either `text` or a `runs` list where each run
-   may set `bold`/`italic`/`underline`), `bullet_list`, `numbered_list`,
-   `table` (`header` row rendered bold, `rows`, optional built-in table
-   `style` such as `Table Grid`), `image` (`path`, optional `width_mm`),
-   `toc` (Table of Contents field), and `page_break`. The full spec
-   format is documented at the top of `scripts/docx_create.py`.
-2. **Read.** Use `scripts/docx_read.py` with exactly one mode flag.
-   `--text` returns body paragraphs, all table cell text, and
-   header/footer text as JSON. `--structure` returns the heading outline
-   plus paragraph/table/section counts. `--images DIR` copies every file
-   under `word/media/` out of the package.
-3. **Edit.** Use `scripts/docx_edit.py`. `replace` walks body, tables
-   (nested included), headers and footers, and preserves run formatting;
-   add `--body-only` to skip headers/footers. Pass `-o out.docx` to keep
-   the original; omit it to edit in place. Paragraph indices for
-   `insert`/`delete`/`style`/`toc` refer to `--structure`/`--text` body
-   order. Run `normalize` first on documents that came out of heavy Word
-   editing — it merges adjacent runs with identical formatting so later
-   find-replace matches reliably.
-4. **Review revisions.** `docx_revisions.py list` reports every `w:ins`
-   and `w:del` (id, author, date, affected text) anywhere in body,
-   tables, headers, or footers. `accept-all` / `reject-all` resolve them
-   in bulk; `accept`/`reject --id N` handles a single revision. Accept
-   keeps insertions and drops deleted text; reject does the reverse.
-5. **Comments.** `docx_comments.py list` returns each comment's id,
-   author, date, body text, and the document text it is anchored to.
-   `add --target "some phrase"` anchors a new comment to the first
-   occurrence of that phrase (runs are split as needed; formatting is
-   preserved). `delete --id N` removes the comment and its markers
-   without touching document text.
-6. **Template.** Put `{{name}}`-style tokens in the document. Run
-   `scripts/docx_template.py` with a JSON object of values. Use
-   `--strict` to fail when tokens remain unfilled; the JSON output lists
-   `filled` counts and `unfilled_tokens` either way.
-7. **Verify** (always): re-read the output with `--text` or
-   `--structure`, and run `docx_validate.py` on anything you produced
-   via revision/comment surgery.
+1. **Create.** `write_file` a JSON spec; run `docx_create.py`. Spec supports
+   `page` (size/margins mm), `header`/`footer`, `footer_page_numbers`, custom
+   `styles` (font/size/bold/italic/hex `color`), and `blocks`: `heading`
+   (1–9), `paragraph` (`text` or styled `runs`), `bullet_list`,
+   `numbered_list`, `table` (`header`, `rows`, optional built-in style such as
+   `Table Grid`), `image` (`path`, optional `width_mm`), `toc`, `page_break`.
+   Full format is documented at top of `scripts/docx_create.py`.
+2. **Read.** Use exactly one `docx_read.py` mode. `--text` returns body,
+   table cells, headers/footers; `--structure` heading outline + paragraph/
+   table/section counts; `--images DIR` copies `word/media/`.
+3. **Edit.** `replace` covers body/nested tables/headers/footers and preserves
+   runs; `--body-only` skips headers/footers. `-o out.docx` preserves original;
+   omit for in-place. Paragraph indices follow `--structure`/`--text` body
+   order. Run `normalize` after heavy Word editing to merge equal-format runs.
+4. **Revisions.** `list` reports every `w:ins`/`w:del` (id/author/date/text) in
+   body/tables/headers/footers. `accept-all`/`reject-all` bulk resolve;
+   `accept`/`reject --id N` single. Accept keeps insertions/drops deleted text;
+   reject reverses.
+5. **Comments.** `list` returns id/author/date/body/anchored text. `add --target`
+   anchors first matching phrase, splitting runs while preserving formatting;
+   `delete --id N` removes comment/markers only.
+6. **Template.** Put `{{name}}`; pass JSON object to `docx_template.py`.
+   `--strict` fails remaining tokens; JSON reports `filled` and
+   `unfilled_tokens` either way.
+7. **Verify always.** Re-read `--text`/`--structure`; validate documents after
+   revision/comment surgery.
 
-## Converting to PDF
+## PDF Conversion
 
-No script needed. When LibreOffice is installed, convert headlessly:
+LibreOffice required; python-docx cannot render. Check renderer first with
+`command -v soffice || command -v libreoffice`; if absent report unavailable.
 
 ```bash
 soffice --headless --convert-to pdf --outdir outdir/ file.docx
 ```
 
-Check availability first (`command -v soffice || command -v
-libreoffice`). If neither exists, tell the user PDF conversion is
-unavailable in this environment rather than improvising — python-docx
-cannot render PDFs, and layout fidelity requires a real renderer.
-
 ## Pitfalls
 
-- **Tokens split across runs.** Word often fragments text into several
-  runs. The replace helpers collapse matched runs (replacement inherits
-  the first run's formatting); running `docx_edit.py normalize` first
-  reduces fragmentation for all later edits.
-- **Revision coverage.** `docx_revisions.py` resolves run-level
-  insertions and deletions (the overwhelming majority). Paragraph-mark
-  and table-row revisions, format-change records, and moves are detected
-  by `--revisions` but not auto-resolved — see
-  `references/revisions-and-comments.md` and hand those to Word.
-- **Comment threading.** Replies and "resolved" status live in
-  `commentsExtended.xml`, which this skill ignores; comments it adds are
-  plain top-level comments.
-- **Field results are computed by Word.** `toc`, `page-numbers`, and the
-  `toc`/`footer_page_numbers` spec options write *field codes*.
-  Word/LibreOffice populates the actual entries and numbers when the
-  file is opened (Word may prompt to update fields); python-docx never
-  computes them, so placeholder text shows until then.
-- **Validation is a health check, not schema validation.**
-  `docx_validate.py` verifies the zip, required parts, relationship
-  targets, image magic bytes, and referenced styles. It is NOT XSD
-  validation — a file can pass and still contain XML Word dislikes.
-- **Style names must exist.** Applying a style that isn't defined in the
-  document raises `KeyError`. Built-ins like `Heading 1`, `List Bullet`,
-  `List Number`, `Table Grid` exist in the default template; custom
-  styles must be declared in the create spec first.
-- **Numbered lists restart.** `List Number` relies on Word's default
-  numbering; separate lists in one document may continue numbering
-  instead of restarting. Warn users needing precise multi-list numbering.
-- **Cell writes replace formatting.** `set-cell` uses `cell.text = ...`,
-  which resets runs in that cell to plain formatting.
-- **Encoding.** All JSON specs/values files are read as UTF-8 explicitly;
-  never rely on locale defaults when writing your own glue code.
-- **Don't unzip-and-sed the XML.** Edit through the scripts (or
-  python-docx); raw text substitution in `document.xml` corrupts files
-  easily. Use `patch`/`write_file` only for the JSON inputs, never on the
-  `.docx` itself.
+- text split across runs: normalize first; replace collapses matched runs and
+  inherits first-run formatting
+- revision resolver handles run-level insert/delete; `--revisions` detects
+  paragraph-mark/table-row revisions, format changes, moves but does not resolve
+  them; use [references/revisions-and-comments.md](references/revisions-and-comments.md)/Word
+- replies/resolved status in `commentsExtended.xml` ignored; added comments plain top-level
+- TOC/page fields write field codes; Word/LibreOffice computes results on open;
+  python-docx does not, so placeholders show until update
+- validator checks zip/parts/relationships/image magic/styles, not XSD; Word may still dislike file
+- undefined style raises `KeyError`; built-ins `Heading 1`, `List Bullet`,
+  `List Number`, `Table Grid`; custom styles first in create spec
+- separate `List Number` blocks may continue numbering
+- `set-cell` resets cell runs/plain formatting
+- JSON specs/values UTF-8; do not rely on locale
+- use scripts/python-docx, never unzip + text-replace `document.xml`; patch/write
+  JSON inputs only, not `.docx`
 
 ## Verification
 
-- After create/edit/template, run `docx_read.py out.docx --text` and
-  check the expected strings appear (and old strings are gone).
-- After accept/reject, `docx_revisions.py list` should return `[]` (or
-  only the ids you intentionally left); after comment surgery,
-  `docx_comments.py list` should reflect the change and `--text` output
-  must be unchanged.
-- `docx_validate.py out.docx` exits 0 with `"ok": true` on a healthy
-  package — run it after any revision/comment/field manipulation.
-- For templates run with `--strict`, or check `unfilled_tokens == []`.
-- Structure checks: `--structure` should show the expected heading
-  outline and table shapes; `--styles` confirms custom styles applied.
+- [ ] create/edit/template: `docx_read.py out.docx --text`; expected new strings,
+  old strings absent
+- [ ] accept/reject: revision list empty except intentionally retained IDs
+- [ ] comment surgery: comment list changed; text unchanged
+- [ ] `docx_validate.py out.docx` exits 0 and returns `"ok": true`
+- [ ] template `--strict` or `unfilled_tokens == []`
+- [ ] `--structure` outline/table shapes and `--styles` custom style use match spec

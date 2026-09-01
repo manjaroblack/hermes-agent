@@ -8,74 +8,109 @@ tags: [huggingface, hf, models, datasets, hub, mlops]
 platforms: [linux, macos, windows]
 ---
 
-# Hugging Face CLI (`hf`) Reference Guide
+# Hugging Face CLI (`hf`)
 
-The `hf` command is the modern command-line interface for interacting with the Hugging Face Hub, providing tools to manage repositories, models, datasets, and Spaces.
+role: Hugging Face Hub CLI operator
+do: inspect env/version; authenticate; manage model/dataset/Space repos; query datasets/models; operate endpoints/jobs/buckets/cache/webhooks/collections; extend CLI/skills
+inputs: Hub repo IDs, local paths, token, dataset SQL, endpoint/job/storage parameters
+outputs: downloaded/uploaded assets, repo refs, query/results metadata, compute/storage state
+¬: use deprecated `huggingface-cli`; print tokens; delete/move repos without explicit target/approval; run raw dataset SQL without scope review
 
-> **IMPORTANT:** The `hf` command replaces the now deprecated `huggingface-cli` command.
+## When to Use
 
-## Quick Start
-*   **Installation:** `curl -LsSf https://hf.co/cli/install.sh | bash -s`
-*   **Help:** Use `hf --help` to view all available functions and real-world examples.
-*   **Authentication:** Recommended via `HF_TOKEN` environment variable or the `--token` flag.
+- search/download/upload Hub models or datasets
+- create, duplicate, move, branch/tag, or delete Hub repositories
+- inspect datasets, parquet URLs, models, papers, discussions/PRs
+- deploy/manage Inference Endpoints or Jobs; operate Spaces
+- manage buckets, cache, webhooks, collections, extensions, or skills
 
----
+## Procedure
+
+1. Install/verify modern `hf`; authenticate through stored `HF_TOKEN` or prompt.
+2. Resolve exact repo ID/type, local path, revision, and intended mutation.
+3. Choose Core Commands or Specialized Operations; request approval for destructive work.
+4. Use JSON/quiet output for automation; preserve returned IDs and refs.
+5. Read back repo/compute/storage state and complete Verification.
+
+## Prerequisites + Auth
+
+Install:
+
+`curl -LsSf https://hf.co/cli/install.sh | bash -s`
+
+`hf` replaces deprecated `huggingface-cli`. Use `HF_TOKEN` or `--token`; use
+the token page https://huggingface.co/settings/tokens for session tokens.
 
 ## Core Commands
 
-### General Operations
-*   `hf download REPO_ID`: Download files from the Hub.
-*   `hf upload REPO_ID`: Upload files/folders (recommended for single-commit; also handles resumable uploads of large directories).
-*   `hf upload-large-folder REPO_ID LOCAL_PATH`: **[Deprecated]** — use `hf upload` instead.
-*   `hf sync`: Sync files between a local directory and a bucket.
-*   `hf env` / `hf version`: View environment and version details.
+### General
+
+- `hf download REPO_ID`: download Hub files
+- `hf upload REPO_ID`: upload files/folders; recommended for single-commit and resumable large-directory uploads
+- `hf upload-large-folder REPO_ID LOCAL_PATH`: deprecated; use `hf upload`
+- `hf sync`: sync local directory and bucket
+- `hf env` / `hf version`: environment/version details
 
 ### Authentication (`hf auth`)
-*   `login` / `logout`: Manage sessions using tokens from [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens).
-*   `list` / `switch`: Manage and toggle between multiple stored access tokens.
-*   `whoami`: Identify the currently logged-in account.
 
-### Repository Management (`hf repos`)
-*   `create` / `delete`: Create or permanently remove repositories.
-*   `duplicate`: Clone a model, dataset, or Space to a new ID.
-*   `move`: Transfer a repository between namespaces.
-*   `branch` / `tag`: Manage Git-like references.
-*   `delete-files`: Remove specific files using patterns.
+- `login` / `logout`: manage token sessions
+- `list` / `switch`: manage multiple stored tokens
+- `whoami`: current account
 
----
+### Repository (`hf repos`)
 
-## Specialized Hub Interactions
+- `create` / `delete`: create or permanently remove repos
+- `duplicate`: copy model, dataset, or Space to a new ID
+- `move`: transfer between namespaces
+- `branch` / `tag`: Git-like refs
+- `delete-files`: remove matching files
 
-### Datasets & Models
-*   **Datasets:** `hf datasets list`, `info`, and `parquet` (list parquet URLs).
-*   **SQL Queries:** `hf datasets sql SQL` — Execute raw SQL via DuckDB against dataset parquet URLs.
-*   **Models:** `hf models list` and `info`.
-*   **Papers:** `hf papers ls` — View daily papers.
+## Specialized Operations
 
-### Discussions & Pull Requests (`hf discussions`)
-*   Manage the lifecycle of Hub contributions: `list`, `create`, `info`, `comment`, `close`, `reopen`, and `rename`.
-*   `diff`: View changes in a PR.
-*   `merge`: Finalize pull requests.
+### Datasets + models
 
-### Infrastructure & Compute
-*   **Endpoints:** Deploy and manage Inference Endpoints (`deploy`, `pause`, `resume`, `scale-to-zero`, `catalog`).
-*   **Jobs:** Run compute tasks on HF infrastructure. Includes `hf jobs uv` for running Python scripts with inline dependencies and `stats` for resource monitoring.
-*   **Spaces:** Manage interactive apps. Includes `dev-mode` and `hot-reload` for Python files without full restarts.
+- datasets: `hf datasets list`, `info`, `parquet` (parquet URLs)
+- SQL: `hf datasets sql SQL` runs raw DuckDB SQL against dataset parquet URLs
+- models: `hf models list`, `info`
+- papers: `hf papers ls` (daily papers)
 
-### Storage & Automation
-*   **Buckets:** Full S3-like bucket management (`create`, `cp`, `mv`, `rm`, `sync`).
-*   **Cache:** Manage local storage with `list`, `prune` (remove detached revisions), and `verify` (checksum checks).
-*   **Webhooks:** Automate workflows by managing Hub webhooks (`create`, `watch`, `enable`/`disable`).
-*   **Collections:** Organize Hub items into collections (`add-item`, `update`, `list`).
+### Discussions + PRs (`hf discussions`)
 
----
+`list`, `create`, `info`, `comment`, `close`, `reopen`, `rename`, `diff`,
+`merge`; `diff` views changes and `merge` finalizes a PR.
 
-## Advanced Usage & Tips
+### Infrastructure + compute
 
-### Global Flags
-*   `--format json`: Produces machine-readable output for automation.
-*   `-q` / `--quiet`: Limits output to IDs only.
+- Endpoints: `deploy`, `pause`, `resume`, `scale-to-zero`, `catalog`
+- Jobs: compute tasks; `hf jobs uv` runs Python with inline dependencies;
+  `stats` monitors resources
+- Spaces: interactive apps; `dev-mode` + `hot-reload` avoid full Python restarts
 
-### Extensions & Skills
-*   **Extensions:** Extend CLI functionality via GitHub repositories using `hf extensions install REPO_ID`.
-*   **Skills:** Manage AI assistant skills with `hf skills add`.
+### Storage + automation
+
+- Buckets: S3-like `create`, `cp`, `mv`, `rm`, `sync`
+- Cache: `list`, `prune` detached revisions, `verify` checksums
+- Webhooks: `create`, `watch`, `enable`, `disable`
+- Collections: `add-item`, `update`, `list`
+
+## Global Flags + Extensions
+
+- `--format json`: machine-readable automation output
+- `-q` / `--quiet`: IDs only
+- `hf extensions install REPO_ID`: install a GitHub-backed extension
+- `hf skills add`: manage AI assistant skills
+
+## Pitfalls
+
+- `huggingface-cli` and `hf upload-large-folder` are deprecated; use `hf` + `hf upload`.
+- Never print tokens; scope repo IDs, paths, types, revisions, and namespaces exactly.
+- Delete/move, cache prune, bucket mutation, webhook changes, and compute jobs need explicit scope/approval.
+- JSON/quiet output improves parsing but does not prove mutation success; read state back.
+
+## Verification
+
+- [ ] `hf --help`/`hf version` confirms modern CLI
+- [ ] auth uses `HF_TOKEN` or `--token` without token output
+- [ ] repo ID/path and mutation are explicitly scoped
+- [ ] downloads/uploads or management commands report expected IDs/state
+- [ ] destructive operations are confirmed and read back

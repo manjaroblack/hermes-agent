@@ -13,56 +13,85 @@ metadata:
 
 # Obsidian Vault
 
-Use this skill for filesystem-first Obsidian vault work: reading notes, listing notes, searching note files, creating notes, appending content, and adding wikilinks.
+role: filesystem-first vault editor
+do: resolve vault path; read/list/search/create/append/edit notes; add wikilinks
+inputs: concrete vault path, note path/pattern, Markdown content, stable edit anchor
+outputs: note content, file matches, created/updated Markdown
+¬: pass unresolved `$OBSIDIAN_VAULT_PATH` to file tools; use shell text rewriting when native file tools suffice; assume fallback vault exists
 
-## Vault path
+## When to Use
 
-Use a known or resolved vault path before calling file tools.
+- read or search vault notes
+- list Markdown notes/subfolders
+- create, append, or make targeted edits
+- add Obsidian wikilinks
 
-The documented vault-path convention is the `OBSIDIAN_VAULT_PATH` environment variable, for example from `${HERMES_HOME:-~/.hermes}/.env`. If it is unset, use `~/Documents/Obsidian Vault`.
+## Procedure
 
-File tools do not expand shell variables. Do not pass paths containing `$OBSIDIAN_VAULT_PATH` to `read_file`, `write_file`, `patch`, or `search_files`; resolve the vault path first and pass a concrete absolute path. Vault paths may contain spaces, which is another reason to prefer file tools over shell commands.
+1. Resolve `OBSIDIAN_VAULT_PATH` or fallback to a concrete existing absolute path.
+2. Choose read/list/search/create/append/targeted-edit operation below.
+3. Use native file tools with resolved paths; keep edits anchored and scoped.
+4. Re-read changed notes; verify Markdown + wikilinks and report exact path.
 
-If the vault path is unknown, `terminal` is acceptable for resolving `OBSIDIAN_VAULT_PATH` or checking whether the fallback path exists. Once the path is known, switch back to file tools.
+## Resolve Vault Path
 
-## Read a note
+Use `OBSIDIAN_VAULT_PATH`, commonly loaded from
+`${HERMES_HOME:-~/.hermes}/.env`; fallback = `~/Documents/Obsidian Vault`.
+File tools do not expand shell variables: resolve to a concrete absolute path
+before `read_file`, `write_file`, `patch`, or `search_files`. Paths may contain
+spaces, so prefer native file tools. If unknown, `terminal` may resolve the env
+value or test the fallback; then return to file tools.
 
-Use `read_file` with the resolved absolute path to the note. Prefer this over `cat` because it provides line numbers and pagination.
+## Operations
 
-## List notes
+### Read
 
-Use `search_files` with `target: "files"` and the resolved vault path. Prefer this over `find` or `ls`.
+`read_file` with the resolved absolute note path; it provides line numbers and
+pagination and is preferred over raw shell file reads.
 
-- To list all markdown notes, use `pattern: "*.md"` under the vault path.
-- To list a subfolder, search under that subfolder's absolute path.
+### List
 
-## Search
+`search_files(target="files", path=<resolved-vault>)`; use `pattern="*.md"`
+for all Markdown or the subfolder's absolute path for a narrower list. Prefer
+this over unscoped filesystem enumeration.
 
-Use `search_files` for both filename and content searches. Prefer this over `grep`, `find`, or `ls`.
+### Search
 
-- For filenames, use `search_files` with `target: "files"` and a filename `pattern`.
-- For note contents, use `search_files` with `target: "content"`, the content regex as `pattern`, and `file_glob: "*.md"` when you want to restrict matches to markdown notes.
+- filename: `search_files(target="files", pattern=<filename-pattern>)`
+- contents: `search_files(target="content", pattern=<regex>, file_glob="*.md")`
 
-## Create a note
+Prefer this over raw text search or unscoped filesystem enumeration.
 
-Use `write_file` with the resolved absolute path and the full markdown content. Prefer this over shell heredocs or `echo` because it avoids shell quoting issues and returns structured results.
+### Create
 
-## Append to a note
+`write_file` with resolved absolute path + complete Markdown. Avoid shell
+heredocs/`echo` quoting problems.
 
-Prefer a native file-tool workflow when it is not awkward:
+### Append
 
-- Read the target note with `read_file`.
-- Use `patch` for an anchored append when there is stable context, such as adding a section after an existing heading or appending before a known trailing block.
-- Use `write_file` when rewriting the whole note is clearer than constructing a fragile patch.
+1. Read target with `read_file`.
+2. Use `patch` for a stable anchor (after heading or before known trailing block).
+3. Use `write_file` when a full rewrite is clearer/safer.
+4. For no stable context, `terminal` is acceptable for a simple append.
 
-For an anchored append with `patch`, replace the anchor with the anchor plus the new content.
+Anchored append = replace anchor with anchor + new content.
 
-For a simple append with no stable context, `terminal` is acceptable if it is the clearest safe option.
+### Targeted edit + links
 
-## Targeted edits
+Use `patch` with stable current context; avoid shell rewriting. Obsidian links
+use `[[Note Name]]`; add them when creating related notes.
 
-Use `patch` for focused note changes when the current content gives you stable context. Prefer this over shell text rewriting.
+## Pitfalls
 
-## Wikilinks
+- unresolved env syntax yields a literal, nonexistent tool path
+- fallback path is a default, not proof of the active vault
+- `search_files` path/pattern must be scoped to the resolved vault
+- append only after reading current note; avoid fragile unanchored rewrites
 
-Obsidian links notes with `[[Note Name]]` syntax. When creating notes, use these to link related content.
+## Verification
+
+- [ ] vault path is concrete and intended
+- [ ] operation used correct file-tool target/mode
+- [ ] created/edited note remains valid Markdown
+- [ ] append/edit preserves existing content and anchor intent
+- [ ] wikilinks use `[[Note Name]]` syntax

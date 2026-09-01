@@ -12,22 +12,39 @@ metadata:
 
 ---
 
-# lm-evaluation-harness - LLM Benchmarking
+# lm-evaluation-harness
 
-## What's inside
+role: reproducible LLM benchmark operator
+do: install harness; select tasks; configure HF/vLLM/API model; run/evaluate; track checkpoints; compare models; diagnose results
+inputs: model/checkpoint/tokenizer, task suite, few-shot count, device/batch, output path, safety confirmation
+outputs: standardized metrics, stderr/config/sample artifacts, curves/comparison table
+¬: compare runs with mismatched task/few-shot/tokenizer; execute generated code without explicit flag; call slow/failed run complete; report only aggregate without config
 
-Evaluates LLMs across 60+ academic benchmarks (MMLU, HumanEval, GSM8K, TruthfulQA, HellaSwag). Use when benchmarking model quality, comparing models, reporting academic results, or tracking training progress. Industry standard used by EleutherAI, HuggingFace, and major labs. Supports HuggingFace, vLLM, APIs.
+## When to Use
 
-## Quick start
+- benchmark model quality or compare models
+- report academic/standardized results
+- track training progress across checkpoints
+- evaluate Hugging Face, vLLM, or API models
+- use MMLU, HumanEval, GSM8K, TruthfulQA, HellaSwag, ARC, MBPP
 
-lm-evaluation-harness evaluates LLMs across 60+ academic benchmarks using standardized prompts and metrics.
+## Procedure
 
-**Installation**:
+1. Install + list tasks; pin model, tokenizer, task suite, few-shot, and output.
+2. Choose standard benchmark, checkpoint-progress, comparison, or vLLM workflow.
+3. Run with recorded device/batch settings; save config, metrics, stderr, samples.
+4. Diagnose Common Issues; use unsafe-code confirmation only when explicitly intended.
+5. Compare only matching task/config semantics; complete Verification.
+
+The harness covers 60+ academic benchmarks and is used by EleutherAI,
+Hugging Face, and major labs; supports Hugging Face, vLLM, and APIs.
+
+## Quick Start
+
 ```bash
 pip install lm-eval
 ```
 
-**Evaluate any HuggingFace model**:
 ```bash
 lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-7b-hf \
@@ -36,18 +53,11 @@ lm_eval --model hf \
   --batch_size 8
 ```
 
-**View available tasks**:
 ```bash
 lm-eval ls tasks
 ```
 
-## Common workflows
-
-### Workflow 1: Standard benchmark evaluation
-
-Evaluate model on core benchmarks (MMLU, GSM8K, HumanEval).
-
-Copy this checklist:
+## Workflow 1: Standard Benchmarks
 
 ```
 Benchmark Evaluation:
@@ -57,27 +67,19 @@ Benchmark Evaluation:
 - [ ] Step 4: Analyze results
 ```
 
-**Step 1: Choose benchmark suite**
+Task families:
 
-**Core reasoning benchmarks**:
-- **MMLU** (Massive Multitask Language Understanding) - 57 subjects, multiple choice
-- **GSM8K** - Grade school math word problems
-- **HellaSwag** - Common sense reasoning
-- **TruthfulQA** - Truthfulness and factuality
-- **ARC** (AI2 Reasoning Challenge) - Science questions
+- reasoning: MMLU (57 subjects/multiple choice), GSM8K, HellaSwag,
+  TruthfulQA, ARC
+- code: HumanEval (164 Python problems), MBPP
+- release suite:
 
-**Code benchmarks**:
-- **HumanEval** - Python code generation (164 problems)
-- **MBPP** (Mostly Basic Python Problems) - Python coding
-
-**Standard suite** (recommended for model releases):
 ```bash
 --tasks mmlu,gsm8k,hellaswag,truthfulqa,arc_challenge
 ```
 
-**Step 2: Configure model**
+Configure models:
 
-**HuggingFace model**:
 ```bash
 lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-7b-hf,dtype=bfloat16 \
@@ -86,7 +88,6 @@ lm_eval --model hf \
   --batch_size auto  # Auto-detect optimal batch size
 ```
 
-**Quantized model (4-bit/8-bit)**:
 ```bash
 lm_eval --model hf \
   --model_args pretrained=meta-llama/Llama-2-7b-hf,load_in_4bit=True \
@@ -94,7 +95,6 @@ lm_eval --model hf \
   --device cuda:0
 ```
 
-**Custom checkpoint**:
 ```bash
 lm_eval --model hf \
   --model_args pretrained=/path/to/my-model,tokenizer=/path/to/tokenizer \
@@ -102,7 +102,7 @@ lm_eval --model hf \
   --device cuda:0
 ```
 
-**Step 3: Run evaluation**
+Run:
 
 ```bash
 # Full MMLU evaluation (57 subjects)
@@ -123,9 +123,7 @@ lm_eval --model hf \
   --output_path results/llama2-7b-eval.json
 ```
 
-**Step 4: Analyze results**
-
-Results saved to `results/llama2-7b-eval.json`:
+Expected result shape:
 
 ```json
 {
@@ -151,9 +149,7 @@ Results saved to `results/llama2-7b-eval.json`:
 }
 ```
 
-### Workflow 2: Track training progress
-
-Evaluate checkpoints during training.
+## Workflow 2: Training Progress
 
 ```
 Training Progress Tracking:
@@ -163,9 +159,7 @@ Training Progress Tracking:
 - [ ] Step 4: Plot learning curves
 ```
 
-**Step 1: Set up periodic evaluation**
-
-Evaluate every N training steps:
+Evaluate checkpoints every N steps:
 
 ```bash
 #!/bin/bash
@@ -182,20 +176,10 @@ lm_eval --model hf \
   --output_path results/step-$STEP.json
 ```
 
-**Step 2: Choose quick benchmarks**
+Quick: HellaSwag ~10 min/1 GPU, GSM8K ~5 min, PIQA ~2 min. Avoid frequent
+full MMLU (~2 h/57 subjects) and HumanEval (code execution).
 
-Fast benchmarks for frequent evaluation:
-- **HellaSwag**: ~10 minutes on 1 GPU
-- **GSM8K**: ~5 minutes
-- **PIQA**: ~2 minutes
-
-Avoid for frequent eval (too slow):
-- **MMLU**: ~2 hours (57 subjects)
-- **HumanEval**: Requires code execution
-
-**Step 3: Automate evaluation**
-
-Integrate with training script:
+Training-loop integration:
 
 ```python
 # In training loop
@@ -205,8 +189,6 @@ if step % eval_interval == 0:
     # Run evaluation
     os.system(f"./eval_checkpoint.sh checkpoints step-{step}")
 ```
-
-Or use PyTorch Lightning callbacks:
 
 ```python
 from pytorch_lightning import Callback
@@ -223,7 +205,7 @@ class EvalHarnessCallback(Callback):
         os.system(f"lm_eval --model hf --model_args pretrained={checkpoint_path} ...")
 ```
 
-**Step 4: Plot learning curves**
+Plot curves:
 
 ```python
 import json
@@ -248,9 +230,7 @@ plt.title("Training Progress")
 plt.savefig("training_curve.png")
 ```
 
-### Workflow 3: Compare multiple models
-
-Benchmark suite for model comparison.
+## Workflow 3: Compare Models
 
 ```
 Model Comparison:
@@ -259,7 +239,7 @@ Model Comparison:
 - [ ] Step 3: Generate comparison table
 ```
 
-**Step 1: Define model list**
+Model list:
 
 ```bash
 # models.txt
@@ -269,7 +249,7 @@ mistralai/Mistral-7B-v0.1
 microsoft/phi-2
 ```
 
-**Step 2: Run evaluations**
+Evaluate:
 
 ```bash
 #!/bin/bash
@@ -293,7 +273,7 @@ while read model; do
 done < models.txt
 ```
 
-**Step 3: Generate comparison table**
+Generate table:
 
 ```python
 import json
@@ -326,7 +306,6 @@ df = pd.DataFrame(results)
 print(df.to_markdown(index=False))
 ```
 
-Output:
 ```
 | Model                  | MMLU  | GSM8K | HELLASWAG | TRUTHFULQA |
 |------------------------|-------|-------|-----------|------------|
@@ -336,9 +315,9 @@ Output:
 | microsoft/phi-2        | 0.560 | 0.613 | 0.682     | 0.447      |
 ```
 
-### Workflow 4: Evaluate with vLLM (faster inference)
+## Workflow 4: vLLM Backend
 
-Use vLLM backend for 5-10x faster evaluation.
+vLLM is documented here as 5–10× faster for inference.
 
 ```
 vLLM Evaluation:
@@ -347,13 +326,9 @@ vLLM Evaluation:
 - [ ] Step 3: Run evaluation
 ```
 
-**Step 1: Install vLLM**
-
 ```bash
 pip install vllm
 ```
-
-**Step 2: Configure vLLM backend**
 
 ```bash
 lm_eval --model vllm \
@@ -361,10 +336,6 @@ lm_eval --model vllm \
   --tasks mmlu \
   --batch_size auto
 ```
-
-**Step 3: Run evaluation**
-
-vLLM is 5-10× faster than standard HuggingFace:
 
 ```bash
 # Standard HF: ~2 hours for MMLU on 7B model
@@ -380,79 +351,61 @@ lm_eval --model vllm \
   --batch_size auto
 ```
 
-## When to use vs alternatives
+## Choose Alternatives
 
-**Use lm-evaluation-harness when:**
-- Benchmarking models for academic papers
-- Comparing model quality across standard tasks
-- Tracking training progress
-- Reporting standardized metrics (everyone uses same prompts)
-- Need reproducible evaluation
+Use harness for standardized/reproducible academic comparison and progress
+tracking. Use HELM for fairness/efficiency/calibration; AlpacaEval for
+instruction-following LLM judges; MT-Bench for multi-turn conversation; custom
+scripts for domain-specific evaluation.
 
-**Use alternatives instead:**
-- **HELM** (Stanford): Broader evaluation (fairness, efficiency, calibration)
-- **AlpacaEval**: Instruction-following evaluation with LLM judges
-- **MT-Bench**: Conversational multi-turn evaluation
-- **Custom scripts**: Domain-specific evaluation
+## Pitfalls
 
-## Common issues
+### Too slow
 
-**Issue: Evaluation too slow**
-
-Use vLLM backend:
 ```bash
 lm_eval --model vllm \
   --model_args pretrained=model-name,tensor_parallel_size=2
 ```
 
-Or reduce fewshot examples:
 ```bash
 --num_fewshot 0  # Instead of 5
 ```
 
-Or evaluate subset of MMLU:
 ```bash
 --tasks mmlu_stem  # Only STEM subjects
 ```
 
-**Issue: Out of memory**
+### OOM
 
-Reduce batch size:
 ```bash
 --batch_size 1  # Or --batch_size auto
 ```
 
-Use quantization:
 ```bash
 --model_args pretrained=model-name,load_in_8bit=True
 ```
 
-Enable CPU offloading:
 ```bash
 --model_args pretrained=model-name,device_map=auto,offload_folder=offload
 ```
 
-**Issue: Different results than reported**
+### Results differ
 
-Check fewshot count:
 ```bash
 --num_fewshot 5  # Most papers use 5-shot
 ```
 
-Check exact task name:
 ```bash
 --tasks mmlu  # Not mmlu_direct or mmlu_fewshot
 ```
 
-Verify model and tokenizer match:
 ```bash
 --model_args pretrained=model-name,tokenizer=same-model-name
 ```
 
-**Issue: HumanEval not executing code**
+### HumanEval/MBPP code execution
 
-Code-executing tasks (HumanEval, MBPP, etc.) are gated behind an explicit
-confirmation flag — you must pass `--confirm_run_unsafe_code` to run them:
+Explicitly pass the safety flag:
 
 ```bash
 lm_eval --model hf \
@@ -461,38 +414,33 @@ lm_eval --model hf \
   --confirm_run_unsafe_code  # Required to run tasks that execute generated code
 ```
 
-Without this flag lm-eval refuses to run the task rather than silently skipping
-code execution.
+Without it, lm-eval refuses rather than silently skipping code execution.
 
-## Advanced topics
+## References
 
-**Benchmark descriptions**: See [references/benchmark-guide.md](references/benchmark-guide.md) for detailed description of all 60+ tasks, what they measure, and interpretation.
+- [references/benchmark-guide.md](references/benchmark-guide.md): 60+ tasks, measures, interpretation
+- [references/custom-tasks.md](references/custom-tasks.md): domain-specific tasks
+- [references/api-evaluation.md](references/api-evaluation.md): OpenAI, Anthropic, other APIs
+- [references/distributed-eval.md](references/distributed-eval.md): data/tensor parallel evaluation
 
-**Custom tasks**: See [references/custom-tasks.md](references/custom-tasks.md) for creating domain-specific evaluation tasks.
+## Hardware + Timing
 
-**API evaluation**: See [references/api-evaluation.md](references/api-evaluation.md) for evaluating OpenAI, Anthropic, and other API models.
-
-**Multi-GPU strategies**: See [references/distributed-eval.md](references/distributed-eval.md) for data parallel and tensor parallel evaluation.
-
-## Hardware requirements
-
-- **GPU**: NVIDIA (CUDA 11.8+), works on CPU (very slow)
-- **VRAM**:
-  - 7B model: 16GB (bf16) or 8GB (8-bit)
-  - 13B model: 28GB (bf16) or 14GB (8-bit)
-  - 70B model: Requires multi-GPU or quantization
-- **Time** (7B model, single A100):
-  - HellaSwag: 10 minutes
-  - GSM8K: 5 minutes
-  - MMLU (full): 2 hours
-  - HumanEval: 20 minutes
+- GPU: NVIDIA CUDA 11.8+; CPU works but is very slow
+- VRAM: 7B = 16 GB bf16/8 GB 8-bit; 13B = 28 GB bf16/14 GB 8-bit; 70B = multi-GPU or quantized
+- 7B on one A100: HellaSwag 10 min, GSM8K 5 min, full MMLU 2 h, HumanEval 20 min
 
 ## Resources
 
 - GitHub: https://github.com/EleutherAI/lm-evaluation-harness
 - Docs: https://github.com/EleutherAI/lm-evaluation-harness/tree/main/docs
 - Task library: 60+ tasks including MMLU, GSM8K, HumanEval, TruthfulQA, HellaSwag, ARC, WinoGrande, etc.
-- Leaderboard: https://huggingface.co/spaces/HuggingFaceH4/open_llm_leaderboard (uses this harness)
+- Leaderboard: https://huggingface.co/spaces/HuggingFaceH4/open_llm_leaderboard
 
+## Verification
 
-
+- [ ] task suite, few-shot count, model, tokenizer, device, batch, and output path recorded
+- [ ] standard metrics + stderr/config/samples saved
+- [ ] comparable runs use matching task/config semantics
+- [ ] code-executing tasks used `--confirm_run_unsafe_code`
+- [ ] vLLM/HF performance claims measured on target hardware
+- [ ] failures distinguish OOM, task mismatch, tokenizer mismatch, and execution refusal

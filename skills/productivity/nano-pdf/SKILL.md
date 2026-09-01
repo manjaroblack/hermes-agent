@@ -1,6 +1,6 @@
 ---
 name: nano-pdf
-description: "Edit text in existing PDFs via natural-language prompts."
+description: Edit text in existing PDFs via natural-language prompts.
 version: 1.0.0
 author: community
 license: MIT
@@ -14,9 +14,26 @@ metadata:
 
 # nano-pdf
 
-Edit PDFs using natural-language instructions. Point it at a page and describe what to change. For structural PDF work (merge, split, forms, watermarks, creation), see the `pdf` skill; for text extraction from scans, see `ocr-and-documents`.
+role: natural-language PDF text editor
+do: install; target file/page; issue precise edit; inspect resulting PDF
+inputs: PDF, page number, instruction, API-key configuration
+outputs: edited PDF, verification result
+¬: use for merge/split/forms/watermarks/creation (use `pdf`); use for scan OCR (use `ocr-and-documents`); assume page base; trust complex layout edits without inspection; expose API key
 
-## Prerequisites
+## When to Use
+
+Use for text changes on an existing PDF: title/date/name corrections or small
+page-local edits. The underlying tool uses an LLM and needs an API key; check
+`nano-pdf --help` for configuration.
+
+## Procedure
+
+1. Verify `nano-pdf` + API-key configuration; preserve source PDF.
+2. Confirm target page and precise text-only instruction.
+3. Run `nano-pdf edit`; if page base is wrong, retry once at adjacent index.
+4. Open/render the result and verify requested text + surrounding layout.
+
+## Install
 
 ```bash
 # Install with uv (recommended — already available in Hermes)
@@ -45,9 +62,14 @@ nano-pdf edit report.pdf 3 "Update the date from January to February 2026"
 nano-pdf edit contract.pdf 2 "Change the client name from 'Acme Corp' to 'Acme Industries'"
 ```
 
-## Notes
+## Pitfalls
 
-- Page numbers may be 0-based or 1-based depending on version — if the edit hits the wrong page, retry with ±1
-- Always verify the output PDF after editing (use `read_file` to check file size, or open it)
-- The tool uses an LLM under the hood — requires an API key (check `nano-pdf --help` for config)
-- Works well for text changes; complex layout modifications may need a different approach
+- page numbering may be 0- or 1-based by version; if wrong page, retry ±1
+- text edits work best; complex layout may need another approach
+
+## Verification
+
+- verify output PDF with `read_file` (file size) or open it
+- [ ] intended page/content changed
+- [ ] output opens and size/content is plausible
+- [ ] API key stayed private

@@ -15,15 +15,18 @@ prerequisites:
 
 # Codebase Inspection with pygount
 
-Analyze repositories for lines of code, language breakdown, file counts, and code-vs-comment ratios using `pygount`.
+role: repository-size and composition analyst
+do: measure LOC; break down languages/files; compare code/comment ratios; exclude dependency/build trees
+inputs: repository path, optional suffix filters, skip-folder policy, output format
+outputs: pygount summary or file-level metrics with interpretation
+¬: crawl dependency/build directories by default; report Markdown comments as code; infer exact JSON LOC from pygount
 
 ## When to Use
 
-- User asks for LOC (lines of code) count
-- User wants a language breakdown of a repo
-- User asks about codebase size or composition
-- User wants code-vs-comment ratios
-- General "how big is this repo" questions
+- LOC or codebase-size request
+- language/file composition breakdown
+- code-vs-comment ratio request
+- general “how big is this repository?” inspection
 
 ## Prerequisites
 
@@ -31,9 +34,9 @@ Analyze repositories for lines of code, language breakdown, file counts, and cod
 pip install --break-system-packages pygount 2>/dev/null || pip install pygount
 ```
 
-## 1. Basic Summary (Most Common)
+## Procedure
 
-Get a full language breakdown with file counts, code lines, and comment lines:
+### 1. Run the bounded summary
 
 ```bash
 cd /path/to/repo
@@ -42,11 +45,10 @@ pygount --format=summary \
   .
 ```
 
-**IMPORTANT:** Always use `--folders-to-skip` to exclude dependency/build directories, otherwise pygount will crawl them and take a very long time or hang.
+Always set `--folders-to-skip`; otherwise dependency trees can make the scan
+very slow or hang.
 
-## 2. Common Folder Exclusions
-
-Adjust based on the project type:
+### 2. Tune exclusions
 
 ```bash
 # Python projects
@@ -59,7 +61,7 @@ Adjust based on the project type:
 --folders-to-skip=".git,node_modules,venv,.venv,__pycache__,.cache,dist,build,.next,.tox,vendor,third_party"
 ```
 
-## 3. Filter by Specific Language
+### 3. Filter language
 
 ```bash
 # Only count Python files
@@ -69,7 +71,7 @@ pygount --suffix=py --format=summary .
 pygount --suffix=py,yaml,yml --format=summary .
 ```
 
-## 4. Detailed File-by-File Output
+### 4. Inspect files and choose format
 
 ```bash
 # Default format shows per-file breakdown
@@ -78,8 +80,6 @@ pygount --folders-to-skip=".git,node_modules,venv" .
 # Sort by code lines (pipe through sort)
 pygount --folders-to-skip=".git,node_modules,venv" . | sort -t$'\t' -k1 -nr | head -20
 ```
-
-## 5. Output Formats
 
 ```bash
 # Summary table (default recommendation)
@@ -92,25 +92,30 @@ pygount --format=json .
 pygount --format=summary . 2>/dev/null
 ```
 
-## 6. Interpreting Results
+## Interpret Results
 
-The summary table columns:
-- **Language** — detected programming language
-- **Files** — number of files of that language
-- **Code** — lines of actual code (executable/declarative)
-- **Comment** — lines that are comments or documentation
-- **%** — percentage of total
+Summary columns:
 
-Special pseudo-languages:
-- `__empty__` — empty files
-- `__binary__` — binary files (images, compiled, etc.)
-- `__generated__` — auto-generated files (detected heuristically)
-- `__duplicate__` — files with identical content
-- `__unknown__` — unrecognized file types
+- **Language**: detected programming language
+- **Files**: count for that language
+- **Code**: executable/declarative lines
+- **Comment**: comments/documentation
+- **%**: percentage of total
+
+Pseudo-languages: `__empty__` empty files; `__binary__` binary files;
+`__generated__` heuristically generated files; `__duplicate__` identical files;
+`__unknown__` unrecognized file types.
 
 ## Pitfalls
 
-1. **Always exclude .git, node_modules, venv** — without `--folders-to-skip`, pygount will crawl everything and may take minutes or hang on large dependency trees.
-2. **Markdown shows 0 code lines** — pygount classifies all Markdown content as comments, not code. This is expected behavior.
-3. **JSON files show low code counts** — pygount may count JSON lines conservatively. For accurate JSON line counts, use `wc -l` directly.
-4. **Large monorepos** — for very large repos, consider using `--suffix` to target specific languages rather than scanning everything.
+- omit `.git`, `node_modules`, or `venv` → crawl/hang risk
+- Markdown is classified as comments, so code count 0 is expected
+- JSON counts can be conservative; use `wc -l` for raw JSON line count
+- large monorepo → target languages with `--suffix`
+
+## Verification
+
+- [ ] repository path is the intended root
+- [ ] dependency/build exclusions are present
+- [ ] selected suffix/output format matches the question
+- [ ] interpretation distinguishes code, comments, pseudo-languages, and raw-line caveats
