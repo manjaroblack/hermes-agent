@@ -15,9 +15,26 @@ prerequisites:
 
 # OpenHue CLI
 
-Control Philips Hue lights and scenes via a Hue Bridge from the terminal.
+role: Philips Hue terminal operator
+do: install/pair OpenHue; list lights/rooms/scenes; set power/brightness/temperature/color; apply scenes/presets
+inputs: Hue Bridge/network, exact case-sensitive resource name, on/off/brightness/color/temperature/scene
+outputs: updated Hue light/room/scene state
+¬: act before pairing; assume a different network; use wrong case-sensitive name; set color on white-only bulb
+
+Control Philips Hue lights/scenes through a Hue Bridge. Bridge and Hermes host
+must share the local network; first run requires pressing the Bridge button.
+
+## When to Use
+
+- turn lights on/off or set brightness
+- set color/color temperature
+- control a room, zone, or individual bulb
+- apply scenes such as Relax, Concentrate, or movie mode
+- schedule lighting through cron
 
 ## Prerequisites
+
+Install one supported CLI build:
 
 ```bash
 # Linux (pre-built binary — releases ship tarballs, not bare binaries)
@@ -30,25 +47,35 @@ curl -sL "https://github.com/openhue/openhue-cli/releases/latest/download/openhu
 brew install openhue/cli/openhue-cli
 ```
 
-First run requires pressing the button on your Hue Bridge to pair. The bridge must be on the same local network.
+Pair on first run by physically pressing the Hue Bridge button.
 
-## When to Use
+## Quick Reference
 
-- "Turn on/off the lights"
-- "Dim the living room lights"
-- "Set a scene" or "movie mode"
-- Controlling specific Hue rooms, zones, or individual bulbs
-- Adjusting brightness, color, or color temperature
+| Action | Command |
+|---|---|
+| List lights/rooms/scenes | `openhue get light`; `openhue get room`; `openhue get scene` |
+| Toggle bulb | `openhue set light "Bedroom Lamp" --on`; `openhue set light "Bedroom Lamp" --off` |
+| Brightness | `openhue set light "Bedroom Lamp" --on --brightness 50` |
+| Temperature | `openhue set light "Bedroom Lamp" --on --temperature 300` |
+| Named/hex color | `openhue set light "Bedroom Lamp" --on --color red`; `openhue set light "Bedroom Lamp" --on --rgb "#FF5500"` |
+| Room power/brightness | `openhue set room "Bedroom" --off`; `openhue set room "Bedroom" --on --brightness 30` |
+| Scene | `openhue set scene "Relax" --room "Bedroom"` |
 
-## Common Commands
+## Procedure
 
-### List Resources
+1. Verify Bridge/network, install, and complete button pairing.
+2. Discover exact resource names:
 
 ```bash
 openhue get light       # List all lights
 openhue get room        # List all rooms
 openhue get scene       # List all scenes
 ```
+
+3. Apply the requested light/room/scene command; brightness = 0-100,
+   temperature = 153-500 mirek (warm → cool).
+4. Use color only on color-capable bulbs; re-list to verify resulting state.
+5. For schedules, invoke the verified command from cron.
 
 ### Control Lights
 
@@ -85,7 +112,7 @@ openhue set scene "Relax" --room "Bedroom"
 openhue set scene "Concentrate" --room "Office"
 ```
 
-## Quick Presets
+### Quick Presets
 
 ```bash
 # Bedtime (dim warm)
@@ -103,10 +130,16 @@ openhue set room "Office" --off
 openhue set room "Living Room" --off
 ```
 
-## Notes
+## Pitfalls
 
-- Bridge must be on the same local network as the machine running Hermes
-- First run requires physically pressing the button on the Hue Bridge to authorize
-- Colors only work on color-capable bulbs (not white-only models)
-- Light and room names are case-sensitive — use `openhue get light` to check exact names
-- Works great with cron jobs for scheduled lighting (e.g. dim at bedtime, bright at wake)
+- Bridge must share the local network with Hermes; first pairing is physical
+- names are case-sensitive; use `openhue get light|room|scene` first
+- color fails/has no effect on white-only bulbs
+- Linux releases are tarballs; use ARM64 asset on ARM64
+
+## Verification
+
+- `openhue` installed and pairing completed
+- requested exact resource exists in `get` output
+- command exits successfully and resulting state matches request
+- color/temperature capability matches the selected bulb

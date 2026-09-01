@@ -15,24 +15,41 @@ prerequisites:
 
 # Blogwatcher
 
-Track blog and RSS/Atom feed updates with the `blogwatcher-cli` tool. Supports automatic feed discovery, HTML scraping fallback, OPML import, and read/unread article management.
+role: blog/RSS/Atom monitoring operator
+do: install and configure `blogwatcher-cli`; discover feeds; scrape fallback; import OPML; scan/read/manage articles
+inputs: blog name/URL/feed URL/scrape selector, OPML, filters, DB path, worker/confirmation flags
+outputs: tracked blogs, scan results, unread/all article lists, read-state updates
+¬: lose the DB on Docker restart; use wrong binary name; assume RSS fallback without `--scrape-selector`; expose private feed data
 
-## Installation
+Track feed updates with automatic discovery, HTML scraping fallback, OPML import,
+and read/unread management. Database defaults to
+`~/.blogwatcher-cli/blogwatcher-cli.db`.
 
-Pick one method:
+## When to Use
 
-- **Go:** `go install github.com/JulienTant/blogwatcher-cli/cmd/blogwatcher-cli@latest`
-- **Docker:** `docker run --rm -v blogwatcher-cli:/data ghcr.io/julientant/blogwatcher-cli`
-- **Binary (Linux amd64):** `curl -sL https://github.com/JulienTant/blogwatcher-cli/releases/latest/download/blogwatcher-cli_linux_amd64.tar.gz | tar xz -C /usr/local/bin blogwatcher-cli`
-- **Binary (Linux arm64):** `curl -sL https://github.com/JulienTant/blogwatcher-cli/releases/latest/download/blogwatcher-cli_linux_arm64.tar.gz | tar xz -C /usr/local/bin blogwatcher-cli`
-- **Binary (macOS Apple Silicon):** `curl -sL https://github.com/JulienTant/blogwatcher-cli/releases/latest/download/blogwatcher-cli_darwin_arm64.tar.gz | tar xz -C /usr/local/bin blogwatcher-cli`
-- **Binary (macOS Intel):** `curl -sL https://github.com/JulienTant/blogwatcher-cli/releases/latest/download/blogwatcher-cli_darwin_amd64.tar.gz | tar xz -C /usr/local/bin blogwatcher-cli`
+- add/list/remove blogs and import subscriptions
+- scan all or one blog for new articles
+- list/filter/read/unread articles
+- configure worker count, DB path, silent mode, or confirmation behavior
+
+## Prerequisites
+
+Choose one install:
+
+- Go: `go install github.com/JulienTant/blogwatcher-cli/cmd/blogwatcher-cli@latest`
+- Docker: `docker run --rm -v blogwatcher-cli:/data ghcr.io/julientant/blogwatcher-cli`
+- Linux amd64 binary:
+  `curl -sL https://github.com/JulienTant/blogwatcher-cli/releases/latest/download/blogwatcher-cli_linux_amd64.tar.gz | tar xz -C /usr/local/bin blogwatcher-cli`
+- Linux arm64 binary:
+  `curl -sL https://github.com/JulienTant/blogwatcher-cli/releases/latest/download/blogwatcher-cli_linux_arm64.tar.gz | tar xz -C /usr/local/bin blogwatcher-cli`
+- macOS Apple Silicon:
+  `curl -sL https://github.com/JulienTant/blogwatcher-cli/releases/latest/download/blogwatcher-cli_darwin_arm64.tar.gz | tar xz -C /usr/local/bin blogwatcher-cli`
+- macOS Intel:
+  `curl -sL https://github.com/JulienTant/blogwatcher-cli/releases/latest/download/blogwatcher-cli_darwin_amd64.tar.gz | tar xz -C /usr/local/bin blogwatcher-cli`
 
 All releases: https://github.com/JulienTant/blogwatcher-cli/releases
 
-### Docker with persistent storage
-
-By default the database lives at `~/.blogwatcher-cli/blogwatcher-cli.db`. In Docker this is lost on container restart. Use `BLOGWATCHER_DB` or a volume mount to persist it:
+## Installation + Storage
 
 ```bash
 # Named volume (simplest)
@@ -42,51 +59,51 @@ docker run --rm -v blogwatcher-cli:/data -e BLOGWATCHER_DB=/data/blogwatcher-cli
 docker run --rm -v /path/on/host:/data -e BLOGWATCHER_DB=/data/blogwatcher-cli.db ghcr.io/julientant/blogwatcher-cli scan
 ```
 
-### Migrating from the original blogwatcher
-
-If upgrading from `Hyaxia/blogwatcher`, move your database:
+Host DB migration from `Hyaxia/blogwatcher`:
 
 ```bash
 mv ~/.blogwatcher/blogwatcher.db ~/.blogwatcher-cli/blogwatcher-cli.db
 ```
 
-The binary name changed from `blogwatcher` to `blogwatcher-cli`.
+Binary changed from `blogwatcher` to `blogwatcher-cli`. Docker needs a volume or
+`BLOGWATCHER_DB`; otherwise restart loses state.
 
-## Common Commands
+## Quick Reference
 
-### Managing blogs
-
-- Add a blog: `blogwatcher-cli add "My Blog" https://example.com`
-- Add with explicit feed: `blogwatcher-cli add "My Blog" https://example.com --feed-url https://example.com/feed.xml`
-- Add with HTML scraping: `blogwatcher-cli add "My Blog" https://example.com --scrape-selector "article h2 a"`
-- List tracked blogs: `blogwatcher-cli blogs`
-- Remove a blog: `blogwatcher-cli remove "My Blog" --yes`
-- Import from OPML: `blogwatcher-cli import subscriptions.opml`
-
-### Scanning and reading
-
-- Scan all blogs: `blogwatcher-cli scan`
-- Scan one blog: `blogwatcher-cli scan "My Blog"`
-- List unread articles: `blogwatcher-cli articles`
-- List all articles: `blogwatcher-cli articles --all`
-- Filter by blog: `blogwatcher-cli articles --blog "My Blog"`
-- Filter by category: `blogwatcher-cli articles --category "Engineering"`
-- Mark article read: `blogwatcher-cli read 1`
-- Mark article unread: `blogwatcher-cli unread 1`
-- Mark all read: `blogwatcher-cli read-all`
-- Mark all read for a blog: `blogwatcher-cli read-all --blog "My Blog" --yes`
+| Task | Command |
+|---|---|
+| Add blog | `blogwatcher-cli add "My Blog" https://example.com` |
+| Add explicit feed | `blogwatcher-cli add "My Blog" https://example.com --feed-url https://example.com/feed.xml` |
+| Add HTML scraping | `blogwatcher-cli add "My Blog" https://example.com --scrape-selector "article h2 a"` |
+| List/remove blogs | `blogwatcher-cli blogs`; `blogwatcher-cli remove "My Blog" --yes` |
+| Import OPML | `blogwatcher-cli import subscriptions.opml` |
+| Scan all/one | `blogwatcher-cli scan`; `blogwatcher-cli scan "My Blog"` |
+| Unread/all articles | `blogwatcher-cli articles`; `blogwatcher-cli articles --all` |
+| Filter articles | `blogwatcher-cli articles --blog "My Blog"`; `blogwatcher-cli articles --category "Engineering"` |
+| Read/unread | `blogwatcher-cli read 1`; `blogwatcher-cli unread 1` |
+| Mark all read | `blogwatcher-cli read-all`; `blogwatcher-cli read-all --blog "My Blog" --yes` |
 
 ## Environment Variables
 
-All flags can be set via environment variables with the `BLOGWATCHER_` prefix:
+All flags accept `BLOGWATCHER_`-prefixed environment variables:
 
 | Variable | Description |
 |---|---|
 | `BLOGWATCHER_DB` | Path to SQLite database file |
-| `BLOGWATCHER_WORKERS` | Number of concurrent scan workers (default: 8) |
-| `BLOGWATCHER_SILENT` | Only output "scan done" when scanning |
+| `BLOGWATCHER_WORKERS` | Concurrent scan workers (default: 8) |
+| `BLOGWATCHER_SILENT` | Output only "scan done" when scanning |
 | `BLOGWATCHER_YES` | Skip confirmation prompts |
-| `BLOGWATCHER_CATEGORY` | Default filter for articles by category |
+| `BLOGWATCHER_CATEGORY` | Default article category filter |
+
+## Procedure
+
+1. Verify `blogwatcher-cli --help`; select persistent DB path/volume.
+2. Add blogs with feed URL when known; otherwise allow RSS/Atom discovery; add
+   `--scrape-selector` for HTML fallback when RSS fails.
+3. Import OPML when bulk-loading Feedly, Inoreader, NewsBlur, or similar lists.
+4. Scan all/selected blogs; inspect new article counts.
+5. List/filter articles; mark IDs read/unread; re-list after state changes.
+6. Use `blogwatcher-cli <command> --help` for unlisted flags.
 
 ## Example Output
 
@@ -127,11 +144,20 @@ Unread articles (2):
        Categories: Comics
 ```
 
-## Notes
+## Pitfalls
 
-- Auto-discovers RSS/Atom feeds from blog homepages when no `--feed-url` is provided.
-- Falls back to HTML scraping if RSS fails and `--scrape-selector` is configured.
-- Categories from RSS/Atom feeds are stored and can be used to filter articles.
-- Import blogs in bulk from OPML files exported by Feedly, Inoreader, NewsBlur, etc.
-- Database stored at `~/.blogwatcher-cli/blogwatcher-cli.db` by default (override with `--db` or `BLOGWATCHER_DB`).
-- Use `blogwatcher-cli <command> --help` to discover all flags and options.
+- default DB is `~/.blogwatcher-cli/blogwatcher-cli.db`; Docker restart loses it
+  without volume/`BLOGWATCHER_DB`
+- original binary/DB names differ: `blogwatcher` → `blogwatcher-cli`
+- feed discovery is automatic only when `--feed-url` omitted; HTML fallback needs
+  `--scrape-selector`
+- RSS/Atom categories are filterable; OPML bulk import preserves subscriptions
+- `BLOGWATCHER_YES` skips confirmations; use deliberately
+
+## Verification
+
+- `blogwatcher-cli --help` succeeds and DB path is persistent
+- expected blogs/feed URLs appear in `blogwatcher-cli blogs`
+- scan output distinguishes source, found, and new counts
+- article filters match requested blog/category; read-state changes persist
+- OPML import and Docker storage behavior confirmed when used

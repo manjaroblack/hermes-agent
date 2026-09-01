@@ -11,70 +11,59 @@ metadata:
     related_skills: [node-inspect-debugger, systematic-debugging, dogfood]
 ---
 
-# Inspecting the live Hermes desktop DOM
+# Inspecting the Live Hermes Desktop DOM
 
-## Overview
+role: live Hermes desktop DOM/CSS fact checker
+do: probe CDP; select main renderer; inspect DOM/styles/geometry/rules/console; verify running UI changes; use isolated instance when needed
+inputs: running `hgui`/`npm run dev`, CDP port/env, selector/design-token question
+outputs: computed values, matching selectors, geometry, console errors, rendered-state evidence
+¬: infer live state from `.tsx`; attach to wrong target; dump whole DOM; kill/relaunch user's app; judge aesthetics from CDP facts
 
-When you are developing `apps/desktop` and the user is running that same app
-(`hgui` / `npm run dev`), you can read the **live rendered DOM** of the window
-they are looking at — computed styles, geometry, which CSS rule actually won,
-console output — instead of inferring it from `.tsx` and being wrong.
-
-Dev-server runs open a Chrome DevTools Protocol port on `127.0.0.1:9222`
-automatically. The renderer is a Chromium page, so everything DevTools can read,
-a script can read.
-
-**This does not replace looking at it.** CDP answers *factual* questions ("what
-is the computed padding", "did this element render", "which selector matches").
-It cannot tell you whether the result looks good. Colour balance, spacing feel,
-and "is this ugly" still need the user's eyes or a screenshot. Answer facts with
-CDP; hand aesthetics to the user.
+When developing `apps/desktop` against a running app, inspect the rendered DOM,
+computed styles, winning CSS rules, geometry, and console instead of guessing from
+source. CDP answers factual questions; screenshots/user eyes answer visual quality.
 
 ## When to Use
 
-- Verifying a UI change actually took effect in the running app
-- "Why is this element still X?" — find the winning rule before editing anything
-- Locating a stable selector for a component you're about to change
-- Checking a design token's computed value on a real node
-- Reading renderer console errors the user mentions but can't copy out
+- verify a UI change took effect in the running app
+- find the winning rule for “why is this element still X?”
+- locate stable selectors before editing
+- read real design-token values
+- inspect renderer console errors
 
-**Don't use for:** perf profiling or heap work (`node-inspect-debugger`,
-`debugging-hermes-desktop`), or anything where the real question is "does this
-look right".
+Don't use for perf/heap work (`node-inspect-debugger`, `debugging-hermes-desktop`)
+or “does this look right?” aesthetics.
 
-## The port
+## Prerequisites
 
-Open on `127.0.0.1:9222` for any dev-server run. Closed in exactly two cases
-(`apps/desktop/electron/dev-cdp.ts`):
+- dev-server run exposing CDP on `127.0.0.1:9222`
+- `curl`, Node.js, and `apps/desktop/scripts/eval.mjs` for probes
+- optional `HERMES_DESKTOP_CDP_PORT`, isolated `HERMES_HOME`, user-data dir
 
-- **packaged builds** — always, and no environment value overrides it;
-- **no `HERMES_DESKTOP_DEV_SERVER`** — an unpackaged `electron .` against
-  `dist/` is how the packaged app gets smoke tested, so it behaves like one.
+## Procedure
 
-`HERMES_DESKTOP_CDP_PORT` moves the port (`=9333`) or disables it (`=off`).
+### 1. Check the port
 
-Check before doing anything else:
+Dev-server runs open CDP automatically. It is closed by
+`apps/desktop/electron/dev-cdp.ts` for packaged builds and for unpackaged
+`electron .` without `HERMES_DESKTOP_DEV_SERVER` (dist smoke test). Move port with
+`HERMES_DESKTOP_CDP_PORT=9333`; disable with `=off`.
 
 ```bash
 curl -s --max-time 3 http://127.0.0.1:${HERMES_DESKTOP_CDP_PORT:-9222}/json/version
 ```
 
-Empty → no port. Do not guess another port silently.
+Empty → no port; do not silently guess another. Never relaunch user's app to get
+one; use an isolated instance.
 
-**Never relaunch the user's app to get a port.** That destroys their session and
-their state. Launch your own isolated instance instead (below).
-
-## Reading the DOM
-
-`apps/desktop/scripts/eval.mjs` is the one-liner:
+### 2. Read DOM with the one-liner
 
 ```bash
 cd apps/desktop
 node scripts/eval.mjs "document.querySelectorAll('[data-slot]').length"
 ```
 
-For multi-step work use the shared client — it has target discovery and
-promise-aware eval:
+For multi-step/promise-aware work:
 
 ```js
 import { CDP, SELECTORS } from './scripts/perf/lib/cdp.mjs'
@@ -87,15 +76,10 @@ const out = await cdp.eval(`JSON.stringify({
 cdp.close()
 ```
 
-`SELECTORS` in `scripts/perf/lib/cdp.mjs` holds the stable `data-slot` hooks
-(composer, thread viewport, assistant message, turn pair, profile rail). Prefer
-them over inventing a `querySelector` — they are updated as a unit when
-components move.
+Prefer stable `SELECTORS`/`data-slot` hooks (composer, thread viewport, assistant
+message, turn pair, profile rail); they move with components.
 
-## The question this is best at: which rule won?
-
-Editing every call site because a style "isn't applying" is the classic waste.
-Read the real node first:
+### 3. Diagnose the winning rule
 
 ```js
 const el = document.querySelector('[data-slot="aui_assistant-message-root"] a')
@@ -111,14 +95,11 @@ JSON.stringify({
 })
 ```
 
-If the node carries no class of its own, the value is **inherited** — sweeping
-call sites will not fix it, and you need the ancestor rule. A plugin stylesheet
-(e.g. `@tailwindcss/typography`'s `prose a { font-weight: 500 }`) routinely beats
-a utility class; override on the shared class, not at each usage.
+No own class + unexpected value → inherited ancestor rule. Plugin typography such
+as `@tailwindcss/typography` `prose a { font-weight: 500 }` may beat a utility;
+override shared class, not every call site.
 
-## Your own isolated instance
-
-When there is no port, or you must not disturb the user's window:
+### 4. Launch an isolated instance when needed
 
 ```bash
 cd apps/desktop
@@ -128,32 +109,28 @@ HERMES_DESKTOP_CDP_PORT=9333 \
   npx electron . --user-data-dir=/tmp/cdp-probe-userdata
 ```
 
-The separate `--user-data-dir` dodges Electron's single-instance lock, so it
-cannot collide with a running `hgui`; the separate `HERMES_HOME` keeps it away
-from real sessions. Pick a port other than 9222 for the same reason. Run it in
-the background and kill it when done.
-
-`npm run perf:serve` does the same with a temp `HERMES_HOME` baked in, if you
-also want the perf harness.
+Separate `--user-data-dir` avoids Electron's single-instance lock; separate
+`HERMES_HOME` avoids real sessions; non-default port avoids collision. Background
+it and kill it when done. `npm run perf:serve` provides a temp-HERMES_HOME perf
+variant. A throwaway backend may exit with `ECONNREFUSED`; renderer DOM remains
+readable briefly. `DevTools listening on ws://127.0.0.1:<port>/…` proves binding.
 
 ## Pitfalls
 
-- **Never kill the user's dev server or app to "free" anything.** A mid-serve
-  kill nukes Chromium's socket pool, and the resulting `ERR_NETWORK_CHANGED`
-  gets blamed on whatever you just changed.
-- **A throwaway `HERMES_HOME` has no backend.** The app logs `ECONNREFUSED` for
-  `hermes:api` and may exit on its own. The renderer still mounts and the DOM is
-  readable — read promptly, and don't mistake a self-exited probe for a broken
-  port. Chromium logs `DevTools listening on ws://127.0.0.1:<port>/…` when it
-  binds; that line is the proof the port opened.
-- **Poll, don't probe once.** A just-launched app needs a second or two before
-  the port answers.
-- **Never dump the whole DOM.** The desktop renders hundreds of nodes and
-  `outerHTML` will bury your context. Project down to a small JSON object inside
-  the evaluated expression.
-- **Pass `match` to `CDP.connect`.** Without it you may attach to the pet
-  overlay, quick-entry window, or a devtools target instead of the main window.
-- **`cdp.eval` returns the value; raw `Runtime.evaluate` double-nests it**
-  (`.result.result.value`). Use the wrapper.
-- **`import.meta.env.DEV` is `true` under `vite dev`** in this repo. The note in
-  `apps/desktop/scripts/profile-typing-lag.md` claiming otherwise is stale.
+- never kill user's dev server/app; Chromium socket loss can create misleading
+  `ERR_NETWORK_CHANGED`
+- poll a just-launched app; one probe can race startup
+- never dump `outerHTML`/whole DOM; project to small JSON inside eval
+- always pass `match` to `CDP.connect` or attach to pet/quick-entry/devtools target
+- `cdp.eval` returns value; raw `Runtime.evaluate` double-nests `.result.result.value`
+- `import.meta.env.DEV` is true under Vite dev; stale contrary note is in
+  `apps/desktop/scripts/profile-typing-lag.md`
+
+## Verification
+
+- CDP `/json/version` responds on expected port or isolated port
+- `CDP.connect` match selects main renderer
+- selectors resolve expected nodes; computed style/geometry/rule is reported
+- console output checked when investigating errors
+- isolated probe uses separate `HERMES_HOME` + user-data dir and is terminated
+- aesthetic judgment deferred to screenshot/user

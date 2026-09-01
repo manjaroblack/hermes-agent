@@ -13,94 +13,91 @@ metadata:
 
 # Plan Mode
 
-Use this skill when the user wants a plan instead of execution.
+role: implementation-plan author
+do: inspect context read-only; design approach; write actionable Markdown plan; save under `.hermes/plans/`; report saved path
+inputs: user request/current context, repo structure, requirements, constraints, likely files/tests
+outputs: timestamped Markdown plan; no implementation or external mutation
+¬: implement code; edit project files beyond plan; run mutating commands; commit/push/external actions; invent missing requirements; save outside active workspace
 
-## Core behavior
+Use when the user wants a plan instead of execution. This turn is planning only;
+the deliverable is a concrete Markdown file in the active workspace.
 
-For this turn, you are planning only.
+## When to Use
 
-- Do not implement code.
-- Do not edit project files except the plan markdown file.
-- Do not run mutating terminal commands, commit, push, or perform external actions.
-- You may inspect the repo or other context with read-only commands/tools when needed.
-- Your deliverable is a markdown plan saved inside the active workspace under `.hermes/plans/`.
+- user asks for a plan, design, breakdown, or `/plan`
+- multi-step feature/bug work needs implementation guidance
+- delegation needs exact tasks/context
+- future implementer needs paths, code shape, tests, risks
 
-## Output requirements
+Don't use for execution, production changes, or personal notes outside the active
+workspace. If request is clear, write directly; if genuinely underspecified, ask a
+brief clarifying question rather than guessing.
 
-Write a markdown plan that is concrete and actionable.
+## Prerequisites
 
-Include, when relevant:
-- Goal
-- Current context / assumptions
-- Proposed approach
-- Step-by-step plan
-- Files likely to change
-- Tests / validation
-- Risks, tradeoffs, and open questions
+- active workspace/backend path
+- read-only `search_files`, `read_file`, and inspection commands as needed
+- `.hermes/plans/` destination
+- current conversation requirements and constraints
 
-If the task is code-related, include exact file paths, likely test targets, and verification steps.
+## Core Behavior
 
-## Save location
+- do not implement code
+- do not edit project files except plan Markdown
+- do not run mutating terminal commands, commit, push, or external actions
+- inspect repo/context read-only when needed
+- save plan inside active workspace under `.hermes/plans/`
 
-Save the plan with `write_file` under:
+## Output Requirements
+
+Include when relevant: Goal; current context/assumptions; proposed approach;
+step-by-step plan; likely changed files; tests/validation; risks/tradeoffs/open
+questions. Code-related plans include exact paths, test targets, and verification.
+
+## Save Location
+
+Use:
+
 - `.hermes/plans/YYYY-MM-DD_HHMMSS-<slug>.md`
 
-Treat that as relative to the active working directory / backend workspace. Hermes file tools are backend-aware, so using this relative path keeps the plan with the workspace on local, docker, ssh, modal, and daytona backends.
+Resolve relative to active working directory/backend workspace; this keeps plans
+with local, Docker, SSH, Modal, and Daytona workspaces. Use a runtime-provided
+exact target when given; otherwise create a sensible timestamped filename.
 
-If the runtime provides a specific target path, use that exact path.
-If not, create a sensible timestamped filename yourself under `.hermes/plans/`.
+## Procedure
 
-## Interaction style
+1. Understand requirements, design docs, acceptance criteria, and constraints.
+2. Explore repo/context with read-only tools; identify similar code/tests.
+3. Decide architecture, file organization, dependencies, and test strategy.
+4. Write sequential bite-sized tasks to the save path.
+5. Review plan for exactness/completeness; save and report path.
+6. If execution follows, offer `subagent-driven-development` handoff.
 
-- If the request is clear enough, write the plan directly.
-- If no explicit instruction accompanies `/plan`, infer the task from the current conversation context.
-- If it is genuinely underspecified, ask a brief clarifying question instead of guessing.
-- After saving the plan, reply briefly with what you planned and the saved path.
+## Writing the Plan Well
 
----
+Assume implementer has zero domain/codebase context but strong engineering skill.
+Document enough to make implementation obvious: files, code, commands, tests,
+docs, verification, and risks. Apply DRY, YAGNI, TDD, frequent commits.
 
-# Writing the Plan Well
+### Bite-Sized Task Granularity
 
-The rest of this skill is the craft of authoring a *good* implementation plan — the content that goes inside the markdown file above.
+Each task = 2-5 minutes focused work; each step = one action:
 
-## Overview
+- write failing test
+- run it and verify failure
+- write minimal implementation
+- run tests and verify pass
+- commit
 
-Write comprehensive implementation plans assuming the implementer has zero context for the codebase and questionable taste. Document everything they need: which files to touch, complete code, testing commands, docs to check, how to verify. Give them bite-sized tasks. DRY. YAGNI. TDD. Frequent commits.
+Too big:
 
-Assume the implementer is a skilled developer but knows almost nothing about the toolset or problem domain. Assume they don't know good test design very well.
-
-**Core principle:** A good plan makes implementation obvious. If someone has to guess, the plan is incomplete.
-
-## When a Full Implementation Plan Helps
-
-**Always use before:**
-- Implementing multi-step features
-- Breaking down complex requirements
-- Delegating to subagents via subagent-driven-development
-
-**Don't skip when:**
-- Feature seems simple (assumptions cause bugs)
-- You plan to implement it yourself (future you needs guidance)
-- Working alone (documentation matters)
-
-## Bite-Sized Task Granularity
-
-**Each task = 2-5 minutes of focused work.**
-
-Every step is one action:
-- "Write the failing test" — step
-- "Run it to make sure it fails" — step
-- "Implement the minimal code to make the test pass" — step
-- "Run the tests and make sure they pass" — step
-- "Commit" — step
-
-**Too big:**
 ```markdown
 ### Task 1: Build authentication system
 [50 lines of code across 5 files]
 ```
 
-**Right size:**
+Right size:
+
 ```markdown
 ### Task 1: Create User model with email field
 [10 lines, 1 file]
@@ -112,11 +109,9 @@ Every step is one action:
 [15 lines, 1 file]
 ```
 
-## Plan Document Structure
+### Plan Document Structure
 
-### Header (Required)
-
-Every plan MUST start with:
+Every plan starts:
 
 ```markdown
 # [Feature Name] Implementation Plan
@@ -132,9 +127,7 @@ Every plan MUST start with:
 ---
 ```
 
-### Task Structure
-
-Each task follows this format:
+Each task:
 
 ````markdown
 ### Task N: [Descriptive Name]
@@ -179,19 +172,7 @@ git commit -m "feat: add specific feature"
 ```
 ````
 
-## Writing Process
-
-### Step 1: Understand Requirements
-
-Read and understand:
-- Feature requirements
-- Design documents or user description
-- Acceptance criteria
-- Constraints
-
-### Step 2: Explore the Codebase
-
-Use Hermes tools to understand the project:
+### Read-Only Codebase Exploration
 
 ```python
 # Understand project structure
@@ -207,53 +188,37 @@ search_files("*.py", target="files", path="tests/")
 read_file("src/app.py")
 ```
 
-### Step 3: Design Approach
+### Task Ordering
 
-Decide:
-- Architecture pattern
-- File organization
-- Dependencies needed
-- Testing strategy
+1. setup/infrastructure
+2. core functionality, TDD for each
+3. edge cases
+4. integration
+5. cleanup/documentation
 
-### Step 4: Write Tasks
+For each task include exact file paths, complete code examples (not vague
+“add validation”), exact commands with expected output, and proof-oriented checks.
 
-Create tasks in order:
-1. Setup/infrastructure
-2. Core functionality (TDD for each)
-3. Edge cases
-4. Integration
-5. Cleanup/documentation
+### Review the Plan
 
-### Step 5: Add Complete Details
-
-For each task, include:
-- **Exact file paths** (not "the config file" but `src/config/settings.py`)
-- **Complete code examples** (not "add validation" but the actual code)
-- **Exact commands** with expected output
-- **Verification steps** that prove the task works
-
-### Step 6: Review the Plan
-
-Check:
-- [ ] Tasks are sequential and logical
-- [ ] Each task is bite-sized (2-5 min)
-- [ ] File paths are exact
-- [ ] Code examples are complete (copy-pasteable)
-- [ ] Commands are exact with expected output
-- [ ] No missing context
-- [ ] DRY, YAGNI, TDD principles applied
+- [ ] tasks sequential and logical
+- [ ] each task bite-sized (2-5 min)
+- [ ] paths exact
+- [ ] code examples complete/copy-pasteable
+- [ ] commands exact with expected output
+- [ ] no missing context
+- [ ] DRY, YAGNI, TDD applied
 
 ## Principles
 
-### DRY (Don't Repeat Yourself)
+### DRY
 
-**Bad:** Copy-paste validation in 3 places
-**Good:** Extract validation function, use everywhere
+Bad: copy validation in three places. Good: extract a validation function and
+reuse it.
 
-### YAGNI (You Aren't Gonna Need It)
+### YAGNI
 
-**Bad:** Add "flexibility" for future requirements
-**Good:** Implement only what's needed now
+Bad:
 
 ```python
 # Bad — YAGNI violation
@@ -271,19 +236,23 @@ class User:
         self.email = email
 ```
 
-### TDD (Test-Driven Development)
+Specify only current requirements; do not add future flexibility.
 
-Every task that produces code should include the full TDD cycle:
-1. Write failing test
-2. Run to verify failure
-3. Write minimal code
-4. Run to verify pass
+### TDD
 
-See `test-driven-development` skill for details.
+Every code task includes:
+
+1. failing test
+2. run and verify failure
+3. minimal code
+4. run and verify pass
+
+See `test-driven-development` for full workflow.
 
 ### Frequent Commits
 
-Commit after every task:
+Commit each task:
+
 ```bash
 git add [files]
 git commit -m "type: description"
@@ -291,48 +260,35 @@ git commit -m "type: description"
 
 ## Common Mistakes
 
-### Vague Tasks
-
-**Bad:** "Add authentication"
-**Good:** "Create User model with email and password_hash fields"
-
-### Incomplete Code
-
-**Bad:** "Step 1: Add validation function"
-**Good:** "Step 1: Add validation function" followed by the complete function code
-
-### Missing Verification
-
-**Bad:** "Step 3: Test it works"
-**Good:** "Step 3: Run `pytest tests/test_auth.py -v`, expected: 3 passed"
-
-### Missing File Paths
-
-**Bad:** "Create the model file"
-**Good:** "Create: `src/models/user.py`"
+- vague “add authentication” → name concrete model/fields/files
+- “add validation” without complete code → include implementation shape
+- “test it works” → exact command + expected output
+- missing file paths → exact create/modify/test paths
 
 ## Execution Handoff
 
-After saving the plan, offer the execution approach:
+After saving:
 
-**"Plan complete and saved. Ready to execute using subagent-driven-development — I'll dispatch a fresh subagent per task with two-stage review (spec compliance then code quality). Shall I proceed?"**
+> Plan complete and saved. Ready to execute using subagent-driven-development — I'll dispatch a fresh subagent per task with two-stage review (spec compliance then code quality). Shall I proceed?
 
-When executing, use the `subagent-driven-development` skill:
-- Fresh `delegate_task` per task with full context
-- Spec compliance review after each task
-- Code quality review after spec passes
-- Proceed only when both reviews approve
+When executing, use `subagent-driven-development`: fresh delegate per task; spec
+compliance review; code-quality review; proceed only after both approve.
 
-## Remember
+## Pitfalls
 
-```
-Bite-sized tasks (2-5 min each)
-Exact file paths
-Complete code (copy-pasteable)
-Exact commands with expected output
-Verification steps
-DRY, YAGNI, TDD
-Frequent commits
-```
+- plan mode is not implementation; only plan Markdown may be written
+- relative plan path must resolve to active backend workspace
+- no mutating commands, commits, pushes, or external actions during plan turn
+- do not guess genuinely missing requirements; ask one brief clarification
+- task granularity must permit focused execution and independent verification
+- code-related plans need exact paths/tests, not generic file references
+- current plan filename should be timestamped and slugged when no target is given
 
-**A good plan makes implementation obvious.**
+## Verification
+
+- saved file exists under `.hermes/plans/` at the active workspace
+- filename matches `YYYY-MM-DD_HHMMSS-<slug>.md` or supplied target
+- goal/context/approach/tasks/files/tests/risks included as applicable
+- each task has one objective, exact paths, actionable steps, expected checks
+- no project files or external state changed
+- final response names the saved path and execution handoff status

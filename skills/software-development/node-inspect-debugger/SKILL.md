@@ -13,30 +13,36 @@ metadata:
 
 # Node.js Inspect Debugger
 
-## Overview
+role: Node/V8 inspector operator
+do: launch/attach `node inspect`; set breakpoints; step; inspect stack/scopes/expressions; automate CDP; capture heap/CPU profiles; debug Hermes UI/tests
+inputs: Node script/process PID or inspector URL, source/line/function, optional TypeScript/tsx target
+outputs: paused-frame values, call stacks, breakpoint results, profile/heap artifacts
+¬: expose inspector beyond localhost; attach wrong process; assume TS lines map to emitted JS; leave paused targets/debug artifacts; use heavy debugger for a one-minute log problem
 
-When `console.log` isn't enough, drive Node's built-in V8 inspector programmatically from the terminal. You get real breakpoints, step in/over/out, call-stack walking, local/closure scope dumps, and arbitrary expression evaluation in the paused frame.
-
-Two tools, pick one:
-
-- **`node inspect`** — built-in, zero install, CLI REPL. Best for quick poking.
-- **`ndb` / CDP via `chrome-remote-interface`** — scriptable from Node/Python; best when you want to automate many breakpoints, collect state across runs, or debug non-interactively from an agent loop.
-
-**Prefer `node inspect` first.** It's always available and the REPL is fast.
+Use Node's built-in V8 inspector from terminal for real breakpoints, stepping,
+call-stack/scope inspection, and expression evaluation. `node inspect` is zero
+install and preferred for quick work; `ndb`/CDP via `chrome-remote-interface`
+suits scripted or non-interactive sessions.
 
 ## When to Use
 
-- A Node test fails and you need to see intermediate state
-- ui-tui crashes or behaves wrong and you want to inspect React/Ink state pre-render
-- tui_gateway child processes (`_SlashWorker`, PTY bridge workers) misbehave
-- You need to inspect a value in a closure that `console.log` can't reach without patching
-- Perf: attach to a running process to capture a CPU profile or heap snapshot
+- Node test intermediate state or async call path needs inspection
+- `ui-tui` Ink crashes/behaves incorrectly
+- `tui_gateway` child/UI Node portions misbehave
+- closure/local value is inaccessible to logging
+- attach for CPU profile or heap snapshot
 
-**Don't use for:** things `console.log` solves in under a minute. Breakpoint-driven debugging is heavier; use it when the payoff is real.
+Don't use when `console.log` solves it in under a minute.
 
-## Quick Reference: `node inspect` REPL
+## Prerequisites
 
-Launch paused on first line:
+- Node.js; `tsx` when debugging TypeScript
+- optional `chrome-remote-interface` (not in `ui-tui/package.json`)
+- Hermes `terminal` with PTY/background `process` for interactive REPL
+
+## Procedure
+
+### 1. Start `node inspect`
 
 ```bash
 node inspect path/to/script.js
@@ -44,7 +50,7 @@ node inspect path/to/script.js
 node --inspect-brk $(which tsx) path/to/script.ts
 ```
 
-The `debug>` prompt accepts:
+`debug>` commands:
 
 | Command | Action |
 |---|---|
@@ -68,11 +74,10 @@ The `debug>` prompt accepts:
 | `kill` | kill the script |
 | `.exit` | quit debugger |
 
-**In the `repl` sub-mode:** type any JS expression, including access to locals/closure variables. `Ctrl+C` exits back to `debug>`.
+In `repl`, any JS expression can access locals/closure variables; Ctrl+C returns
+to `debug>`.
 
-## Attaching to a Running Process
-
-When the process is already running (e.g. a long-lived dev server or the TUI gateway):
+### 2. Attach to a running process
 
 ```bash
 # 1. Send SIGUSR1 to enable the inspector on an existing process
@@ -85,7 +90,7 @@ node inspect -p <pid>
 node inspect ws://127.0.0.1:9229/<uuid>
 ```
 
-To start a process with the inspector from the beginning:
+Start with inspector from launch:
 
 ```bash
 node --inspect script.js           # listen on 127.0.0.1:9229, keep running
@@ -93,7 +98,7 @@ node --inspect-brk script.js       # listen AND pause on first line
 node --inspect=0.0.0.0:9230 script.js   # custom host:port
 ```
 
-For TypeScript via tsx:
+TypeScript:
 
 ```bash
 node --inspect-brk --import tsx script.ts
@@ -101,9 +106,9 @@ node --inspect-brk --import tsx script.ts
 node --inspect-brk -r tsx/cjs script.ts
 ```
 
-## Programmatic CDP (scripting from terminal)
+### 3. Script CDP
 
-When you want to automate — set many breakpoints, capture scope state, script a repro — use `chrome-remote-interface`:
+Install dependency and start target:
 
 ```bash
 npm i -g chrome-remote-interface        # or project-local
@@ -111,7 +116,7 @@ npm i -g chrome-remote-interface        # or project-local
 node --inspect-brk=9229 target.js &
 ```
 
-Driver script (save as `/tmp/cdp-debug.js`):
+Save driver as `/tmp/cdp-debug.js`:
 
 ```javascript
 const CDP = require('chrome-remote-interface');
@@ -161,26 +166,20 @@ const CDP = require('chrome-remote-interface');
 })();
 ```
 
-Run it:
-
 ```bash
 node /tmp/cdp-debug.js
 ```
 
-Hermes-specific note: `chrome-remote-interface` is NOT in `ui-tui/package.json`. Install it to a throwaway location if you don't want to dirty the project:
+Keep project clean with throwaway install:
 
 ```bash
 mkdir -p /tmp/cdp-tools && cd /tmp/cdp-tools && npm i chrome-remote-interface
 NODE_PATH=/tmp/cdp-tools/node_modules node /tmp/cdp-debug.js
 ```
 
-## Debugging Hermes ui-tui
+### 4. Debug Hermes `ui-tui`
 
-The TUI is built Ink + tsx. Two common scenarios:
-
-### Debugging a single Ink component under dev
-
-`ui-tui/package.json` has `npm run dev` (tsx --watch). Add `--inspect-brk` by running tsx directly:
+Single Ink component:
 
 ```bash
 cd <hermes-agent-repo>/ui-tui
@@ -190,18 +189,16 @@ node --inspect-brk dist/entry.js
 node inspect -p <node pid>
 ```
 
-Then inside `debug>`:
+Then:
 
 ```
 sb('dist/app.js', 220)     # or wherever the suspect render is
 cont
 ```
 
-When it pauses, `repl` → inspect `props`, state refs, `useInput` handler values, etc.
+At pause, `repl` can inspect `props`, state refs, `useInput` values.
 
-### Debugging a running `hermes --tui`
-
-The TUI spawns Node from the Python CLI. Easiest path:
+Running `hermes --tui`:
 
 ```bash
 # 1. Launch TUI
@@ -218,13 +215,11 @@ curl -s http://127.0.0.1:9229/json/list | jq -r '.[0].webSocketDebuggerUrl'
 node inspect ws://127.0.0.1:9229/<uuid>
 ```
 
-Interacting with the TUI (typing in its window) continues to advance execution; your debugger can pause it on a breakpoint at any `sb(...)`.
+Typing in the TUI continues execution; breakpoints pause it. `_SlashWorker` and
+PTY workers are Python → use `python-debugpy`; only Ink, TUI client, and tsx-run
+tests use this skill.
 
-### Debugging `_SlashWorker` / PTY child processes
-
-Those are Python, not Node — use the `python-debugpy` skill for them. Only Node portions (Ink UI, tui_gateway client, tsx-run tests under `ui-tui/`) use this skill.
-
-## Running Vitest Tests Under the Debugger
+### 5. Debug Vitest
 
 ```bash
 cd <hermes-agent-repo>/ui-tui
@@ -232,13 +227,13 @@ cd <hermes-agent-repo>/ui-tui
 node --inspect-brk ./node_modules/vitest/vitest.mjs run --no-file-parallelism src/app/foo.test.tsx
 ```
 
-In another terminal: `node inspect -p <pid>`, then `sb('src/app/foo.tsx', 42)`, `cont`.
+Attach, set `sb('src/app/foo.tsx', 42)`, `cont`. Use
+`--no-file-parallelism` (vitest) or `--runInBand` (jest); one worker is
+inspectable.
 
-Use `--no-file-parallelism` (vitest) or `--runInBand` (jest) so only one worker exists — debugging a pool is painful.
+### 6. Capture heap/CPU
 
-## Heap Snapshots & CPU Profiles (Non-interactive)
-
-From the CDP driver above, swap Debugger for `HeapProfiler` / `Profiler`:
+From CDP driver, swap `Debugger` for `HeapProfiler`/`Profiler`:
 
 ```javascript
 // CPU profile for 5 seconds
@@ -259,37 +254,31 @@ await client.HeapProfiler.takeHeapSnapshot({ reportProgress: false });
 require('fs').writeFileSync('/tmp/heap.heapsnapshot', chunks.join(''));
 ```
 
-## Common Pitfalls
+## Pitfalls
 
-1. **Wrong line numbers in TS source.** Breakpoints hit the emitted JS, not the `.ts`. Either (a) break in the built `dist/*.js`, or (b) enable sourcemaps (`node --enable-source-maps`) and use `sb('src/app.tsx', N)` — but only with CDP clients that follow sourcemaps. `node inspect` CLI does not.
-
-2. **`--inspect` vs `--inspect-brk`.** `--inspect` starts the inspector but doesn't pause; your script races past your first breakpoint if you attach too late. Use `--inspect-brk` when you need to set breakpoints before any code runs.
-
-3. **Port collisions.** Default is `9229`. If multiple Node processes are inspecting, pass `--inspect=0` (random port) and read the actual URL from `/json/list`:
-   ```bash
-   curl -s http://127.0.0.1:9229/json/list   # lists all inspectable targets on the host
-   ```
-
-4. **Child processes.** `--inspect` on a parent does NOT inspect its children. Use `NODE_OPTIONS='--inspect-brk' node parent.js` to propagate to every child; be aware they all need unique ports (Node auto-increments when `NODE_OPTIONS='--inspect'` is inherited).
-
-5. **Background kills.** If you `Ctrl+C` out of `node inspect` while the target is paused, the target stays paused. Either `cont` first, or `kill` the target explicitly.
-
-6. **Running `node inspect` through an agent terminal.** It's a PTY-friendly REPL. In Hermes, launch it with `terminal(pty=true)` or `background=true` + `process(action='submit', data='...')`. Non-PTY foreground mode will work for one-shot commands but not for interactive stepping.
-
-7. **Security.** `--inspect=0.0.0.0:9229` exposes arbitrary code execution. Always bind to `127.0.0.1` (the default) unless you have an isolated network.
+- TS breakpoints target emitted JS; use `dist/*.js`, or sourcemaps with a CDP
+  client; `node inspect` CLI does not follow sourcemaps
+- `--inspect` does not pause; late attach can miss breakpoints; use `--inspect-brk`
+- default port 9229 collides; use `--inspect=0` and inspect `/json/list`
+- parent inspector does not inspect children; `NODE_OPTIONS='--inspect-brk'` can
+  propagate, but children need unique ports (auto-increment with `--inspect`)
+- Ctrl+C while target paused leaves it paused; `cont` or kill target
+- interactive `node inspect` needs `terminal(pty=true)` or background `process`
+- `--inspect=0.0.0.0:9229` exposes arbitrary code execution; bind localhost
+- chrome-remote-interface is not a project dependency; install throwaway
 
 ## Verification Checklist
 
-After setting up a debug session, verify:
-
-- [ ] `curl -s http://127.0.0.1:9229/json/list` returns exactly the target you expect
-- [ ] First breakpoint actually hits (if it doesn't, you likely missed `--inspect-brk` or attached after execution completed)
-- [ ] Source listing at pause shows the right file (mismatch = sourcemap issue, see pitfall 1)
-- [ ] `exec process.pid` in `repl` returns the PID you meant to attach to
+- [ ] `/json/list` returns the intended target
+- [ ] first breakpoint hits; otherwise check `--inspect-brk`/attach timing
+- [ ] paused source file is correct; mismatch indicates sourcemap issue
+- [ ] `exec process.pid`/`repl` confirms intended PID
+- [ ] profiles saved only where intended; target resumed/terminated
 
 ## One-Shot Recipes
 
 **"Why is this variable undefined at line X?"**
+
 ```bash
 node --inspect-brk script.js &
 node inspect -p $!
@@ -303,6 +292,7 @@ repl
 ```
 
 **"What's the call path into this function?"**
+
 ```
 debug> sb('suspectFn')
 debug> cont
@@ -311,6 +301,7 @@ debug> bt
 ```
 
 **"This async chain hangs — where?"**
+
 ```
 # Start with --inspect (no -brk), let it run to the hang, then:
 debug> pause

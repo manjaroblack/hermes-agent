@@ -13,28 +13,27 @@ metadata:
 
 # Test-Driven Development (TDD)
 
-## Overview
+role: test-first implementation operator
+do: write one behavior test; watch RED; implement minimum GREEN; watch pass; refactor; repeat; verify full suite
+inputs: required behavior/API, edge cases, test framework, implementation target
+outputs: behavior-focused tests, minimal implementation, green regression suite, clean refactor
+¬: production code before failing test; keep prewritten implementation; tests-after; mocks instead of real behavior; horizontal test/implementation piles; skip RED/GREEN; rationalize exceptions without permission
 
-Write the test first. Watch it fail. Write minimal code to pass.
-
-**Core principle:** If you didn't watch the test fail, you don't know if it tests the right thing.
-
-**Violating the letter of the rules is violating the spirit of the rules.**
+Write the test first, watch it fail, then write the minimum code to pass. If the
+failure was not observed, test validity is unknown.
 
 ## When to Use
 
-**Always:**
-- New features
-- Bug fixes
-- Refactoring
-- Behavior changes
+Always for new features, bug fixes, refactors, and behavior changes. Exceptions
+only after asking user: throwaway prototypes, generated code, configuration.
+“Just this once” is rationalization.
 
-**Exceptions (ask the user first):**
-- Throwaway prototypes
-- Generated code
-- Configuration files
+## Prerequisites
 
-Thinking "skip TDD just this once"? Stop. That's rationalization.
+- required behavior/API and edge cases
+- project test command and target test location
+- real implementation path; mocks only when unavoidable
+- permission to delete prewritten production code if it predates RED
 
 ## The Iron Law
 
@@ -42,23 +41,15 @@ Thinking "skip TDD just this once"? Stop. That's rationalization.
 NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST
 ```
 
-Write code before the test? Delete it. Start over.
+Code before test → delete it (do not keep/adapt/reference it); implement fresh
+from tests.
 
-**No exceptions:**
-- Don't keep it as "reference"
-- Don't "adapt" it while writing tests
-- Don't look at it
-- Delete means delete
+## Procedure
 
-Implement fresh from tests. Period.
+### RED — Write one failing test
 
-## Red-Green-Refactor Cycle
+One behavior/test, clear name, real code, behavior not implementation:
 
-### RED — Write Failing Test
-
-Write one minimal test showing what should happen.
-
-**Good test:**
 ```python
 def test_retries_failed_operations_3_times():
     attempts = 0
@@ -74,9 +65,12 @@ def test_retries_failed_operations_3_times():
     assert result == 'success'
     assert attempts == 3
 ```
-Clear name, tests real behavior, one thing.
 
-**Bad test:**
+Requirements: one behavior; split names containing “and”; use mocks only when
+unavoidable; test real code.
+
+Bad:
+
 ```python
 def test_retry_works():
     mock = MagicMock()
@@ -84,43 +78,31 @@ def test_retry_works():
     result = retry_operation(mock)
     assert result == 'success'  # What about retry count? Timing?
 ```
-Vague name, tests mock not real code.
 
-**Requirements:**
-- One behavior per test
-- Clear descriptive name ("and" in name? Split it)
-- Real code, not mocks (unless truly unavoidable)
-- Name describes behavior, not implementation
-
-### Verify RED — Watch It Fail
-
-**MANDATORY. Never skip.**
+### Verify RED — watch failure (mandatory)
 
 ```bash
 # Use terminal tool to run the specific test
 pytest tests/test_feature.py::test_specific_behavior -v
 ```
 
-Confirm:
-- Test fails (not errors from typos)
-- Failure message is expected
-- Fails because the feature is missing
+Confirm failure is expected, not typo/error, and feature is missing. Immediate
+pass = existing behavior → fix test. Error → fix test error until correct RED.
 
-**Test passes immediately?** You're testing existing behavior. Fix the test.
+### GREEN — minimum implementation
 
-**Test errors?** Fix the error, re-run until it fails correctly.
+Simplest code that passes, nothing extra:
 
-### GREEN — Minimal Code
-
-Write the simplest code to pass the test. Nothing more.
-
-**Good:**
 ```python
 def add(a, b):
     return a + b  # Nothing extra
 ```
 
-**Bad:**
+Do not add features/refactor beyond test. Hardcoding/copy-paste/duplication/edge
+case omissions are temporarily allowed in GREEN; fix in REFACTOR.
+
+Bad:
+
 ```python
 def add(a, b):
     result = a + b
@@ -128,19 +110,7 @@ def add(a, b):
     return result
 ```
 
-Don't add features, refactor other code, or "improve" beyond the test.
-
-**Cheating is OK in GREEN:**
-- Hardcode return values
-- Copy-paste
-- Duplicate code
-- Skip edge cases
-
-We'll fix it in REFACTOR.
-
-### Verify GREEN — Watch It Pass
-
-**MANDATORY.**
+### Verify GREEN — watch pass (mandatory)
 
 ```bash
 # Run the specific test
@@ -150,36 +120,18 @@ pytest tests/test_feature.py::test_specific_behavior -v
 pytest tests/ -q
 ```
 
-Confirm:
-- Test passes
-- Other tests still pass
-- Output pristine (no errors, warnings)
+Confirm test + suite pass and output has no errors/warnings. Test failure → fix
+code, not test; other failure → fix regression now.
 
-**Test fails?** Fix the code, not the test.
+### REFACTOR — clean only after GREEN
 
-**Other tests fail?** Fix regressions now.
-
-### REFACTOR — Clean Up
-
-After green only:
-- Remove duplication
-- Improve names
-- Extract helpers
-- Simplify expressions
-
-Keep tests green throughout. Don't add behavior.
-
-**If tests fail during refactor:** Undo immediately. Take smaller steps.
-
-### Repeat
-
-Next failing test for next behavior. One cycle at a time.
+Remove duplication, improve names, extract helpers, simplify expressions. Keep
+tests green; add no behavior. Refactor failure → undo immediately and take smaller
+steps. Repeat one RED→GREEN→REFACTOR cycle per behavior.
 
 ## Avoid Horizontal Slices
 
-Do **not** write all tests first and then all implementation. That is horizontal slicing: RED becomes "write a pile of imagined tests" and GREEN becomes "make the pile pass." It produces brittle tests because the tests are designed before the implementation has taught you what behavior and interface actually matter.
-
-Use vertical tracer bullets instead:
+Do not write all tests then all implementation. Use vertical tracer bullets:
 
 ```text
 WRONG:
@@ -192,118 +144,64 @@ RIGHT:
   RED→GREEN: test3→impl3
 ```
 
-A tracer bullet is one end-to-end behavior slice. It proves the path works, teaches you about the interface, and keeps each next test grounded in what you just learned.
+Each tracer is one end-to-end behavior; it proves path and teaches the next
+interface.
 
 ## Why Order Matters
 
-**"I'll write tests after to verify it works"**
-
-Tests written after code pass immediately. Passing immediately proves nothing:
-- Might test the wrong thing
-- Might test implementation, not behavior
-- Might miss edge cases you forgot
-- You never saw it catch the bug
-
-Test-first forces you to see the test fail, proving it actually tests something.
-
-**"I already manually tested all the edge cases"**
-
-Manual testing is ad-hoc. You think you tested everything but:
-- No record of what you tested
-- Can't re-run when code changes
-- Easy to forget cases under pressure
-- "It worked when I tried it" ≠ comprehensive
-
-Automated tests are systematic. They run the same way every time.
-
-**"Deleting X hours of work is wasteful"**
-
-Sunk cost fallacy. The time is already gone. Your choice now:
-- Delete and rewrite with TDD (high confidence)
-- Keep it and add tests after (low confidence, likely bugs)
-
-The "waste" is keeping code you can't trust.
-
-**"TDD is dogmatic, being pragmatic means adapting"**
-
-TDD IS pragmatic:
-- Finds bugs before commit (faster than debugging after)
-- Prevents regressions (tests catch breaks immediately)
-- Documents behavior (tests show how to use code)
-- Enables refactoring (change freely, tests catch breaks)
-
-"Pragmatic" shortcuts = debugging in production = slower.
-
-**"Tests after achieve the same goals — it's spirit not ritual"**
-
-No. Tests-after answer "What does this do?" Tests-first answer "What should this do?"
-
-Tests-after are biased by your implementation. You test what you built, not what's required. Tests-first force edge case discovery before implementing.
+Tests-after pass immediately and may test implementation, wrong behavior, or
+missed edges; manual testing is unrecorded/unrepeatable; sunk cost does not make
+unverified code trustworthy. TDD finds bugs before commit, prevents regressions,
+documents behavior, and enables refactoring. Tests-first asks “what should this
+do?”; tests-after asks “what does this do?”
 
 ## Common Rationalizations
 
 | Excuse | Reality |
-|--------|---------|
-| "Too simple to test" | Simple code breaks. Test takes 30 seconds. |
-| "I'll test after" | Tests passing immediately prove nothing. |
-| "Tests after achieve same goals" | Tests-after = "what does this do?" Tests-first = "what should this do?" |
-| "Already manually tested" | Ad-hoc ≠ systematic. No record, can't re-run. |
-| "Deleting X hours is wasteful" | Sunk cost fallacy. Keeping unverified code is technical debt. |
-| "Keep as reference, write tests first" | You'll adapt it. That's testing after. Delete means delete. |
-| "Need to explore first" | Fine. Throw away exploration, start with TDD. |
-| "Test hard = design unclear" | Listen to the test. Hard to test = hard to use. |
-| "TDD will slow me down" | TDD faster than debugging. Pragmatic = test-first. |
-| "Manual test faster" | Manual doesn't prove edge cases. You'll re-test every change. |
-| "Existing code has no tests" | You're improving it. Add tests for the code you touch. |
+|---|---|
+| “Too simple to test” | Simple code breaks; test takes 30 seconds. |
+| “I'll test after” | Immediate pass proves nothing. |
+| “Tests after achieve same goals” | Tests-after = what; tests-first = should. |
+| “Already manually tested” | Ad-hoc, no record/re-run, misses cases. |
+| “Deleting hours is wasteful” | Sunk cost; unverified code is debt. |
+| “Keep as reference” | You will adapt it; delete means delete. |
+| “Need to explore first” | Throw away exploration, restart TDD. |
+| “Test hard = design unclear” | Hard to test = hard to use; simplify. |
+| “TDD slows me down” | Faster than production debugging. |
+| “Manual test faster” | Does not prove edges; every change repeats it. |
+| “Existing code has no tests” | Add tests for code touched. |
 
 ## Red Flags — STOP and Start Over
 
-If you catch yourself doing any of these, delete the code and restart with TDD:
-
-- Code before test
-- Test after implementation
-- Test passes immediately on first run
-- Can't explain why test failed
-- Tests added "later"
-- Rationalizing "just this once"
-- "I already manually tested it"
-- "Tests after achieve the same purpose"
-- "Keep as reference" or "adapt existing code"
-- "Already spent X hours, deleting is wasteful"
-- "TDD is dogmatic, I'm being pragmatic"
-- "This is different because..."
-
-**All of these mean: Delete code. Start over with TDD.**
+Delete/restart TDD if: code before test; test-after; immediate first pass; cannot
+explain RED; tests “later”; “just this once”; manual-only verification; reference/
+adapt existing implementation; sunk-cost defense; “dogmatic/pragmatic” defense;
+“This is different because…”.
 
 ## Verification Checklist
 
-Before marking work complete:
+- [ ] every new function/method has a test
+- [ ] watched each test fail before implementation
+- [ ] failure was expected feature absence, not typo
+- [ ] minimum code passed each test
+- [ ] all tests pass with pristine output
+- [ ] real code tested; mocks only unavoidable
+- [ ] edge cases/errors covered
 
-- [ ] Every new function/method has a test
-- [ ] Watched each test fail before implementing
-- [ ] Each test failed for expected reason (feature missing, not typo)
-- [ ] Wrote minimal code to pass each test
-- [ ] All tests pass
-- [ ] Output pristine (no errors, warnings)
-- [ ] Tests use real code (mocks only if unavoidable)
-- [ ] Edge cases and errors covered
-
-Can't check all boxes? You skipped TDD. Start over.
+Missing box → TDD skipped; restart.
 
 ## When Stuck
 
 | Problem | Solution |
-|---------|----------|
-| Don't know how to test | Write the wished-for API. Write the assertion first. Ask the user. |
-| Test too complicated | Design too complicated. Simplify the interface. |
-| Must mock everything | Code too coupled. Use dependency injection. |
-| Test setup huge | Extract helpers. Still complex? Simplify the design. |
+|---|---|
+| Don't know how to test | Write wished-for API/assertion; ask user. |
+| Test too complicated | Simplify design/interface. |
+| Must mock everything | Decouple with dependency injection. |
+| Test setup huge | Extract helpers; simplify if still complex. |
 
 ## Hermes Agent Integration
 
-### Running Tests
-
-Use the `terminal` tool to run tests at each step:
+### Running tests
 
 ```python
 # RED — verify failure
@@ -316,9 +214,7 @@ terminal("pytest tests/test_feature.py::test_name -v")
 terminal("pytest tests/ -q")
 ```
 
-### With delegate_task
-
-When dispatching subagents for implementation, enforce TDD in the goal:
+### Delegated implementation
 
 ```python
 delegate_task(
@@ -341,16 +237,27 @@ delegate_task(
 
 ### With systematic-debugging
 
-Bug found? Write failing test reproducing it. Follow TDD cycle. The test proves the fix and prevents regression.
-
-Never fix bugs without a test.
+Bug → RED reproduction → systematic root cause → GREEN root fix → regression
+proof. Never fix bugs without a test.
 
 ## Testing Anti-Patterns
 
-- **Testing mock behavior instead of real behavior** — mocks should verify interactions, not replace the system under test
-- **Testing implementation details** — test behavior/results, not internal method calls
-- **Happy path only** — always test edge cases, errors, and boundaries
-- **Brittle tests** — tests should verify behavior, not structure; refactoring shouldn't break them
+- test mock behavior instead of real behavior
+- test implementation details instead of behavior/results
+- happy path only; cover edges/errors/boundaries
+- brittle structure tests that refactors break
+
+## Pitfalls
+
+- skipping RED/GREEN loses proof the test catches behavior
+- immediate pass usually means wrong/existing behavior
+- test typo errors are not valid RED
+- horizontal slices produce imagined/brittle tests
+- “minimum GREEN” is not permission to ship cheating shortcuts
+- refactor only after GREEN; undo if tests fail
+- `scripts/run_tests.sh`/runner may differ from raw pytest; use project convention
+- mocks hide integration behavior; use real code where possible
+- existing untested code still needs tests at touched seams
 
 ## Final Rule
 
@@ -359,4 +266,4 @@ Production code → test exists and failed first
 Otherwise → not TDD
 ```
 
-No exceptions without the user's explicit permission.
+No exceptions without explicit user permission.

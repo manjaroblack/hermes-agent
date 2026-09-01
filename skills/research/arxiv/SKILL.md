@@ -13,7 +13,29 @@ metadata:
 
 # arXiv Research
 
-Search and retrieve academic papers from arXiv via their free REST API. No API key, no dependencies — just curl.
+role: academic-paper discovery and retrieval operator
+do: search arXiv; fetch metadata/abstract/PDF; generate BibTeX; inspect citations/related work/authors via Semantic Scholar
+inputs: keywords, author/category/ID, query operators, sort/pagination, paper ID/version
+outputs: Atom metadata, parsed paper list, BibTeX, abstracts/PDF content, citation/reference/recommendation/author data
+¬: invent citations; ignore withdrawal notices; cite a later arXiv version than the one read; exceed API rate limits
+
+Use arXiv's free REST API (Atom XML; no key/dependencies) plus Semantic Scholar's
+free JSON API for citation data and recommendations. `scripts/search_arxiv.py`
+uses Python stdlib only.
+
+## When to Use
+
+- discover papers by keyword, author, category, or arXiv ID
+- retrieve abstracts, full PDFs, metadata, BibTeX, citations, references
+- find related papers, recommendations, or author profiles
+- assess impact before reading or citing a paper
+- preserve the exact arXiv version used in a citation
+
+## Prerequisites
+
+- `curl` + Python stdlib for API calls and parsing
+- Hermes `web_extract` for abstract/full-paper content
+- no API key; respect arXiv ~1 request / 3 seconds and Semantic Scholar 1 request / second
 
 ## Quick Reference
 
@@ -24,9 +46,17 @@ Search and retrieve academic papers from arXiv via their free REST API. No API k
 | Read abstract (web) | `web_extract(urls=["https://arxiv.org/abs/2402.03300"])` |
 | Read full paper (PDF) | `web_extract(urls=["https://arxiv.org/pdf/2402.03300"])` |
 
-## Searching Papers
+## Procedure
 
-The API returns Atom XML. Parse with `grep`/`sed` or pipe through `python` for clean output.
+1. Query arXiv; parse Atom XML with Python or `scripts/search_arxiv.py`.
+2. Filter/sort/paginate; retrieve specific IDs when needed.
+3. Read abstract/full paper with `web_extract`; use `ocr-and-documents` for local PDFs.
+4. Query Semantic Scholar for impact, citations, references, recommendations, or author profiles.
+5. Preserve the version actually read; inspect withdrawal status before treating a result as valid.
+
+### Search
+
+The API returns Atom XML. Parse with Python for clean output; use `search_files`/`patch` for local-file inspection or edits.
 
 ### Basic search
 
@@ -145,9 +175,7 @@ print('}')
 
 ## Reading Paper Content
 
-After finding a paper, read it:
-
-```
+```text
 # Abstract page (fast, metadata + abstract)
 web_extract(urls=["https://arxiv.org/abs/2402.03300"])
 
@@ -186,8 +214,6 @@ python scripts/search_arxiv.py --id 2402.03300,2401.12345
 ```
 
 No dependencies — uses only Python stdlib.
-
----
 
 ## Semantic Scholar (Citations, Related Papers, Author Profiles)
 
@@ -239,8 +265,6 @@ curl -s "https://api.semanticscholar.org/graph/v1/author/search?query=Yann+LeCun
 
 `title`, `authors`, `year`, `abstract`, `citationCount`, `referenceCount`, `influentialCitationCount`, `isOpenAccess`, `openAccessPdf`, `fieldsOfStudy`, `publicationVenue`, `externalIds` (contains arXiv ID, DOI, etc.)
 
----
-
 ## Complete Research Workflow
 
 1. **Discover**: `python scripts/search_arxiv.py "your topic" --sort date --max 10`
@@ -251,32 +275,21 @@ curl -s "https://api.semanticscholar.org/graph/v1/author/search?query=Yann+LeCun
 6. **Get recommendations**: POST to Semantic Scholar recommendations endpoint
 7. **Track authors**: `curl -s "https://api.semanticscholar.org/graph/v1/author/search?query=NAME"`
 
-## Rate Limits
+## Pitfalls
 
-| API | Rate | Auth |
-|-----|------|------|
-| arXiv | ~1 req / 3 seconds | None needed |
-| Semantic Scholar | 1 req / second | None (100/sec with API key) |
+- arXiv returns Atom XML; use the helper or parsing snippet for readable output
+- Semantic Scholar returns JSON; pipe through `python -m json.tool`
+- arXiv IDs have old (`hep-th/0601001`) and new (`2402.03300`) forms
+- `https://arxiv.org/pdf/{id}` = PDF; `https://arxiv.org/abs/{id}` = abstract; HTML when available: `https://arxiv.org/html/{id}`
+- API rates: arXiv ~1 request / 3 seconds; Semantic Scholar 1 request / second; no key (100/sec with Semantic Scholar API key)
+- paper snapshots can be stale; a withdrawn result may have incomplete metadata
+- `/abs/1706.03762` resolves latest; `/abs/1706.03762v1` resolves immutable version; cite the version actually read
+- always inspect `<summary>` for “withdrawn” or “retracted” before treating a result as valid
 
-## Notes
+## Verification
 
-- arXiv returns Atom XML — use the helper script or parsing snippet for clean output
-- Semantic Scholar returns JSON — pipe through `python -m json.tool` for readability
-- arXiv IDs: old format (`hep-th/0601001`) vs new (`2402.03300`)
-- PDF: `https://arxiv.org/pdf/{id}` — Abstract: `https://arxiv.org/abs/{id}`
-- HTML (when available): `https://arxiv.org/html/{id}`
-- For local PDF processing, see the `ocr-and-documents` skill
-
-## ID Versioning
-
-- `arxiv.org/abs/1706.03762` always resolves to the **latest** version
-- `arxiv.org/abs/1706.03762v1` points to a **specific** immutable version
-- When generating citations, preserve the version suffix you actually read to prevent citation drift (a later version may substantially change content)
-- The API `<id>` field returns the versioned URL (e.g., `http://arxiv.org/abs/1706.03762v7`)
-
-## Withdrawn Papers
-
-Papers can be withdrawn after submission. When this happens:
-- The `<summary>` field contains a withdrawal notice (look for "withdrawn" or "retracted")
-- Metadata fields may be incomplete
-- Always check the summary before treating a result as a valid paper
+- query parses and returns expected paper metadata/IDs
+- requested abstract/PDF or API object was retrieved
+- generated BibTeX fields match fetched metadata; version suffix preserved
+- citation/reference/recommendation/author data identifies its source paper
+- withdrawal notice checked; API use remains within stated rate limits
