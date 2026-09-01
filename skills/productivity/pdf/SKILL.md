@@ -1,45 +1,44 @@
 ---
 name: pdf
-description: Create, read, merge, fill, and secure PDF files.
-version: 1.0.0
+description: "PDF files: create, read, merge, fill, OCR, edit text."
+version: 1.1.0
 author: Nous Research
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
   hermes:
-    tags: [pdf, documents, forms, reportlab, pypdf, pdfplumber]
+    tags: [pdf, documents, forms, ocr, text-extraction, reportlab, pypdf, pdfplumber, pymupdf, marker]
     category: productivity
-    related_skills: [docx, xlsx, powerpoint, ocr-and-documents]
+    related_skills: [docx, xlsx, powerpoint]
 ---
 
-# PDF
+# PDF Skill
 
-role: PDF creator/extractor/form/manipulation operator
-do: inspect; create report/form; extract text/tables/meta/fields; merge/split/rotate; watermark/stamp/bookmark/compress; render; attach; encrypt/decrypt; verify
-inputs: PDF/spec/formspec/field values, page ranges/coordinates, passwords, metadata/attachments
-outputs: PDF/PNG/JSON/CSV, fields/meta/attachments, render status, verification evidence
-¬: OCR image-only PDFs (use `ocr-and-documents`); HTML pixel-perfect rendering (use headless browser); call permission bits security; skip layout lint/visual check; report empty text as no content; expose passwords
+Create PDFs from structured specs, build and fill AcroForm forms (with layout linting and visual overlays), extract text/tables/metadata, merge/split/rotate/watermark/stamp pages, export page images, manage metadata and attachments, and encrypt/decrypt — using pypdf, reportlab, and pdfplumber. Two absorbed capabilities live in references/ (read the matching file before those tasks):
 
-Uses pypdf, reportlab, pdfplumber. Scanned/image-only pages lack text layer:
-stop and hand to `ocr-and-documents`.
+- **Scanned/image-only PDFs and OCR** (pymupdf fast path, marker-pdf quality path, scripts/extract_pymupdf.py + scripts/extract_marker.py): `references/ocr-extraction.md`
+- **Editing text inside an existing PDF via natural-language prompts** (nano-pdf CLI): `references/nano-pdf-editing.md`
 
 ## When to Use
 
-- reports/invoices/multi-page PDFs
-- fillable AcroForms: text/checkbox/radio/dropdown, layout lint + overlay
-- text/tables (JSON/CSV), metadata, form values
-- merge/split/rotate/subset/watermark/stamp/bookmark/compress
-- page PNGs, metadata, attachments, fill/flatten, encrypt/decrypt
+- Generate a report, invoice, or multi-page document as PDF.
+- Build a fillable AcroForm (text/checkbox/radio/dropdown) from a JSON spec, linting the layout first.
+- Pull text, tables (JSON/CSV), metadata, or form-field values out of a PDF.
+- Merge, split, rotate, extract page subsets, watermark, stamp text/images at coordinates, bookmark, or compress PDFs.
+- Export pages as PNGs for visual review or for OCR hand-off; set/clear document metadata; add/extract file attachments.
+- Fill or flatten AcroForm forms; encrypt or decrypt with passwords.
+- NOT for scanned/image-only PDFs (use `references/ocr-extraction.md`) and NOT for pixel-perfect HTML-to-PDF rendering (use a headless browser).
 
-## Prerequisites + Runtime
+## Prerequisites
 
-- Python 3.10+ + `pypdf`, `reportlab`, `pdfplumber`:
+- Python 3.10+ with `pypdf`, `reportlab`, `pdfplumber`:
   `python -m pip install pypdf reportlab pdfplumber`
-- optional page raster: `python -m pip install pypdfium2`, or poppler
-  `pdftoppm`; fallback pypdfium2 → pdftoppm; neither →
-  `{"rendered": false, "missing": [...]}` exit 0
-- helpers lazy-check imports, print install hint, all support `--help`
-- JSON strict UTF-8 stdout; non-zero on failure; invoke via `terminal`
+- Optional, for page rasterization (`pdf_page_image.py`, overlay rendering): `python -m pip install pypdfium2`, or poppler's `pdftoppm` on PATH. Scripts fall back pypdfium2 → pdftoppm and report `{"rendered": false, "missing": [...]}` (exit 0) when neither exists.
+- Each helper script checks imports lazily and prints an install hint if a dependency is missing.
+
+## How to Run
+
+All helpers live in `scripts/` and are argparse CLIs — run them with the `terminal` tool; every one supports `--help`. They read/write JSON strictly as UTF-8, print JSON results to stdout, and exit non-zero on failure.
 
 ```bash
 python scripts/pdf_create.py spec.json -o out.pdf         # build PDF from JSON spec
@@ -74,7 +73,7 @@ python scripts/pdf_meta.py doc.pdf --list-attachments | --extract-attachments di
 | Lint form layout / overlay image | pure python + PIL | `pdf_form_layout.py formspec.json [--render-overlay o.png]` |
 | Per-page text | pdfplumber | `pdf_read.py f.pdf --text` |
 | Tables → JSON/CSV | pdfplumber | `pdf_read.py f.pdf --tables` |
-| Metadata / page_count / sizes / encrypted / scanned | pypdf + pdfplumber | `pdf_read.py f.pdf --meta` |
+| Metadata / sizes / encrypted / scanned | pypdf + pdfplumber | `pdf_read.py f.pdf --meta` |
 | Merge (+ outline) | pypdf | `pdf_merge.py a.pdf b.pdf -o m.pdf` |
 | Split / extract / rotate | pypdf | `pdf_split.py f.pdf --pages 2-5 --rotate 90` |
 | List / fill / flatten form | pypdf | `pdf_read.py --fields`, `pdf_fill_form.py` |
@@ -87,60 +86,40 @@ python scripts/pdf_meta.py doc.pdf --list-attachments | --extract-attachments di
 
 ## Procedure
 
-1. **Inspect**: `pdf_read.py file.pdf --meta`; check `encrypted` and
-   `likely_scanned_pages`. Encrypted → decrypt first. Image-only pages →
-   `pdf_page_image.py --pages <scanned> --dpi 300 --out-dir imgs/` →
-   `ocr-and-documents`; never call empty text no content.
-2. **Create**: `write_file` JSON elements `heading`, `paragraph`, `table`,
-   `image`, `pagebreak`; optional `title`/`author`; automatic page numbers;
-   `pdf_create.py`; visual `vision_analyze` when layout matters.
-3. **Extract**: `--text` per-page JSON; `--tables` row arrays + optional CSV;
-   inspect with `read_file`, not binary eyeballing.
-4. **Manipulate**: merge bookmarks one/source; split 1-based ranges
-   (`1-3,5,9-`), 90° rotation, `--compress`; watermark single-page stamp;
-   `pdf_stamp.py` for text/image coordinates.
-5. **Forms**: formspec `label_box`/`entry_box` in PDF points
-   ([references/forms.md](references/forms.md)); lint and fix every issue;
-   optional overlay `vision_analyze`; build; confirm `--fields`.
-6. **Fill**: list exact names/types; UTF-8 `{"FieldName": "value"}`;
-   checkbox bool; radio/choice exact export option; fill; re-read.
-7. **Metadata/files**: `--set-meta` Title/Author/Subject/Keywords DocInfo;
-   `--clear-meta`; attach/list/extract round-trip.
-8. **Secure**: distinct user/owner passwords + AES-256; known password
-   `--decrypt` writes unencrypted copy.
-9. **Verify** below.
+1. **Inspect first.** Run `pdf_read.py file.pdf --meta`. Check `encrypted` (if true, decrypt first with `pdf_secure.py --decrypt`) and `likely_scanned_pages`. If pages are image-only, export them with `pdf_page_image.py --pages <scanned> --dpi 300 --out-dir imgs/` and hand the PNGs to the `references/ocr-extraction.md` skill — do not report empty text as "no content".
+2. **Create.** Write a JSON spec with `write_file` (elements: `heading`, `paragraph`, `table`, `image`, `pagebreak`; optional `title`/`author` metadata; page numbers are added automatically), then run `pdf_create.py`. Verify visually with `vision_analyze` on a rendered page image if layout matters.
+3. **Extract.** `--text` gives a JSON list of per-page strings; `--tables` gives row arrays per page and can also emit CSV files. Read results with `read_file`; never eyeball a binary PDF directly.
+4. **Manipulate.** `pdf_merge.py` concatenates and can add one bookmark per source file; `pdf_split.py` handles page ranges (1-based, e.g. `1-3,5,9-`), rotation in 90° steps, and `--compress`. Watermark by preparing a single-page stamp PDF (e.g. via `pdf_create.py`) and overlaying it with `pdf_watermark.py`; for one-liner stamps ("sign here", diagonal DRAFT, corner labels) use `pdf_stamp.py` with text or an image at explicit coordinates.
+5. **Build forms.** Write one form-spec JSON (fields with `label_box`/`entry_box` in PDF points — see `references/forms.md`), lint it with `pdf_form_layout.py` and fix every reported problem, optionally review the `--render-overlay` PNG with `vision_analyze`, then build with `pdf_make_form.py` and confirm with `pdf_read.py --fields`.
+6. **Fill forms.** List fields (`--fields`) to learn exact names and types, write a UTF-8 JSON of `{"FieldName": "value"}` with `write_file` (checkboxes accept `true`/`false`; radio/choice values must match the field's export options), then `pdf_fill_form.py`. Re-read with `--fields` to confirm values landed.
+7. **Metadata & attachments.** `pdf_meta.py --set-meta` writes Title/Author/Subject/Keywords (DocInfo); `--clear-meta` drops them; `--attach`/`--list-attachments`/`--extract-attachments` round-trip embedded files.
+8. **Secure.** Encrypt with distinct user/owner passwords and AES-256. To remove a password you know, `--decrypt` writes an unencrypted copy.
+9. **Verify** (see below) before reporting success.
 
 ## Pitfalls
 
-- scanned PDF = empty `extract_text()` + page images → OCR skill; no fabrication
-- flattening: `--flatten` pypdf appearance→page content; reliable plain text/
-  checkbox, may drop exotic widgets/radios; render `vision_analyze`; external
-  Ghostscript or `pdftoppm`+reassembly for bulletproof fallback
-- `NeedAppearances` set for conforming viewers; minimal viewers may ignore;
-  flatten when display fidelity matters
-- non-Latin values stored UTF-16 but default field font may lack glyphs; verify
-  `--fields`, not visual only
-- `--compress` deflates streams only (0–20% typical); no image downsampling
-- owner permission bits are polite, removable; only user password gates content
-- table extraction heuristic; tune `table_settings`/clean manually
-- CLI pages 1-based; pypdf APIs 0-based; scripts convert once
-- rotated text extraction may scramble; pypdf `extract_text()`/render instead
-- radio groups: ≥2 `radio()` widgets; fill slashed export (`"/red"`); see
-  [references/forms.md](references/forms.md)
-- `pdf_meta.py` classic DocInfo only; XMP untouched
-- PDF/A out of scope; use `terminal` Ghostscript (e.g.
-  `gs -dPDFA=2 -dPDFACompatibilityPolicy=1 -sColorConversionStrategy=UseDeviceIndependentColor -sDEVICE=pdfwrite -o out.pdf in.pdf` with suitable ICC) + veraPDF; validate
-- rotation multiple of 90; decrypt encrypted input before operations
+- **Scanned PDFs**: empty `extract_text()` plus page images means there is no text layer. Route to `references/ocr-extraction.md`; do not fabricate text.
+- **Flattening limits**: `pdf_fill_form.py --flatten` uses pypdf's flatten support, which converts widget appearances into page content. It is reliable for plain text fields and checkboxes but can drop or misrender exotic widgets (rich text, custom appearance streams, some radio groups). Verify the flattened output visually with `vision_analyze`; for bulletproof flattening use an external renderer (e.g. Ghostscript or `pdftoppm`+reassembly) as a fallback.
+- **NeedAppearances**: after filling, viewers only render values if appearance streams exist. The fill script sets the AcroForm `NeedAppearances` flag so conforming viewers regenerate them; some minimal viewers ignore it — flatten if display fidelity matters.
+- **Non-Latin form values**: values are stored correctly (UTF-16), but the field's default font may lack glyphs, so a viewer can show blanks even though the data round-trips. Verify with `--fields`, not just visually.
+- **Compression expectations**: `--compress` only deflates content streams. Typical savings are 0–20%; it does nothing for PDFs dominated by images or already-compressed streams. It is not a substitute for image downsampling (Ghostscript territory).
+- **Permission flags don't enforce**: owner-password permission bits (no-print, no-copy) are polite requests that viewers may honor; any library (including pypdf) can read and strip them. Only the user password actually gates content via encryption. Never present permission flags as security.
+- **Table extraction is heuristic**: pdfplumber detects tables from ruling lines/word alignment; borderless or merged-cell tables may need `table_settings` tuning or manual cleanup.
+- **Page indexing**: helper CLIs take 1-based pages; pypdf APIs are 0-based. The scripts convert — don't double-convert.
+- **Rotated stamp text extraction**: pdfplumber's line grouping scrambles rotated glyphs (a 45° "DRAFT" extracts as stray letters); verify rotated stamps with `pypdf`'s `extract_text()` or a rendered image instead.
+- **Radio groups**: reportlab needs ≥2 `radio()` widgets per group, fills need the slashed export value (`"/red"`), and flatten fidelity is worst for radios — see `references/forms.md`.
+- **Metadata scope**: `pdf_meta.py` writes the classic DocInfo dictionary only; embedded XMP metadata (if any) is left untouched and may show different values in some viewers.
+- **PDF/A is out of scope**: pypdf/reportlab cannot produce or validate conformant PDF/A. If archival conformance is required, run Ghostscript via the `terminal` tool (e.g. `gs -dPDFA=2 -dPDFACompatibilityPolicy=1 -sColorConversionStrategy=UseDeviceIndependentColor -sDEVICE=pdfwrite -o out.pdf in.pdf` with a suitable ICC profile) and validate with veraPDF — both are external installs, and the result still needs validation, not assumption.
+- Rotation must be a multiple of 90; encrypted inputs must be decrypted before any other operation.
 
 ## Verification
 
-- create/merge/split → `pdf_read.py out.pdf --meta`; page count + rotations
-- extraction → non-empty JSON; known string/cell spot-check
-- form loop: layout lint exit 0 → overlay `boxes.png` with `vision_analyze`;
-  red entry boxes/field names, blue labels; iterate until no overlap/misalignment/detachment
-- built form → `pdf_read.py form.pdf --fields`: every type/options
-- filled → `pdf_read.py filled.pdf --fields`; exact values incl. non-ASCII
-- stamp → pypdf text for rotated or render with `pdf_page_image.py` + vision
-- metadata/attachment → meta/list; extract + byte-compare
-- encrypt → `"encrypted": true`, password required; decrypt text matches
-- visual watermark/flattened form → render + `vision_analyze`
+- After create/merge/split: `pdf_read.py out.pdf --meta` — confirm `page_count`, and per-page `rotation` when you rotated.
+- After extraction: check the JSON is non-empty and spot-check a known string or cell.
+- Form design loop: `pdf_form_layout.py spec.json` must exit 0; then `--render-overlay boxes.png --pdf form.pdf` and review the PNG with `vision_analyze` (red = entry boxes with field names, blue = label boxes) asking about overlaps, misalignment, and labels detached from their fields. Iterate spec → lint → overlay until clean.
+- After building a form: `pdf_read.py form.pdf --fields` lists every spec field with the right type and options.
+- After form fill: `pdf_read.py filled.pdf --fields` and compare values (exact match, including non-ASCII).
+- After stamping: re-extract text (pypdf for rotated stamps) or render the page with `pdf_page_image.py` and inspect with `vision_analyze`.
+- After metadata/attachment edits: `pdf_read.py --meta` / `pdf_meta.py --list-attachments`, and re-extract an attachment to byte-compare.
+- After encrypt: `--meta` shows `"encrypted": true` and opening without a password fails; after decrypt, text extraction matches the original.
+- For anything visual (watermarks, flattened forms), render and inspect with `vision_analyze`.
