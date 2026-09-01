@@ -242,7 +242,20 @@ Constant TOP (rgba32float, time) → GLSL TOP input 0
 GLSL TOP → Null TOP → MovieFileOut
 ```
 
-Rules: AudioSpectrum `TimeSlice` ON; `outputmenu='setmanually'`, `outlength=256`; never Lag/Filter CHOP (timeslice expansion makes values ~`1e-06`); smooth in GLSL via `mix(prevValue, newValue, 0.3)`; CHOP to TOP `dataformat = 'r'`, `layout = 'rowscropped'`, 256x2 stereo and y=0.25 first channel; Math gain 10 (raw bass ~0.19); no Resample CHOP.
+Rules:
+
+- AudioSpectrum `TimeSlice` ON; OFF processes the full audio file → 24000+
+  samples → CHOP-to-TOP overflow.
+- Set `outputmenu='setmanually'`, `outlength=256`; default output is 22050
+  samples.
+- ¬ Lag/Filter CHOP: timeslice expansion turns 256 samples into 2400+, averaging
+  to ~`1e-06`; GLSL receives no usable data; #1 audio-sync failure.
+- Smooth in GLSL via feedback texture + `mix(prevValue, newValue, 0.3)` for
+  frame-perfect sync with zero pipeline latency.
+- CHOP to TOP: `dataformat = 'r'`, `layout = 'rowscropped'`; 256x2 stereo,
+  sample y=0.25 for the first channel.
+- Math gain=10 (raw bass ~0.19; usable ~5.0); ¬ Resample CHOP; control output
+  size through AudioSpectrum `outlength`.
 
 ```glsl
 // Input 0 = time (1x1 rgba32float), Input 1 = spectrum (256x2)

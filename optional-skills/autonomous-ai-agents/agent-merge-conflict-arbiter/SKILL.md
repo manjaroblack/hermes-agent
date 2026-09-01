@@ -30,11 +30,16 @@ Prefer a third profile. Agents resolving against a peer tend to overwrite the pe
 
 - checkout containing halted merge, or both branch names + permission to merge
 - both intent sources: kanban completion summaries (`terminal` running `hermes kanban show <task-id>`), PR bodies, or commit messages
-- project build/test command
+- project build/test command, if one exists
 
 ## How to Run
 
-`delegate_task` prompt must include repo path, branch names, both intent summaries verbatim, and this skill. Preferred kanban shape:
+Standalone: invoke inside the conflicted repo; load this skill and follow the
+Procedure top→bottom.
+
+Spawned neutral agent: preferred in multi-agent campaigns. `delegate_task` prompt
+must include repo path, branch names, both intent summaries verbatim, and this
+skill. Preferred kanban shape:
 
 ```text
 kanban_create(title="reconcile branch-a x branch-b", assignee="reconciler", parents=["t_a", "t_b"])

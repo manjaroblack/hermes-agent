@@ -27,6 +27,15 @@ Load for "sketch this screen", "show me what X could look like", "compare layout
 
 If sibling `gsd-sketch` is installed via `npx get-shit-done-cc --hermes --global`, use its `/gsd-sketch` workflow for persistent `.planning/sketches/`, MANIFEST, frontier analysis, consistency audits, and GSD integration. This is the lightweight one-off path. Upstream [gsd-build/get-shit-done](https://github.com/gsd-build/get-shit-done) is archived/unmaintained; `get-shit-done-cc` still installs but is an archived community project.
 
+## Attribution
+
+Adapted from GSD `/gsd-sketch`; MIT © 2025 Lex Christopherson
+([gsd-build/get-shit-done](https://github.com/gsd-build/get-shit-done)). Upstream
+is archived/unmaintained; `get-shit-done-cc` still installs via
+`npx get-shit-done-cc --hermes --global` and provides persistent sketch state,
+theme/variant references, and consistency audits. This standalone `sketch` path
+is maintained and needs no extra setup.
+
 ## Procedure
 
 ```text

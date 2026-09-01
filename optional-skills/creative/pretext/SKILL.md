@@ -154,7 +154,7 @@ cd <dir-with-html> && python -m http.server 8765
 
 ## Pitfalls
 
-1. CSS/canvas font drift: `ctx.font = "16px Inter"` vs CSS `font-family: Inter, sans-serif; font-size: 16px`; preload Inter or use a web-safe family because fallback changes measurements.
+1. CSS/canvas font drift: `ctx.font = "16px Inter"` vs CSS `font-family: Inter, sans-serif; font-size: 16px`; preload Inter or use a web-safe family because a 404 fallback can drift measurements by 5–20%.
 2. Re-preparing in animation; only `layout*` is cheap.
 3. `"é".split("")` splits visible grapheme; use `new Intl.Segmenter(undefined, { granularity: "grapheme" })` for emoji/combining/CJK.
 4. `rich-inline` `break: 'never'` chips need `extraWidth` for pill padding.

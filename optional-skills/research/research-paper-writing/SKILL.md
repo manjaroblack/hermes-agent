@@ -77,9 +77,10 @@ artifacts.
 
 1. Be proactive: draft with flagged uncertainties; block only when venue is
    unclear, framings conflict, results are incomplete, or user requests review first.
-2. Never hallucinate citations; fetch programmatically and mark gaps
-   `[CITATION NEEDED]`.
-3. State one contribution sentence; map every experiment to a claim.
+2. Never hallucinate citations; AI-generated citations have ~40% error rate;
+   fetch programmatically and mark gaps `[CITATION NEEDED]`.
+3. Paper = story, not experiment collection; state one contribution sentence;
+   map every experiment to a claim.
 4. Commit each completed experiment batch and meaningful draft update with a
    descriptive message; git history = experiment history.
 
@@ -428,7 +429,7 @@ patterns, cron monitoring, and recovery.
 #### 2.5 Human evaluation
 
 Design before automated runs when metrics miss fluency/helpfulness/safety,
-claims concern readability/preference/trust, or NLP venues expect it.
+claims concern readability/preference/trust, or ACL/EMNLP venues expect it.
 
 | Decision | Options | Guidance |
 |----------|---------|----------|
@@ -681,7 +682,7 @@ Autoreason loop:
 4. Three blind CoT judges rank A/B/AB by Borda.
 5. Stop when A wins `k=2` consecutive passes.
 
-Parameters: `k=2`; CoT judges; temperature 0.8 authors/0.3 judges; incumbent
+Parameters: `k=2`; CoT judges always (3x faster convergence); temperature 0.8 authors/0.3 judges; incumbent
 wins ties; every role is a fresh isolated agent. For paper drafts, give critic
 actual data/result JSON/statistics, use ≥3 working judges, and constrain revision
 to named weaknesses.
@@ -1177,7 +1178,7 @@ JMLR, Foundations and Trends in ML, ACM Computing Surveys.
 
 Structure: Introduction → Task Definition → Dataset Construction → Baseline
 Evaluation → Analysis → Intended Use & Limitations. Benchmark fills evaluation gap;
-dataset documentation mandatory; baselines must not saturate; demonstrate construct
+dataset documentation/Datasheets mandatory; baselines must not saturate; demonstrate construct
 validity. Venues: NeurIPS Datasets & Benchmarks, ACL resources, LREC-COLING.
 
 ### Position
@@ -1218,7 +1219,7 @@ experiment/analysis pipeline and autoreason methodology.
 | **`memory`** | Persist contribution, venue, feedback, decisions |
 | **`cronjob`** | Experiment monitoring, deadline countdowns, arXiv checks |
 | **`clarify`** | Targeted questions when blocked on venue/framing |
-| **cron `deliver:`** | Notify user when unattended experiments/drafts complete via messaging destination |
+| **cron `deliver:` / `hermes send`** | Notify user when unattended experiments/drafts complete; no `send_message` tool — use a messaging `deliver:` target or `hermes send` |
 
 ### Tool Usage Patterns
 
