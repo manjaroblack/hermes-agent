@@ -13,8 +13,13 @@ metadata:
 
 # GitNexus Explorer
 
-Index any codebase into a knowledge graph and serve an interactive web UI for exploring
-symbols, call chains, clusters, and execution flows. Tunneled via Cloudflare for remote access.
+role: GitNexus codebase graph/explorer operator
+do: install/build GitNexus; patch same-origin UI; analyze repo; create proxy; serve API/UI; optionally tunnel; clean services/index
+inputs: git repo; Node 18+; cloudflared for remote access; ports; target path; tunnel exposure decision
+outputs: `.gitnexus/` index; interactive graph UI; local API/proxy URL; optional quick-tunnel URL; cleanup status
+¬: analyze untrusted code as executable; expose graph without user approval; tunnel dev server when production build is absent; ignore browser-size limits; leave services running unintentionally
+
+Index a codebase into a knowledge graph and serve an interactive UI for symbols, call chains, clusters, and execution flows; optionally tunnel through Cloudflare.
 
 ## When to Use
 
@@ -34,7 +39,7 @@ The web UI renders all nodes in the browser. Repos under ~5,000 files work well.
 repos (30k+ nodes) will be sluggish or crash the browser tab. The CLI/MCP tools work
 at any scale — only the web visualization has this limit.
 
-## Steps
+## Procedure
 
 ### 1. Clone and Build GitNexus (one-time setup)
 
@@ -212,3 +217,10 @@ rm -rf .claude/
 
 - **Multiple repos.** `gitnexus serve` serves ALL indexed repos. Index several
   repos, start serve once, and the web UI lets you switch between them.
+
+## Verification
+
+- GitNexus build completes; target analysis creates `.gitnexus/`.
+- `curl -s http://localhost:8888/api/repos` returns the indexed repo(s).
+- UI loads through the local proxy; tunnel URL is tested only after production build and explicit sharing approval.
+- Cleanup stops backend/proxy/tunnel and removes target index when requested.

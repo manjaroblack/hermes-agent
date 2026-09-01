@@ -13,22 +13,17 @@ metadata:
 
 # HAR-Derived API Client
 
-Drive a website once with a real browser while recording its network traffic
-to a HAR file, then distill that HAR into the site's private JSON API so you
-can call it directly with plain HTTP — far cheaper and faster than
-browser-controlling the page on every request. Credit: trick by Jared Longster,
-popularized by Dax (thdxr). This captures and replays; it does NOT bypass
-auth, solve CAPTCHAs, or defeat bot-detection — if the site needs a logged-in
-session, you carry its headers/cookies forward, you don't forge them.
+role: browser-network HAR capture and API-client operator
+do: choose local-vs-CDP capturer; record browser interaction; derive XHR/fetch endpoints; reproduce method/params/body/headers; replay browserless; redact/delete HAR
+inputs: site URL; browser pathway/CDP endpoint; interaction actions; session cookies/auth; host filter; output HAR/client
+outputs: HAR; endpoint/request schema; replay hints; HTTP client/CLI; matched response; credential/session limitations
+¬: bypass auth/CAPTCHA/bot detection; forge session headers; expose HAR secrets; use wrong capturer; trust browser success without client replay; assume private API stability
 
-The scripts are stdlib-plus-Playwright: capture needs Playwright, derivation
-is pure stdlib, replay needs only `requests`/`httpx` (or `curl`).
+Capture one browser session, distill XHR/fetch traffic into the site's private JSON API, then replay with plain HTTP. This captures/replays; it does not bypass auth, solve CAPTCHAs, or defeat bot detection.
 
-Covers **every Hermes browser pathway**: the default local `browser_navigate`
-backend, plus the cloud/remote backends (Browserbase, Browser-Use, Firecrawl)
-and any `/browser connect` CDP endpoint. There are two capture scripts — one
-for a browser you launch, one for a browser you attach to over CDP — because
-HAR recording works differently in each case (see How to Run).
+Runtime: capture needs Playwright; derivation uses stdlib; replay uses `requests`/`httpx` or `curl`.
+
+Covers local `browser_navigate`, cloud/remote Browserbase/Browser-Use/Firecrawl, and `/browser connect` CDP. Use separate launch-vs-attach scripts because HAR recording differs.
 
 ## When to Use
 

@@ -17,18 +17,15 @@ metadata:
 
 # unbroker
 
-Find where a person's personal information (name, addresses, phone, email, relatives) is exposed on
-data brokers and people-search sites, then remove it - automatically where possible, with guided
-human steps only where a site demands a CAPTCHA, government ID, phone call, or fax. Manages multiple
-people independently. It does **not** defeat anti-bot systems, does **not** act on anyone without
-recorded consent, and does **not** remove public records (voter/property/court) or accounts the
-person controls.
+role: consented personal-data broker opt-out operator
+do: intake consent; auto-configure; scan brokers; reduce/cluster; submit parents-first opt-outs; queue human tasks; poll/verify removal; re-scan; schedule next wake
+inputs: consenting subject/dossiers; disclosure fields; broker records; browser/email capabilities; autonomy mode; output/cron context
+outputs: exposure ledger; evidence/listing URLs; opt-out/email records; verification state; human-task digest; status/report; next wake
+¬: act without recorded consent; disclose beyond `disclosure_fields`; bypass CAPTCHA/anti-bot; remove public records/accounts; mark `confirmed_removed` without re-scan; ask per-step in `autonomy=full`
 
-The Python CLI (`scripts/pdd.py`) owns the deterministic state - config, dossiers + consent, the
-broker database, tier planning, the ledger, drafts, reports, **email sending (SMTP), verification-link
-polling (IMAP), and the autonomous action queue (`next`)**. You (the agent) do the scanning and
-form-driving with native tools: `web_extract` and `browser_navigate` for searching and web forms, and
-`cronjob` for recurring re-scans.
+Find and remove a consenting person's exposure on data brokers/people-search sites. Automate where possible; queue CAPTCHA, government-ID, phone, fax, mail, or voice work. Manage subjects independently; never defeat anti-bot systems or remove public records/accounts the person controls.
+
+State owner: `scripts/pdd.py` manages config, consented dossiers, broker database, tier plan, ledger, drafts/reports, SMTP sending, IMAP verification polling, and `next` queue. Agent uses `web_extract`/`browser_navigate` for scans/forms and `cronjob` for re-scans.
 
 ## Autonomy contract
 
@@ -93,7 +90,9 @@ verifying re-scan.
   - Google Sheets tracker: the `google-workspace` skill.
   - The `scrapling` skill for stealth/Cloudflare-protected pages.
 
-## How to Run
+## Procedure
+
+### How to Run
 
 Run everything through the `terminal` tool. From this skill's directory:
 
@@ -105,7 +104,7 @@ The engine stores data under `$PDD_DATA_DIR` (default `$HERMES_HOME/unbroker`), 
 `0600`. Run via `terminal`, **not** `execute_code` (that sandbox scrubs env and redacts output, which
 breaks reading the dossier).
 
-## Quick Reference
+### Quick Reference
 
 | Command | Purpose |
 |---|---|
@@ -132,7 +131,7 @@ breaks reading the dossier).
 | `$PDD status <subject>` | Markdown status report |
 | `$PDD report <subject> --sheets` | Rows for the Google Sheets tracker |
 
-## Batch operation (two-phase: crawl-all, then delete)
+### Batch operation (two-phase: crawl-all, then delete)
 
 For anything past a couple of brokers, run this as **map → reduce → act**, not broker-by-broker:
 
@@ -189,7 +188,7 @@ For anything past a couple of brokers, run this as **map → reduce → act**, n
 Subagent reports are self-reports: the parent re-verifies key claims (listing URLs, match basis) before
 recording `found` and before any deletion.
 
-## Procedure (the autonomous loop)
+### Procedure (the autonomous loop)
 
 1. **Setup (once, no questions).** Run `$PDD setup --auto` - it detects capabilities and configures
    the most autonomous valid combination itself (programmatic email when `EMAIL_*` creds exist,

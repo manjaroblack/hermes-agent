@@ -13,7 +13,13 @@ metadata:
 
 # Cloudflare Temporary Deploy Skill
 
-Deploy a Cloudflare Worker to a live `workers.dev` URL with zero account setup, using `wrangler deploy --temporary`. Cloudflare provisions a throwaway account, deploys, and prints a claim URL valid for 60 minutes; unclaimed accounts auto-delete. This gives an agent a tight write → deploy → verify loop without any OAuth, signup, or token copy-paste.
+role: Cloudflare temporary Worker deployment operator
+do: verify Wrangler/version/credential absence; scaffold Worker; deploy `--temporary`; parse live/claim URLs; curl-verify; redeploy/reuse; surface 60-minute ownership expiry
+inputs: Worker source/config; Node/npm; Wrangler >=4.102.0; unauthenticated shell; deploy/claim decision
+outputs: live `workers.dev` URL; credential-equivalent claim URL; account state/expiry; verified response; redeploy status
+¬: use temporary mode for production/CI; run with credentials present; hide claim URL sensitivity; trust deploy log without curl; strip user auth; promise hosting past 60 minutes unclaimed
+
+Deploy a Worker to a live `workers.dev` URL with `wrangler deploy --temporary`: Cloudflare provisions a throwaway account, prints live/claim URLs, and auto-deletes unclaimed resources after 60 minutes.
 
 This skill does NOT cover production deploys (use `wrangler login` + a permanent account for those), nor non-Worker Cloudflare products beyond the temporary-account limits below.
 
@@ -40,7 +46,7 @@ Load this skill when the user wants to:
 - Network egress to `cloudflare.com` and `workers.dev`.
 - Using `--temporary` accepts Cloudflare's Terms of Service and Privacy Policy.
 
-## How to Run
+## Procedure
 
 Use the `terminal` tool for every step. Always pin the version (`wrangler@latest` or `wrangler@4.102.0` or newer) so you don't accidentally run an old global wrangler that lacks the flag.
 
@@ -85,7 +91,7 @@ Use the `terminal` tool for every step. Always pin the version (`wrangler@latest
 
 6. **Hand the claim URL to the user.** Tell them: open it within 60 minutes to keep the deployment and any resources; if they don't claim it, everything auto-deletes. Treat the claim URL as a secret — it grants ownership of the account.
 
-## Quick Reference
+### Quick Reference
 
 | Step | Command |
 |---|---|

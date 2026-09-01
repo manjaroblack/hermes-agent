@@ -13,11 +13,24 @@ metadata:
 
 # Bioinformatics Skills Gateway
 
-Use when asked about bioinformatics, genomics, sequencing, variant calling, gene expression, single-cell analysis, protein structure, pharmacogenomics, metagenomics, phylogenetics, or any computational biology task.
+role: bioinformatics skill-gateway operator
+do: classify domain; choose bioSkills reference or ClawBio runnable pipeline; shallow-clone source; read fetched guide; install/check prerequisites; preserve reproducibility/data limits
+inputs: bioinformatics question; domain/workflow; datasets; source choice; compute/storage environment
+outputs: selected expert guide or pipeline; commands/parameters; report.md/commands.sh/environment.yml when ClawBio emits them; prerequisite/scale caveats
+¬: treat fetched guides as Hermes skills; run pipelines without prerequisites; download huge datasets without disk planning; invent parameters/results; expose sensitive genomic data
 
-This skill is a gateway to two open-source bioinformatics skill libraries. Instead of bundling hundreds of domain-specific skills, it indexes them and fetches what you need on demand.
+Use for bioinformatics, genomics, sequencing, variant calling, gene expression, single-cell analysis, protein structure, pharmacogenomics, metagenomics, phylogenetics, and computational biology.
 
-## Sources
+Gateway model: index two open-source libraries and fetch only the required domain guide; do not bundle hundreds of skills.
+
+## When to Use
+
+- User asks about bioinformatics, genomics, sequencing, variants, expression, single-cell, protein structure, pharmacogenomics, metagenomics, phylogenetics, or computational biology.
+- Need a domain-specific reference guide or runnable ClawBio pipeline selected from the indexed libraries.
+
+## Procedure
+
+### Sources
 
 ◆ **bioSkills** — 385 reference skills (code patterns, parameter guides, decision trees)
   Repo: https://github.com/GPTomics/bioSkills
@@ -27,7 +40,7 @@ This skill is a gateway to two open-source bioinformatics skill libraries. Inste
   Repo: https://github.com/ClawBio/ClawBio
   Format: Python scripts with demos. Each analysis exports report.md + commands.sh + environment.yml.
 
-## How to fetch and use a skill
+### How to fetch and use a skill
 
 1. Identify the domain and skill name from the index below.
 2. Clone the relevant repo (shallow clone to save time):
@@ -48,7 +61,7 @@ This skill is a gateway to two open-source bioinformatics skill libraries. Inste
    ```
 4. Follow the fetched skill as reference material. These are NOT Hermes-format skills — treat them as expert domain guides. They contain correct parameters, proper tool flags, and validated pipelines.
 
-## Skill Index by Domain
+### Skill Index by Domain
 
 ### Sequence Fundamentals
 bioSkills:
@@ -206,7 +219,7 @@ ClawBio:
   claw-semantic-sim — Semantic similarity index for disease literature (PubMedBERT)
   omics-target-evidence-mapper — Aggregate target-level evidence across omics sources
 
-## Environment Setup
+### Environment Setup
 
 These skills assume a bioinformatics workstation. Common dependencies:
 
@@ -235,3 +248,9 @@ conda install -c bioconda samtools bcftools blast minimap2 bedtools fastp kraken
 - Both repos assume bioinformatics tools are installed. Check prerequisites before running pipelines.
 - For ClawBio, run `pip install -r requirements.txt` in the cloned repo first.
 - Genomic data files can be very large. Be mindful of disk space when downloading reference genomes, SRA datasets, or building indices.
+
+## Verification
+
+- Classify the request and select a listed bioSkills or ClawBio entry.
+- Shallow clone the selected repository, read the exact fetched guide, and verify required tools before execution.
+- For runnable ClawBio workflows, confirm expected `report.md`, `commands.sh`, and `environment.yml` outputs; record dataset/compute limits.

@@ -14,22 +14,19 @@ metadata:
 
 # OSINT Investigation — Public Records Cross-Reference
 
-Investigative framework for public-records OSINT: government contracts,
-corporate filings, lobbying, sanctions, offshore leaks, property records,
-court records, web archives, knowledge bases, and global news. Resolve
-entities across heterogeneous sources, build cross-links with explicit
-confidence, run statistical timing tests, and produce structured evidence
-chains.
+role: public-records OSINT investigation operator
+do: select sources; fetch normalized records; resolve entities; cross-link evidence; test timing; form/validate hypotheses; redact; report citations/confidence
+inputs: subject/entity; target sources; time window; IOCs; public-record access; optional API tokens/BigQuery credentials
+outputs: normalized CSV; cross-links; timing JSON; evidence chains/findings JSON; validated or inconclusive hypotheses; cited report
+¬: assert uncited facts; treat fuzzy matches/statistical significance as proof; mix investigator source boundaries; run target-repo code; expose secrets/PII; bypass ToS/rate limits
 
-**Python stdlib only.** Zero install. Works on Linux, macOS, Windows. Most
-sources work with no API key (OpenCorporates has an optional free token
-that raises rate limits).
+Public-records OSINT across contracts, corporate filings, lobbying, sanctions, offshore leaks, property, courts, archives, knowledge bases, and news. Resolve entities across heterogeneous sources with explicit confidence and evidence chains.
 
-Adapted from the MIT-licensed ShinMegamiBoson/OpenPlanter project; expanded
-to cover identity / property / litigation / archives / news sources that
-the original didn't address.
+Runtime: Python stdlib only; zero install; Linux/macOS/Windows. Most sources need no API key; optional OpenCorporates token raises rate limits.
 
-## When to use this skill
+Adapted from MIT-licensed ShinMegamiBoson/OpenPlanter; expanded for identity, property, litigation, archives, and news sources.
+
+## When to Use
 
 Use when the user asks for:
 
@@ -58,7 +55,9 @@ Do NOT use this skill for:
   DEMO_KEY tier). For federal donations, point users at
   https://www.fec.gov/data/ directly.
 
-## Workflow
+## Procedure
+
+### Workflow
 
 The agent runs scripts via the `terminal` tool. `SKILL_DIR` is the directory
 holding this SKILL.md.
@@ -229,7 +228,7 @@ Every finding has `id, title, severity, confidence, summary, evidence[], sources
 Each evidence item points back to a specific row in a source CSV. The user (or a
 follow-up agent) can verify every claim against its source.
 
-## Confidence and evidence discipline
+### Confidence and evidence discipline
 
 This is the load-bearing rule of the skill. Tell the user:
 
@@ -243,7 +242,7 @@ This is the load-bearing rule of the skill. Tell the user:
 - All data sources here are public records. They may still contain
   inaccuracies, stale info, or redactions (GDPR, sealed records).
 
-## Adding a new data source
+### Adding a new data source
 
 Use the template:
 
@@ -256,7 +255,7 @@ Fill in all 9 sections. Write a `fetch_<source>.py` script in `scripts/` that
 uses stdlib only and writes a normalized CSV. Update the source list in the
 "When to use" section above.
 
-## Tools and their limits
+### Tools and their limits
 
 - `entity_resolution.py` does NOT use external fuzzy libraries (no rapidfuzz,
   no jellyfish). Token-bag matching is the upper bound here. If you need
@@ -266,7 +265,7 @@ uses stdlib only and writes a normalized CSV. Update the source list in the
 - `fetch_*.py` scripts use `urllib.request` and respect `Retry-After`. Heavy
   bulk usage may still violate ToS — read each source's legal section first.
 
-## Legal note
+### Legal note
 
 All Phase-1 sources are public records. Bulk acquisition is permitted under
 their respective access terms (FOIA, public records law, ICIJ explicit
@@ -276,3 +275,16 @@ publication, OFAC public data). However:
 - Some redact registrant info (GDPR on WHOIS, sealed filings).
 - Cross-referencing public records to identify private individuals can have
   ethical implications. The skill produces evidence chains, not accusations.
+
+## Pitfalls
+
+- Evidence IDs, source boundaries, confidence labels, SHA/URL double-verification, and secret redaction are mandatory; missing evidence invalidates a claim.
+- Fuzzy/token-overlap matches produce leads only; statistical timing shows association under a null, not corruption or wrongdoing.
+- Public records can be stale, inaccurate, redacted, or rate-limited; preserve partial results and limitations rather than filling gaps.
+- Do not execute code from an investigated repository; keep acquisition passive and follow each source's legal/rate policy.
+
+## Verification
+
+- `evidence-store.py ... list` returns the final evidence set; each report claim maps to existing `EV-XXXX` IDs.
+- SHA/URL identifiers and `[VERIFIED]` evidence are independently confirmed from at least two sources; secrets are `[REDACTED]`.
+- Validator yields `VALIDATED`, `INCONCLUSIVE`, or `REJECTED` with logical/alternative-explanation checks; final report includes timeline, registry, IOCs, custody, and limitations.

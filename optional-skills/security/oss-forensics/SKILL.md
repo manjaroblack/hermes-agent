@@ -30,10 +30,19 @@ metadata:
 
 # OSS Security Forensics Skill
 
-A 7-phase multi-agent investigation framework for researching open-source supply chain attacks.
-Adapted from RAPTOR's forensics system. Covers GitHub Archive, Wayback Machine, GitHub API,
-local git analysis, IOC extraction, evidence-backed hypothesis formation and validation,
-and final forensic report generation.
+role: open-source supply-chain forensics operator
+do: initialize evidence store; extract IOCs; keep investigator source boundaries; collect Git/GitHub/Wayback/GH Archive evidence; hash/verify; form/disprove hypotheses; redact/report
+inputs: owner/repo; actors/time window/IOCs; GitHub/API/Wayback/BigQuery access; investigation goal
+outputs: evidence registry; `iocs.md`; cross-source discrepancies; validated/inconclusive/rejected hypotheses; forensic report; mitigations
+¬: uncited claims; mix specialist sources; fabricate evidence IDs; run target-repo code; trust one source for SHA/URL; expose secrets; investigate without defensive/authorized purpose
+
+Seven-phase, multi-agent investigation framework for open-source supply-chain attacks, covering GitHub Archive, Wayback, GitHub API, local Git, IOC extraction, evidence-backed hypotheses, and final reporting.
+
+## When to Use
+
+- Investigate a repository for supply-chain compromise, suspicious commits, force-pushes, deleted history, or IOCs.
+- Recover and cross-check public evidence before a defensive report or responsible disclosure.
+- Do not use for harassment, stalking, doxxing, unauthorized private-repository intelligence, or unvalidated accusations.
 
 ---
 
@@ -65,7 +74,9 @@ Read these before every investigation step. Violating them invalidates the repor
 > resolve `SKILL_DIR` to the actual path — e.g. `~/.hermes/skills/security/oss-forensics/`
 > or the `optional-skills/` equivalent. All script and template references are relative to it.
 
-## Phase 0: Initialization
+## Procedure
+
+### Phase 0: Initialization
 
 1. Create investigation working directory:
    ```bash
@@ -85,7 +96,7 @@ Read these before every investigation step. Violating them invalidates the repor
 
 ---
 
-## Phase 1: Prompt Parsing and IOC Extraction
+### Phase 1: Prompt Parsing and IOC Extraction
 
 **Goal**: Extract all structured investigative targets from the user's request.
 
@@ -108,7 +119,7 @@ Read these before every investigation step. Violating them invalidates the repor
 
 ---
 
-## Phase 2: Parallel Evidence Collection
+### Phase 2: Parallel Evidence Collection
 
 Spawn up to 5 specialist investigator sub-agents using `delegate_task` (batch mode, max 3 concurrent). Each investigator has a **single data source** and must not mix sources.
 
@@ -293,7 +304,7 @@ LIMIT 200
 
 ---
 
-## Phase 3: Evidence Consolidation
+### Phase 3: Evidence Consolidation
 
 After all investigators complete:
 
@@ -308,7 +319,7 @@ After all investigators complete:
 
 ---
 
-## Phase 4: Hypothesis Formation
+### Phase 4: Hypothesis Formation
 
 A hypothesis must:
 - State a specific claim (e.g., "Actor X force-pushed to BRANCH on DATE to erase commit SHA")
@@ -327,7 +338,7 @@ For each hypothesis, spawn a `delegate_task` sub-agent to attempt to find discon
 
 ---
 
-## Phase 5: Hypothesis Validation
+### Phase 5: Hypothesis Validation
 
 The validator sub-agent MUST mechanically check:
 
@@ -346,7 +357,7 @@ Rejected hypotheses feed back into Phase 4 for refinement (max 3 iterations).
 
 ---
 
-## Phase 6: Final Report Generation
+### Phase 6: Final Report Generation
 
 Populate `investigation-report.md` using the template in [forensic-report.md](./templates/forensic-report.md).
 
@@ -366,7 +377,7 @@ Populate `investigation-report.md` using the template in [forensic-report.md](./
 
 ---
 
-## Phase 7: Completion
+### Phase 7: Completion
 
 1. Run final evidence count: `python SKILL_DIR/scripts/evidence-store.py --store evidence.json list`
 2. Archive the full investigation directory.
@@ -375,6 +386,18 @@ Populate `investigation-report.md` using the template in [forensic-report.md](./
    - Identify affected versions/packages
    - Note disclosure obligations (if a public package: coordinate with the package registry)
 4. Present the final `investigation-report.md` to the user.
+
+## Pitfalls
+
+- Do not convert a single-source observation, missing record, fuzzy match, or unvalidated hypothesis into a compromise claim.
+- Rate-limit GitHub/Wayback/BigQuery requests; preserve partial evidence and quota gaps in the report.
+- Never execute code from the target repository or publish discovered credentials; redact and follow responsible disclosure.
+
+## Verification
+
+- Evidence store lists all collected records; each `EV-XXXX` exists and cited SHA/URL identifiers have two-source confirmation.
+- Every claim has an evidence ID; hypotheses are labeled `[HYPOTHESIS]` until validator output is `VALIDATED`, `INCONCLUSIVE`, or `REJECTED`.
+- Final report includes executive verdict/confidence, timeline, hypotheses, evidence registry, IOCs, chain of custody, recommendations, redacted secrets, and rate-limit gaps.
 
 ---
 
@@ -389,7 +412,7 @@ This skill is designed for **defensive security investigation** — protecting o
 
 Investigations should be conducted with the principle of **minimal intrusion**: collect only the evidence necessary to validate or refute the hypothesis. When publishing results, follow responsible disclosure practices and coordinate with affected maintainers before public disclosure.
 
-If the investigation reveals a genuine compromise, follow the coordinated vulnerability disclosure process:
+- If the investigation reveals a genuine compromise, follow the coordinated vulnerability disclosure process:
 1. Notify the repository maintainers privately first
 2. Allow reasonable time for remediation (typically 90 days)
 3. Coordinate with package registries (npm, PyPI, etc.) if published packages are affected

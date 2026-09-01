@@ -13,10 +13,23 @@ metadata:
 
 # Domain Intelligence — Passive OSINT
 
-Passive domain reconnaissance using only Python stdlib.
-**Zero dependencies. Zero API keys. Works on Linux, macOS, and Windows.**
+role: passive domain-intelligence operator
+do: discover CT subdomains; inspect TLS; query WHOIS/DNS; assess heuristic availability; batch JSON analysis
+inputs: domain(s); checks; network access; output path
+outputs: structured subdomains, certificates, WHOIS, DNS, availability, bulk results
+¬: port-scan/vulnerability-test; treat availability heuristic as authoritative; expose private registrant data; ignore source/legal/rate limits
 
-## Helper script
+Passive domain reconnaissance using Python stdlib only: zero dependencies/API keys; Linux/macOS/Windows.
+
+## When to Use
+
+- Need subdomains, SSL certificate details, WHOIS, DNS records, or heuristic availability.
+- Need bulk passive analysis across multiple domains.
+- Do not use for general company/web research; use `web_search`/`web_extract` instead.
+
+## Procedure
+
+### Helper script
 
 This skill includes `scripts/domain_intel.py` — a complete CLI tool for all domain intelligence operations.
 
@@ -54,7 +67,7 @@ python SKILL_DIR/scripts/domain_intel.py bulk example.com github.com --checks ss
 | `available` | Check if domain is registered | DNS + WHOIS + SSL signals |
 | `bulk` | Run multiple checks on multiple domains | All of the above |
 
-## When to use this vs built-in tools
+### When to Use vs Built-in Tools
 
 - **Use this skill** for infrastructure questions: subdomains, SSL certs, WHOIS, DNS records, availability
 - **Use `web_search`** for general research about what a domain/company does
@@ -92,12 +105,18 @@ All queries are **passive** — no port scanning, no vulnerability testing:
 - **System DNS** — A/AAAA record resolution
 - **SSL check** is the only "active" operation (TCP connection to target:443)
 
-## Notes
+## Pitfalls
 
 - WHOIS queries use TCP port 43 — may be blocked on restrictive networks
 - Some WHOIS servers redact registrant info (GDPR) — mention this to the user
 - crt.sh can be slow for very popular domains (thousands of certs) — set reasonable expectations
 - The availability check is heuristic-based (3 passive signals) — not authoritative like a registrar API
+
+## Verification
+
+- Run one `subdomains`, `ssl`, `whois`, and `dns` command against a test domain; parse valid JSON.
+- Confirm bulk output contains only requested checks/domains and records source/limitations.
+- Report WHOIS/TCP 43 and target TCP 443 reachability limits; do not label passive results as vulnerability findings.
 
 ---
 

@@ -14,15 +14,21 @@ metadata:
 
 # ast-grep
 
-`ast-grep` (binary also named `sg`) is an **AST-aware search and rewrite tool** across 25 languages. It treats your pattern as code, parses it the same way it parses your project, and matches structurally. It is the right tool whenever your question depends on **code shape** rather than text bytes.
+role: ast-grep structural-search/codemod operator
+do: validate AST patterns; search structural matches; preview rewrites; apply two-pass codemods; run YAML rules; report files/matches; use text tools when shape is irrelevant
+inputs: language; AST pattern/rewrite; roots/globs; rule files; dry-run/apply decision; output format
+outputs: match locations/JSON; rewrite preview; changed files; rule findings/fixes; affected-file count
+¬: treat patterns as regex; apply before dry-run; combine `--json` with `--update-all`; let shell expand `$VAR`; use wrong language; claim semantic analysis from syntax matching
 
-This skill ships a Python wrapper at `scripts/ast_grep_helper.py` and platform install scripts at `install.sh` (POSIX) and `install.ps1` (Windows). The helper adds offline pattern validation, the two-pass write trick, and binary auto-resolution. Use it as your default entry point.
+`ast-grep` (binary `sg`) structurally searches/rewrites code across 25 languages: patterns are parsed as code and matched by AST shape, not bytes.
+
+Default entry point: `scripts/ast_grep_helper.py`; platform installers are `install.sh` (POSIX) and `install.ps1` (Windows). The helper adds offline validation, two-pass writes, and binary resolution.
 
 Upstream source: vendored from [code-yeongyu/ast-grep-skill](https://github.com/code-yeongyu/ast-grep-skill) (MIT), as shipped in oh-my-openagent's shared-skills bundle.
 
 ---
 
-## When to use this skill
+## When to Use
 
 Use it whenever the question is about **code structure**, not bytes:
 
@@ -44,7 +50,9 @@ Hermes integration notes:
 
 ---
 
-## Three things the agent must internalize
+## Procedure
+
+### Three things the agent must internalize
 
 ### 1. ast-grep is NOT regex
 
@@ -76,7 +84,7 @@ The helper does this automatically when you call `replace --apply`. Read `refere
 
 ---
 
-## The helper script — `scripts/ast_grep_helper.py`
+### The helper script — `scripts/ast_grep_helper.py`
 
 A single-file Python 3 stdlib wrapper. Same on every OS. The agent's default entry point.
 
@@ -149,7 +157,7 @@ python scripts/ast_grep_helper.py install     # delegate to install.sh / install
 
 ---
 
-## Direct `sg` use (when the helper isn't enough)
+### Direct `sg` use (when the helper isn't enough)
 
 The helper is opinionated. For full control, drop to `sg`. The skill ships a CLI cheat sheet in `references/cli.md`. The minimal idioms:
 
@@ -187,7 +195,7 @@ When using `sg` directly in a shell, **always single-quote patterns** so `$VAR` 
 
 ---
 
-## Decision tree — what to use, when
+### Decision tree — what to use, when
 
 ```
 USER asks for "find/rewrite/codemod"
@@ -209,7 +217,7 @@ If the user says "find all" or "every", default to ast-grep when the target is s
 
 ---
 
-## Always run dry-run first when rewriting
+### Always run dry-run first when rewriting
 
 A bad pattern silently rewrites the wrong thing. The helper's `replace` defaults to dry-run for this reason. The flow is:
 
@@ -223,7 +231,7 @@ Never apply a rewrite that you have not first dry-run. After an `--apply` in a g
 
 ---
 
-## When `sg` returns 0 matches but you know the code is there
+### When `sg` returns 0 matches but you know the code is there
 
 In priority order:
 
@@ -237,7 +245,7 @@ Do not blindly retry with variations. Each failure has a reason; surface it.
 
 ---
 
-## When to use YAML rules vs inline `-p` patterns
+### When to use YAML rules vs inline `-p` patterns
 
 **Use inline `-p`** when:
 - One-off ad-hoc query.
@@ -254,7 +262,7 @@ The full YAML rule schema is in `references/yaml-rules.md`. Project setup (`sgco
 
 ---
 
-## Output discipline
+### Output discipline
 
 - `sg run --json=compact` produces an array of match objects: `{ file, range: {start, end}, text, replacement?, lines, language, ... }`.
 - Without `--json`, `sg` produces human-readable colored output suitable for terminals.
@@ -265,7 +273,7 @@ When summarizing for the user, **always include the count of files affected**, n
 
 ---
 
-## Required reading (in order of priority)
+### Required reading (in order of priority)
 
 1. `references/patterns.md` — meta-variables, naming rules, strictness levels. Read when you're unsure why a pattern doesn't match.
 2. `references/pitfalls.md` — the failure-mode field guide. Read when 0 matches surprises you.
@@ -277,7 +285,15 @@ When summarizing for the user, **always include the count of files affected**, n
 
 ---
 
-## Invariants (do not break)
+## Pitfalls
+
+- Regex syntax (`|`, `.*`, `\w`, `[a-z]`) is not a structural pattern; switch to `search_files` when the question is byte-shaped.
+- Malformed patterns, missing bodies, wrong `--lang`, shell-expanded `$VAR`, and stdin without `--lang` cause silent/no-match failures.
+- On Linux, `sg` may collide with `setgroups`; prefer `ast-grep` or the helper.
+
+## Verification
+
+### Invariants (do not break)
 
 - **Validate before searching.** When emitting a pattern programmatically, call `helper validate` first. It catches the regex-misuse class of mistakes that account for ~70% of "0 matches" debug sessions.
 - **Dry-run before applying.** Never run `sg run -r ... --update-all` without first inspecting the matches. The helper's `replace` enforces this by default.

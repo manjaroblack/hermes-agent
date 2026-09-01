@@ -13,14 +13,13 @@ metadata:
 
 # Parallel CLI
 
-Use `parallel-cli` when the user explicitly wants Parallel, or when a terminal-native workflow would benefit from Parallel's vendor-specific stack for web search, extraction, deep research, enrichment, entity discovery, or monitoring.
+role: Parallel CLI research/enrichment operator
+do: detect auth/install; choose search/extract/research/enrich/findall/monitor; use JSON; poll async jobs; cite returned sources; validate output files
+inputs: research question; URLs; tabular source; processor/tier; domains/date filters; monitor cadence; API credentials
+outputs: structured search/extract results; run/task IDs; enriched files; discovered entities; monitor events; source citations
+¬: prefer vendor path for ordinary lookups; cite URLs absent from output; expose API keys; run long jobs without poll/status; report unvalidated output
 
-This is an optional third-party workflow, not a Hermes core capability.
-
-Important expectations:
-- Parallel is a paid service with a free tier, not a fully free local tool.
-- It overlaps with Hermes native `web_search` / `web_extract`, so do not prefer it by default for ordinary lookups.
-- Prefer this skill when the user mentions Parallel specifically or needs capabilities like Parallel's enrichment, FindAll, or monitor workflows.
+`parallel-cli` is an optional paid third-party workflow (free tier available), not a Hermes core capability. It overlaps with native `web_search`/`web_extract`; select it when Parallel is named or its enrichment, FindAll, or monitor features are required.
 
 `parallel-cli` is designed for agents:
 - JSON output via `--json`
@@ -29,7 +28,7 @@ Important expectations:
 - Context chaining with `--previous-interaction-id`
 - Search, extract, research, enrichment, entity discovery, and monitoring in one CLI
 
-## When to use it
+## When to Use
 
 Prefer this skill when:
 - The user explicitly mentions Parallel or `parallel-cli`
@@ -38,6 +37,10 @@ Prefer this skill when:
 - You need structured enrichment, FindAll entity discovery, or monitoring
 
 Prefer Hermes native `web_search` / `web_extract` for quick one-off lookups when Parallel is not specifically requested.
+
+## Procedure
+
+Run detection, installation/authentication, then the selected command pattern; keep JSON output, async IDs, polling, source citations, and output validation explicit.
 
 ## Installation
 
@@ -112,7 +115,7 @@ If auth requires browser interaction, run with `pty=true`.
 6. Use background processes only for genuinely long-running workflows; otherwise run in foreground.
 7. Prefer Hermes native tools unless the user wants Parallel specifically or needs Parallel-only workflows.
 
-## Quick reference
+## Quick Reference
 
 ```text
 parallel-cli
@@ -324,7 +327,7 @@ parallel-cli monitor create --help
 
 Use this when the user wants recurring tracking of a page or source rather than a one-time fetch.
 
-## Recommended Hermes usage patterns
+## Recommended Hermes Usage Patterns
 
 ### Fast answer with citations
 1. Run `parallel-cli search ... --json`
@@ -389,3 +392,10 @@ parallel-cli config auto-update-check off
 - For large result sets, save JSON to `/tmp/*.json` instead of stuffing everything into context.
 - Do not silently choose Parallel when Hermes native tools are already sufficient.
 - Remember this is a vendor workflow that usually requires account auth and paid usage beyond the free tier.
+
+## Verification
+
+- `parallel-cli --help` and `parallel-cli auth` return usable installation/auth state.
+- Search/extract commands run with `--json`; reported citations come only from returned URLs.
+- Async research/enrichment/FindAll runs expose an ID; `status`/`poll` reaches completion before reporting.
+- Enrichment output exists and is parsed/validated before success is claimed; monitor operations show the requested state.

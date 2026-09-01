@@ -13,9 +13,15 @@ metadata:
 
 # page-agent
 
-alibaba/page-agent (https://github.com/alibaba/page-agent, 17k+ stars, MIT) is an in-page GUI agent written in TypeScript. It lives inside a webpage, reads the DOM as text (no screenshots, no multi-modal LLM), and executes natural-language instructions like "click the login button, then fill username as John" against the current page. Pure client-side — the host site just includes a script and passes an OpenAI-compatible LLM endpoint.
+role: embedded page-agent GUI-copilot operator
+do: choose demo/npm/source path; configure OpenAI-compatible endpoint; embed panel; execute DOM instructions; proxy secrets; build/test local bundle/extension
+inputs: host web app; DOM task; provider/baseURL/model; backend proxy; Node/npm version; browser/devtools
+outputs: in-page panel; executed DOM action; local IIFE/extension build; network request; build/verification status
+¬: use page-agent as Hermes browser driver; expect screenshots/visual grounding; ship demo CDN/API key to production; expose `.env`; ignore CSP/CORS/Node engine constraints
 
-## When to use this skill
+alibaba/page-agent (https://github.com/alibaba/page-agent, 17k+ stars, MIT) is a TypeScript in-page GUI agent: DOM text only, no screenshots/multimodal LLM. Host pages include the script and provide an OpenAI-compatible LLM endpoint.
+
+## When to Use
 
 Load this skill when a user wants to:
 
@@ -25,7 +31,7 @@ Load this skill when a user wants to:
 - **Demo or evaluate page-agent** against a local (Ollama) or hosted (Qwen, OpenAI, OpenRouter) LLM
 - **Build interactive training / product demos** — let an AI walk a user through "how to submit an expense report" live in the real UI
 
-## When NOT to use this skill
+### When NOT to Use
 
 - User wants **Hermes itself to drive a browser** → use Hermes' built-in browser tool (Browserbase / Camofox). page-agent is the *opposite* direction.
 - User wants **cross-tab automation without embedding** → use Playwright, browser-use, or the page-agent Chrome extension
@@ -37,7 +43,9 @@ Load this skill when a user wants to:
 - An OpenAI-compatible LLM endpoint: Qwen (DashScope), OpenAI, Ollama, OpenRouter, or anything speaking `/v1/chat/completions`
 - Browser with devtools (for debugging)
 
-## Path 1 — 30-second demo via CDN (no install)
+## Procedure
+
+### Path 1 — 30-second demo via CDN (no install)
 
 Fastest way to see it work. Uses alibaba's free testing LLM proxy — **for evaluation only**, subject to their terms.
 
@@ -55,7 +63,7 @@ Bookmarklet form (drop into bookmarks bar, click on any page):
 javascript:(function(){var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/page-agent@1.8.0/dist/iife/page-agent.demo.js';document.head.appendChild(s);})();
 ```
 
-## Path 2 — npm install into your own web app (production use)
+### Path 2 — npm install into your own web app (production use)
 
 Inside an existing web project (React / Vue / Svelte / plain):
 
@@ -99,7 +107,7 @@ Provider examples (any OpenAI-compatible endpoint works):
 
 **Security.** Don't put your `apiKey` in client-side code for a real deployment — proxy LLM calls through your backend and point `baseURL` at your proxy. The demo CDN exists because alibaba runs that proxy for evaluation.
 
-## Path 3 — clone the source repo (contributing, or hacking on it)
+### Path 3 — clone the source repo (contributing, or hacking on it)
 
 Use this when the user wants to modify page-agent itself, test it against arbitrary sites via a local IIFE bundle, or develop the browser extension.
 
@@ -145,7 +153,7 @@ Then: `npm run dev:demo`, click the bookmarklet on any page, and the local build
 
 **Warning:** your `.env` `LLM_API_KEY` is inlined into the IIFE bundle during dev builds. Don't share the bundle. Don't commit it. Don't paste the URL into Slack. (Verified: grepping the public dev bundle returns the literal values from `.env`.)
 
-## Repo layout (Path 3)
+### Repo layout (Path 3)
 
 Monorepo with npm workspaces. Key packages:
 
@@ -160,7 +168,7 @@ Monorepo with npm workspaces. Key packages:
 | — | `packages/extension/` | Chrome/Firefox extension |
 | — | `packages/website/` | Docs + landing site |
 
-## Verifying it works
+### Verifying it works
 
 After Path 1 or Path 2:
 1. Open the page in a browser with devtools open
@@ -182,6 +190,12 @@ After Path 3:
 - **Restart dev server** after editing `.env` in Path 3 — Vite only reads env at startup.
 - **Node version** — the repo declares `^22.13.0 || >=24`. Node 20 will fail `npm ci` with engine errors.
 - **npm 10 vs 11** — docs say npm 11+; npm 10.9 actually works fine.
+
+## Verification
+
+- Demo/npm path shows the panel and executes a simple visible-DOM instruction; Network tab shows a request to the configured `baseURL`.
+- Source path prints the expected dev-server URL; `curl -I http://localhost:5174/page-agent.demo.js` returns `HTTP/1.1 200 OK` with JavaScript content type.
+- Production path proxies the LLM key server-side; `.env`/bundles are not committed or shared, and CSP/CORS/Node constraints are recorded.
 
 ## Reference
 

@@ -14,11 +14,22 @@ prerequisites:
 
 # Drug Discovery & Pharmaceutical Research
 
-You are an expert pharmaceutical scientist and medicinal chemist with deep
-knowledge of drug discovery, cheminformatics, and clinical pharmacology.
-Use this skill for all pharma/chemistry research tasks.
+role: pharmaceutical research/cheminformatics operator
+do: search ChEMBL/PubChem/OpenFDA/OpenTargets; report raw properties; apply Ro5/Veber; flag liabilities; cite source API; separate research from clinical advice
+inputs: target/molecule/drug/gene; API query; SMILES/properties; ADMET question; clinical context
+outputs: target/activity/molecule data; drug-likeness assessment; interaction/adverse-event excerpts; target-disease associations; citations/limits
+¬: infer causation from adverse-event counts; present heuristics as clinical decisions; omit raw values/rule set/source; expose credentials; claim APIs are authoritative beyond coverage
 
-## Core Workflows
+Use for pharma, chemistry, cheminformatics, pharmacology, and drug-discovery research; report evidence and limitations, not medical decisions.
+
+## When to Use
+
+- User asks about compounds, targets, molecular properties, drug-likeness, interactions, adverse events, ADMET, or gene-disease associations.
+- Need public ChEMBL, PubChem, OpenFDA, or OpenTargets data with explicit source/API citations.
+
+## Procedure
+
+### Core Workflows
 
 ### 1 — Bioactive Compound Search (ChEMBL)
 
@@ -190,7 +201,7 @@ for row in assoc.get('rows',[]):
 "
 ```
 
-## Reasoning Guidelines
+### Reasoning Guidelines
 
 When analysing drug-likeness or molecular properties, always:
 
@@ -202,14 +213,14 @@ When analysing drug-likeness or molecular properties, always:
 
 For ADMET questions, reason through Absorption, Distribution, Metabolism, Excretion, Toxicity systematically. See references/ADMET_REFERENCE.md for detailed guidance.
 
-## Important Notes
+### Important Notes
 
 - All APIs are free, public, require no authentication
 - ChEMBL rate limits: add sleep 1 between batch requests
 - FDA data reflects reported adverse events, not necessarily causation
 - Always recommend consulting a licensed pharmacist or physician for clinical decisions
 
-## Quick Reference
+### Quick Reference
 
 | Task | API | Endpoint |
 |------|-----|----------|
@@ -219,3 +230,15 @@ For ADMET questions, reason through Absorption, Distribution, Metabolism, Excret
 | Drug interactions | OpenFDA | `/drug/label.json?search=drug_interactions:` |
 | Adverse events | OpenFDA | `/drug/event.json?search=...&count=reaction` |
 | Gene-disease | OpenTargets | GraphQL POST `/api/v4/graphql` |
+
+## Pitfalls
+
+- ChEMBL/PubChem/OpenFDA/OpenTargets are public research APIs; rate limits, missing data, and stale records remain possible.
+- FDA adverse-event reports show reported events, not causation; do not convert Ro5/Veber or ADMET heuristics into prescribing advice.
+- State raw properties, rule thresholds, liabilities, optimization assumptions, and source endpoint before conclusions.
+
+## Verification
+
+- Query one target/molecule/drug/gene and parse the documented JSON response.
+- Recompute Ro5/Veber outputs from returned raw values; cite the source endpoint and timestamp/context.
+- For clinical questions, present results as research context and recommend a licensed pharmacist/physician.

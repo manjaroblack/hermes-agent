@@ -13,6 +13,12 @@ metadata:
 
 # Subagent-Driven Development
 
+role: plan-to-implementation delegation orchestrator
+do: parse plan once; dispatch fresh implementer; run spec review then quality review; fix/re-review issues; integrate; run tests; record completion
+inputs: implementation plan; task boundaries/context; project conventions; test commands; reviewer criteria
+outputs: task implementations; review verdicts; test results; integrated commit/artifact
+¬: start without plan/context; skip spec before quality review; accept open critical issues; parallelize same-file tasks; let self-review replace independent review; continue with red tests
+
 ## Overview
 
 Execute implementation plans by dispatching fresh subagents per task with systematic two-stage review.
@@ -33,7 +39,7 @@ Use this skill when:
 - Consistent quality checks across all tasks
 - Subagents can ask questions before starting work
 
-## The Process
+## Procedure
 
 ### 1. Read and Parse Plan
 
@@ -187,7 +193,7 @@ git diff --stat
 git add -A && git commit -m "feat: complete [feature name] implementation"
 ```
 
-## Task Granularity
+### Task Granularity
 
 **Each task = 2-5 minutes of focused work.**
 
@@ -201,7 +207,7 @@ git add -A && git commit -m "feat: complete [feature name] implementation"
 - "Add JWT token generation"
 - "Create registration endpoint"
 
-## Red Flags — Never Do These
+### Red Flags — Never Do These
 
 - Start implementation without a plan
 - Skip reviews (spec compliance OR code quality)
@@ -216,7 +222,7 @@ git add -A && git commit -m "feat: complete [feature name] implementation"
 - **Start code quality review before spec compliance is PASS** (wrong order)
 - Move to next task while either review has open issues
 
-## Handling Issues
+### Handling Issues
 
 ### If Subagent Asks Questions
 
@@ -236,7 +242,7 @@ git add -A && git commit -m "feat: complete [feature name] implementation"
 - Dispatch a new fix subagent with specific instructions about what went wrong
 - Don't try to fix manually in the controller session (context pollution)
 
-## Efficiency Notes
+### Efficiency Notes
 
 **Why fresh subagent per task:**
 - Prevents context pollution from accumulated state
@@ -252,7 +258,7 @@ git add -A && git commit -m "feat: complete [feature name] implementation"
 - More subagent invocations (implementer + 2 reviewers per task)
 - But catches issues early (cheaper than debugging compounded problems later)
 
-## Integration with Other Skills
+### Integration with Other Skills
 
 ### With plan
 
@@ -282,7 +288,7 @@ If a subagent encounters bugs during implementation:
 3. Write regression test
 4. Resume implementation
 
-## Example Workflow
+### Example Workflow
 
 ```
 [Read plan: docs/plans/auth-feature.md]
@@ -329,7 +335,7 @@ If a subagent encounters bugs during implementation:
 [Done!]
 ```
 
-## Remember
+### Remember
 
 ```
 Fresh subagent per task
@@ -340,9 +346,20 @@ Never skip reviews
 Catch issues early
 ```
 
-**Quality is not an accident. It's the result of systematic process.**
+**Quality is the result of systematic process.**
 
-## Further reading (load when relevant)
+## Pitfalls
+
+- Missing plan/context, skipped spec review, unresolved critical issues, same-file parallelism, and self-review-only acceptance are process failures.
+- Do not advance while tests are red or a reviewer has open issues; route failures to a focused fix/re-review loop.
+
+## Verification
+
+- Every plan task has implementer output plus spec PASS and quality APPROVED (or explicit re-review after fixes).
+- Final integration review checks cross-task consistency; full test command is run and output is recorded before completion.
+- Same-file tasks are serialized; failures route to a focused fix/review loop rather than being marked complete.
+
+### Further reading (load when relevant)
 
 When the orchestration involves significant context usage, long review loops, or complex validation checkpoints, load these references for the specific discipline:
 

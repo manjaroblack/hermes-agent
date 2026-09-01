@@ -16,7 +16,13 @@ prerequisites:
 
 # Scrapling
 
-[Scrapling](https://github.com/D4Vinci/Scrapling) is a web scraping framework with anti-bot bypass, stealth browser automation, and a spider framework. It provides three fetching strategies (HTTP, dynamic JS, stealth/Cloudflare) and a full CLI.
+role: Scrapling scraping/crawling operator
+do: install chosen fetcher; fetch static/JS/stealth pages; select elements; persist sessions; crawl spiders; rate-limit; respect robots/ToS/law
+inputs: URL(s); fetcher/session type; selectors; headers/proxy; JS wait/actions; crawl limits/delay; output path
+outputs: HTML/Markdown/text/JSON; selected elements; spider items; crawl checkpoints; errors/limits
+¬: bypass access controls or ToS; scrape without legal review; use stealth/browser at unnecessary concurrency; confuse timeout units; omit browser install
+
+[Scrapling](https://github.com/D4Vinci/Scrapling) provides HTTP, JS-rendered, stealth/Cloudflare fetchers, element selectors, spiders, and a CLI.
 
 **This skill is for educational and research purposes only.** Users must comply with local/international data scraping laws and respect website Terms of Service.
 
@@ -28,7 +34,9 @@ prerequisites:
 - Crawling multiple pages with a spider
 - When the built-in `web_extract` tool does not return the data you need
 
-## Installation
+## Procedure
+
+### Installation
 
 ```bash
 pip install "scrapling[all]"
@@ -46,7 +54,7 @@ pip install "scrapling[fetchers]"
 scrapling install
 ```
 
-## Quick Reference
+### Quick Reference
 
 | Approach | Class | Use When |
 |----------|-------|----------|
@@ -55,7 +63,7 @@ scrapling install
 | Stealth | `StealthyFetcher` / `StealthySession` | Cloudflare, anti-bot protected sites |
 | Spider | `Spider` | Multi-page crawling with link following |
 
-## CLI Usage
+### CLI Usage
 
 ### Extract Static Page
 
@@ -104,7 +112,7 @@ The output format is determined by the file extension:
 - `.txt` -- plain text
 - `.json` / `.jsonl` -- JSON
 
-## Python: HTTP Scraping
+### Python: HTTP Scraping
 
 ### Single Request
 
@@ -144,7 +152,7 @@ page = Fetcher.delete('https://api.example.com/item/1')
 page = Fetcher.get('https://example.com', proxy='http://user:pass@proxy:8080')
 ```
 
-## Python: Dynamic Pages (JS-Rendered)
+### Python: Dynamic Pages (JS-Rendered)
 
 For pages that require JavaScript execution (SPAs, lazy-loaded content):
 
@@ -193,7 +201,7 @@ page = DynamicFetcher.fetch('https://example.com', page_action=scroll_and_click)
 results = page.css('.extra-results .item::text').getall()
 ```
 
-## Python: Stealth Mode (Anti-Bot Bypass)
+### Python: Stealth Mode (Anti-Bot Bypass)
 
 For Cloudflare-protected or heavily fingerprinted sites:
 
@@ -220,7 +228,7 @@ with StealthySession(headless=True, solve_cloudflare=True) as session:
     page2 = session.fetch('https://protected-site.com/page2')
 ```
 
-## Element Selection
+### Element Selection
 
 All fetchers return a `Selector` object with these methods:
 
@@ -266,7 +274,7 @@ el.next_sibling          # Next sibling
 el.prev_sibling          # Previous sibling
 ```
 
-## Python: Spider Framework
+### Python: Spider Framework
 
 For multi-page crawling with link following:
 
@@ -334,3 +342,9 @@ spider.start()  # Ctrl+C to pause, re-run to resume from checkpoint
 - **Resource usage**: StealthyFetcher runs a real browser -- limit concurrent usage
 - **Legal**: always check robots.txt and website ToS before scraping. This library is for educational and research purposes
 - **Python version**: requires Python 3.10+
+
+## Verification
+
+- `scrapling install` completes before dynamic/stealth fetches; minimal HTTP install is verified separately.
+- Fetch one known page and confirm requested output format/selectors; JS flows confirm the waited element/content.
+- Spider output and checkpoint resume are inspected; concurrency/delay remain within the site's limits.

@@ -13,7 +13,13 @@ metadata:
 
 # Code Wiki Skill
 
-Generate a full wiki for any codebase — overview, architecture, per-module deep-dives, Mermaid class and sequence diagrams. Inspired by Google CodeWiki, but works on local repos, private repos, and any language. Uses only existing Hermes tools (`terminal`, `read_file`, `search_files`, `write_file`); no Docker, no external services, no extra dependencies.
+role: codebase reference-wiki author
+do: resolve repo/SHA; inspect manifests/readme/entry points; bound modules; write Markdown+Mermaid overview/architecture/module/API/start docs; persist state; verify links/fences
+inputs: local path or GitHub URL; repo SHA; scope/module cap; source files; output directory; language/tooling
+outputs: `README.md`; architecture/module/API/getting-started docs; Mermaid diagrams; `.codewiki-state.json`; generated-path report
+¬: invent symbols/components; document uninspected code; write in-repo without request; exceed scope silently; include secrets/vendor/generated code; use diagrams >20 nodes
+
+Generate reference wiki documentation for any codebase: overview, architecture, per-module deep dives, Mermaid class/sequence diagrams. Uses Hermes `terminal`, `read_file`, `search_files`, and `write_file`; no external service/dependency required.
 
 This skill produces **reference documentation** (what/how). It does not produce strategic narrative (why — that's a different skill).
 
@@ -36,11 +42,11 @@ Do NOT use this for:
 - `git` on PATH for repo SHA tracking and remote clones.
 - Optional: `pygount` for language-breakdown stats (see the `codebase-inspection` skill).
 
-## How to Run
+## Procedure
 
 Invoke through the `terminal` tool from the target repo's root, then use `read_file` / `search_files` / `write_file` to produce the wiki. Default output location is `~/.hermes/wikis/<repo-name>/`. Only write into the repo (`docs/wiki/`) when the user explicitly requests it.
 
-## Quick Reference
+### Quick Reference
 
 | Step | Action |
 |---|---|
@@ -57,7 +63,7 @@ Invoke through the `terminal` tool from the target repo's root, then use `read_f
 | 11 | Write `.codewiki-state.json` |
 | 12 | Report paths to user |
 
-## Procedure
+### Detailed Procedure
 
 ### 1. Resolve the target
 
@@ -212,7 +218,7 @@ Cap at ~20 nodes per diagram. Split into sub-diagrams if larger.
 
 ### 6. Write per-module docs in `modules/`
 
-For each selected module, inspect its layout with `ls`, identify 3–5 most important files (by size, by being named `core.py` / `main.py` / `__init__.py`, by being imported a lot), then `read_file` those files (use `offset` / `limit` to read only what you need; prefer `search_files` for specific symbols).
+For each selected module, inspect its layout with `search_files (target='files')`, identify 3–5 most important files (by size, by being named `core.py` / `main.py` / `__init__.py`, by being imported a lot), then `read_file` those files (use `offset` / `limit` to read only what you need; prefer `search_files` for specific symbols).
 
 ````markdown
 # Module: `<module>`

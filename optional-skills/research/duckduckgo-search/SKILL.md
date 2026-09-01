@@ -14,11 +14,23 @@ metadata:
 
 # DuckDuckGo Search
 
-Free web search using DuckDuckGo. **No API key required.**
+role: DuckDuckGo search operator
+do: detect CLI/runtime; install only when needed; search text/news/images/videos; emit JSON; extract full pages via separate retrieval tools; report rate/runtime limits
+inputs: query; result limit; region/time/safe-search filters; runtime choice; requested media type
+outputs: result titles/URLs/snippets/fields; JSON; selected URLs for extraction; limitations
+¬: assume `ddgs` exists in either runtime; pass `max_results` positionally; treat snippets as page content; cite absent URLs; bypass throttling
 
-Preferred when `web_search` is unavailable or unsuitable (for example when `FIRECRAWL_API_KEY` is not set). Can also be used as a standalone search path when DuckDuckGo results are specifically desired.
+Free DuckDuckGo search; no API key required. Prefer the CLI when `web_search` is unavailable/unsuitable (for example, `FIRECRAWL_API_KEY` is unset) or DuckDuckGo is explicitly requested; use built-in search/browser tools for ordinary lookups when adequate.
 
-## Detection Flow
+## When to Use
+
+- User explicitly requests DuckDuckGo, `ddgs`, or a keyless fallback.
+- Need text/news/image/video search and structured snippets.
+- Need a search→full-page extraction workflow; `ddgs` alone does not extract content.
+
+## Procedure
+
+### Detection Flow
 
 Check what is actually available before choosing an approach:
 
@@ -233,6 +245,6 @@ Then extract the best URL with `web_extract` or another content-retrieval tool.
 - **Don't confuse `-q` and `-m`** (CLI): `-q` is for the query, `-m` is for max results count.
 - **Empty results**: If `ddgs` returns nothing, it may be rate-limited. Wait a few seconds and retry.
 
-## Validated With
+## Verification
 
-Validated examples against `ddgs==9.11.2` semantics. Skill guidance now treats CLI availability and Python import availability as separate concerns so the documented workflow matches actual runtime behavior.
+Validate examples against `ddgs==9.11.2` semantics. Treat CLI availability and Python import availability as separate concerns; verify each in its own runtime before use.

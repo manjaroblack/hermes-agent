@@ -20,9 +20,15 @@ setup:
 
 # 1Password CLI
 
-Use this skill when the user wants secrets managed through 1Password instead of plaintext env vars or files.
+role: 1Password secret-management operator
+do: install/check `op`; choose service-account/desktop/Connect auth; read references; inject templates; run commands with secret env; keep values redacted
+inputs: `op://Vault/Item/field`; auth method; `OP_SERVICE_ACCOUNT_TOKEN`/Connect settings; template/command; tmux session when desktop integration
+outputs: secret reads/injected config/command result; auth status; no raw secret in transcript
+¬: print raw secrets by default; write plaintext secrets; guess/forge credentials; use desktop flow headlessly; confuse successful command with secret disclosure
 
-## Requirements
+Use 1Password for secret management instead of plaintext environment variables or files; preserve values inside `op read`, `op inject`, or `op run` flows.
+
+## Prerequisites
 
 - 1Password account
 - 1Password CLI (`op`) installed
@@ -37,7 +43,9 @@ Use this skill when the user wants secrets managed through 1Password instead of 
 - Inject secrets into config/templates using `op inject`
 - Run commands with secret env vars via `op run`
 
-## Authentication Methods
+## Procedure
+
+### Authentication Methods
 
 ### Service Account (recommended for Hermes)
 
@@ -62,7 +70,7 @@ export OP_CONNECT_HOST="http://localhost:8080"
 export OP_CONNECT_TOKEN="your-connect-token"
 ```
 
-## Setup
+### Setup
 
 1. Install CLI:
 
@@ -85,7 +93,7 @@ op --version
 
 3. Choose an auth method above and configure it.
 
-## Hermes Execution Pattern (desktop app flow)
+### Hermes Execution Pattern (desktop app flow)
 
 Hermes terminal commands are non-interactive by default and can lose auth context between calls.
 For reliable `op` use with desktop app integration, run sign-in and secret operations inside a dedicated tmux session.
@@ -116,7 +124,7 @@ tmux -S "$SOCKET" capture-pane -p -J -t "$SESSION":0.0 -S -200
 tmux -S "$SOCKET" kill-session -t "$SESSION"
 ```
 
-## Common Operations
+### Common Operations
 
 ### Read a secret
 
@@ -143,7 +151,9 @@ export DB_PASSWORD="op://app-prod/db/password"  # example op:// reference, resol
 op run -- sh -c '[ -n "$DB_PASSWORD" ] && echo "DB_PASSWORD is set" || echo "DB_PASSWORD missing"'
 ```
 
-## Guardrails
+## Pitfalls
+
+### Guardrails
 
 - Never print raw secrets back to user unless they explicitly request the value.
 - Prefer `op run` / `op inject` instead of writing secrets into files.
@@ -154,6 +164,12 @@ op run -- sh -c '[ -n "$DB_PASSWORD" ] && echo "DB_PASSWORD is set" || echo "DB_
 
 For non-interactive use, authenticate with `OP_SERVICE_ACCOUNT_TOKEN` and avoid interactive `op signin`.
 Service accounts require CLI v2.18.0+.
+
+## Verification
+
+- `op --version` returns the installed CLI version and the selected auth method passes `op whoami`.
+- `op read`, `op inject`, or `op run` completes without printing raw secret values; desktop auth stays inside the same tmux session.
+- Headless/CI paths use `OP_SERVICE_ACCOUNT_TOKEN`; service-account requirement `v2.18.0+` is checked.
 
 ## References
 

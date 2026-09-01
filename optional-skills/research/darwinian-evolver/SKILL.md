@@ -13,17 +13,17 @@ metadata:
 
 # Darwinian Evolver
 
-Run Imbue's [darwinian_evolver](https://github.com/imbue-ai/darwinian_evolver) — an
-LLM-driven evolutionary search loop — to optimize a **prompt, regex, SQL query,
-or small code snippet** against a fitness function.
+role: Darwinian evolutionary-search operator
+do: define organism/evaluator/mutator; install upstream CLI; run/poll evolutionary loop; inspect snapshots; tune concurrency/hyperparameters; report score/overfitting/cost
+inputs: starting artifact; measurable scorer; failure cases; provider/model credentials; iteration/parent/concurrency settings
+outputs: evolved candidates; scores; snapshots/JSON logs; lineage visualization; verification/limitations
+¬: evolve without measurable scorer; import AGPL upstream classes into Hermes; treat 0-score viable seed as unusable; run unbounded concurrency; expose credentials
 
-Status: thin wrapper around the upstream tool. The skill installs it, walks the
-agent through writing a `Problem` definition (organism + evaluator + mutator),
-and drives the loop via the upstream CLI or a small custom Python driver.
+Run Imbue's [darwinian_evolver](https://github.com/imbue-ai/darwinian_evolver), an LLM-driven evolutionary loop, against a prompt, regex, SQL query, or small code snippet with a measurable fitness function.
 
-**License:** the upstream tool is **AGPL-3.0**. The skill ONLY ever invokes it
-via the upstream CLI or a `subprocess`/`uv run` call (mere aggregation). Do NOT
-import upstream classes into Hermes itself.
+Scope: thin wrapper around upstream. Install it, define `Problem` (organism + evaluator + mutator), then drive the upstream CLI or a small custom Python driver.
+
+License boundary: upstream is **AGPL-3.0**. Invoke only through its CLI or a `subprocess`/`uv run` call (mere aggregation); do NOT import upstream classes into Hermes.
 
 ## When to Use
 
@@ -50,7 +50,9 @@ The skill ships a small `parrot_openrouter.py` driver that uses `OPENROUTER_API_
 via the OpenAI SDK, so any model on OpenRouter works. The upstream CLI itself
 hardcodes Anthropic and needs `ANTHROPIC_API_KEY`.
 
-## Install (One-Time)
+## Procedure
+
+### Install (One-Time)
 
 Run via the `terminal` tool:
 
@@ -67,7 +69,7 @@ cd ~/.hermes/cache/darwinian-evolver/darwinian_evolver \
   && uv run darwinian_evolver --help | head -5
 ```
 
-## Quick Start — The Built-In Parrot Example
+### Quick Start — The Built-In Parrot Example
 
 Tiny smoke test (requires `ANTHROPIC_API_KEY`):
 
@@ -87,7 +89,7 @@ Outputs:
 Open `~/.hermes/cache/darwinian-evolver/darwinian_evolver/darwinian_evolver/lineage_visualizer.html`
 in a browser and load the JSON log to see the evolutionary tree.
 
-## Quick Start — OpenRouter Driver (No Anthropic Key)
+### Quick Start — OpenRouter Driver (No Anthropic Key)
 
 The skill ships `scripts/parrot_openrouter.py` — same parrot problem, but the
 LLM call goes through OpenRouter so any provider works.
@@ -114,7 +116,7 @@ uv run --with openai python "$SKILL_DIR/scripts/show_snapshot.py" \
 Expected output: 7 evolved prompt templates ranked by score, with the best
 landing around 0.6–0.8 (the seed `Say {{ phrase }}` scored 0.000).
 
-## Defining a Custom Problem
+### Defining a Custom Problem
 
 The skill ships `templates/custom_problem_template.py` — copy, edit, run.
 Three things you must define:
@@ -142,7 +144,7 @@ Then write a driver script that wires `Problem(initial_organism, evaluator, [mut
 into `EvolveProblemLoop` and iterates over `loop.run(num_iterations=N)` — the
 shipped `scripts/parrot_openrouter.py` is the reference.
 
-## Hyperparameters That Actually Matter
+### Hyperparameters That Actually Matter
 
 | flag | default | when to change |
 |---|---|---|

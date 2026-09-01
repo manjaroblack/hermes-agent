@@ -14,7 +14,13 @@ metadata:
 
 # API Testing & Debugging
 
-Drive REST and GraphQL diagnosis through Hermes tools — `terminal` for `curl`, `execute_code` for Python `requests`, `web_extract` for vendor docs. Isolate the failing layer before guessing at the fix.
+role: REST/GraphQL API diagnosis operator
+do: isolate connectivity/timeouts/TLS/auth/request/parse/semantic layers; reproduce with curl/requests; inspect GraphQL errors; validate contracts/pagination; capture IDs; redact; write regression tests
+inputs: base URL/endpoint; method/payload; auth scheme/token; expected schema/semantics; timeout/rate limits; provider docs
+outputs: reproducible request/response; layer diagnosis; status/auth/schema findings; correlation ID; fix/regression test guidance
+¬: treat HTTP 200 GraphQL response as success; omit timeouts; use `-k` in code; log tokens/PII; retry non-idempotent writes without key; claim semantics from parse success
+
+Diagnose REST/GraphQL through `terminal`/`curl`, `execute_code`/requests, and `web_extract`/vendor docs; isolate the failing layer before changing code.
 
 ## When to Use
 
@@ -41,7 +47,9 @@ Skip for UI rendering, DB query tuning, or DNS/firewall infra (escalate).
 6. Semantics      → does the data mean what we assume?
 ```
 
-## 5-Minute Quickstart
+## Procedure
+
+### 5-Minute Quickstart
 
 ### REST via terminal
 
@@ -105,7 +113,7 @@ print(resp.text[:500])
 ''')
 ```
 
-## Layered Debug Flow
+### Layered Debug Flow
 
 ### Step 1 — Connectivity
 
@@ -227,7 +235,7 @@ Parsed cleanly — but is the data *correct*?
 - Timestamps in expected timezone?
 - Pagination returning all results, or just page 1?
 
-## HTTP Status Playbook
+### HTTP Status Playbook
 
 ### 401 Unauthorized — credentials missing or invalid
 
@@ -291,7 +299,7 @@ def with_backoff(method, url, **kwargs):
 
 For all 5xx: backoff with jitter, alert on persistence.
 
-## Pagination & Idempotency
+### Pagination & Idempotency
 
 **Pagination.** Verify you're getting *all* results. Look for `next_cursor`, `next_page`, `total_count`. Two patterns:
 - Offset (`?limit=100&offset=200`) — simple, can skip items if data shifts.
@@ -299,7 +307,7 @@ For all 5xx: backoff with jitter, alert on persistence.
 
 **Idempotency.** For non-idempotent operations (POST), send `Idempotency-Key: <uuid>` so retries don't double-charge / double-create. Mandatory for payments and orders.
 
-## Contract Validation
+### Contract Validation
 
 Catch schema drift before it hits production:
 
@@ -326,7 +334,7 @@ if issues:
 
 Run after API upgrades, when integrating new third parties, or in CI smoke tests.
 
-## Correlation IDs
+### Correlation IDs
 
 Always capture the provider's request ID — fastest path to vendor support:
 
@@ -356,7 +364,7 @@ Actual:      500 {"error":"internal server error"}
 Repro:       curl -X POST … (auth: <REDACTED>)
 ```
 
-## Regression Test Template
+### Regression Test Template
 
 Drop this into `tests/` and run via `terminal('pytest tests/test_api_smoke.py -v')`:
 
@@ -418,7 +426,7 @@ def redact_auth(headers: dict) -> dict:
 - [ ] **Tokens echoed back.** Some APIs include the auth token in error details. Verify they don't.
 - [ ] **Verbose `Server` / `X-Powered-By`.** Stack-info leaks. Note for security review.
 
-## Hermes Tool Patterns
+### Hermes Tool Patterns
 
 ### terminal — for curl, dig, openssl
 
@@ -508,6 +516,19 @@ Missing required field `email`. Server validation rejects before processing.
 ## Fix
 -d '{"name":"test","email":"test@example.com"}'
 ```
+
+## Pitfalls
+
+- Walk connectivity → timeout → TLS → auth → request → parse → semantics; a successful transport/status code is not proof of correct data.
+- Use tuple timeouts with `requests`; inspect GraphQL `errors`; use `Idempotency-Key` before retrying non-idempotent operations.
+- Keep tokens out of URLs/logs/code; redact auth/cookie headers and rotate exposed credentials.
+- Capture provider correlation IDs and `Retry-After`; back off 429/5xx instead of hammering the API.
+
+## Verification
+
+- Reproduce the issue with a bounded curl/requests call and record status, content type, redacted headers/body, timing, and correlation ID.
+- Validate expected response fields/types, GraphQL `errors`, pagination completion, and semantic identifiers/timezones.
+- Add/run a regression smoke test for the fixed contract; report unresolved provider/network limitations.
 
 ## Related
 
