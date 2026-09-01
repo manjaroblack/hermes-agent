@@ -19,20 +19,11 @@ inputs: error/traceback, exact symptom, reproduction, repo/history/config, compo
 outputs: isolated root cause, minimal repro/regression test, single root fix, green verification
 ¬: guess/fix before Phase 1; stack fixes; bundle changes; skip failing test; treat symptom as cause; attempt Fix #4 without architecture discussion; hide uncertainty
 
-Random fixes mask causes and create bugs. Complete every phase before the next.
+## Overview
 
-## When to Use
-
-Use for test/production bugs, unexpected behavior, performance/build/integration
-failures—especially under time pressure, after multiple failed fixes, or when the
-cause is unclear. “Simple,” urgent, or obvious issues do not exempt the process.
-
-## Prerequisites
-
-- exact symptom/error and a candidate reproduction path
-- active workspace plus repo tests/history/config access
-- `search_files`, `read_file`, `terminal`, and optional `web_search`/`delegate_task`
-- permission to add a focused regression test and one root fix
+Random fixes waste time/create bugs; quick patches mask underlying issues.
+ALWAYS find root cause before fixes; symptom fixes = failure. Violating the letter
+of this process violates its spirit.
 
 ## The Iron Law
 
@@ -44,43 +35,86 @@ If Phase 1 is incomplete, do not propose a fix.
 
 ## Feedback Loop Rule
 
-Before building theory, create/identify a **tight** command that goes red on the
-exact symptom and green after the fix. It is fast, deterministic, agent-runnable,
-and specific—not merely “doesn't crash.” If clean reproduction is hard, spend
-more effort on the loop; guessing without a red-capable loop is failure.
+The feedback loop is the debugging work. Before reading code to form a theory,
+create/identify a **tight** command that goes red on the exact user symptom and
+green after the fix. It is fast, deterministic, agent-runnable, and specific —
+not merely "doesn't crash". If clean repro is hard, invest disproportionately
+in the loop; guessing without a red-capable loop is the failure mode.
 
-## Procedure
+## When to Use
 
-### Phase 1: Root Cause Investigation
+Use for ANY technical issue:
 
-#### 1. Read errors
+- test failures
+- production bugs
+- unexpected behavior
+- performance problems
+- build failures
+- integration issues
 
-- read all errors/warnings and complete stack trace
-- record line numbers, paths, error codes
-- `read_file` relevant source; `search_files` error string
+Especially use when under time pressure, a "quick fix" seems obvious, several
+fixes already failed, the prior fix did not work, or the issue is not understood.
+Do not skip because issue seems simple, time is short, or someone wants it fixed
+NOW; systematic debugging is faster than thrashing.
 
-#### 2. Build and run tight loop
+## Prerequisites
 
-Ask: exact symptom? red before/green after? fast/repeatable? deterministic? For
-flakes, high enough reproduction? If not reproducible → gather data, do not guess.
+- exact symptom/error + candidate reproduction path
+- workspace + repo tests/history/config access
+- `search_files`, `read_file`, `terminal`; optional `web_search`/`delegate_task`
+- permission to add focused regression test + one root fix
 
-Ways to construct, roughly ordered:
+## The Four Phases
 
-1. failing unit/integration/E2E test at seam
-2. HTTP script/curl against dev server
-3. CLI fixture invocation + stdout/stderr assertion
-4. headless browser assertion on DOM/console/network
-5. replay HAR/request/event/queue/webhook trace
-6. smallest throwaway harness
-7. property/fuzz loop
-8. `git bisect run` harness
-9. differential old/new config/provider/dataset loop
-10. human-in-loop script as last resort, capturing structured result
+Complete each phase before the next.
 
-Tighten after creation: cache setup/narrow scope; assert exact symptom; pin time,
-seed randomness, isolate filesystem, freeze network. For non-determinism, raise
-reproduction: 100 runs, parallel/stress, timing narrowing/sleeps; 50% flake is
-debuggable, 1% usually is not.
+---
+
+## Phase 1: Root Cause Investigation
+
+**Before attempting ANY fix:**
+
+### 1. Read Error Messages Carefully
+
+- don't skip errors/warnings; they often contain the solution
+- read complete stack traces
+- record line numbers, file paths, error codes
+- use `read_file` on relevant sources; `search_files` for error strings
+
+### 2. Build and Run a Tight Feedback Loop
+
+Ask:
+
+- can one command trigger the exact symptom?
+- does it fail for this bug and pass only after the fix?
+- is it fast/repeatable and deterministic?
+- for flakes, can reproduction rise high enough to debug?
+- if not reproducible → gather data, don't guess
+
+Construct a loop, roughly in order:
+
+1. failing unit/integration/end-to-end test at the failing seam
+2. HTTP script / `curl` against a running dev server
+3. CLI fixture invocation with stdout/stderr assertion
+4. headless Playwright/Puppeteer browser assertion on DOM/console/network
+5. replay captured HAR, request payload, event log, queue message, or webhook
+6. throwaway harness booting the smallest useful slice and calling the path
+7. property/fuzz loop for intermittent wrong output over broad input space
+8. bisection harness suitable for `git bisect run`
+9. differential old/new version, config, provider, or dataset loop
+10. human-in-loop script last; capture structured result
+
+Tighten the loop:
+
+- faster: cache setup, narrow scope, skip unrelated initialization
+- sharper: assert exact symptom, not generic success
+- deterministic: pin time, seed randomness, isolate filesystem, freeze network
+
+For non-determinism, raise reproduction rather than seek perfection: run 100x,
+parallelize/stress, narrow timing, or inject sleeps. 50% flake is debuggable;
+1% usually is not.
+
+Use `terminal`:
 
 ```bash
 # Run a specific failing test
@@ -93,7 +127,9 @@ python scripts/repro_bug.py
 for i in {1..100}; do pytest tests/test_flake.py::test_name -q || break; done
 ```
 
-#### 3. Check recent changes
+### 3. Check Recent Changes
+
+Ask what changed: git diff/recent commits, new dependencies, config changes.
 
 ```bash
 # Recent commits
@@ -106,23 +142,21 @@ git diff
 git log -p --follow src/problematic_file.py | head -100
 ```
 
-Check new dependencies/config as well as code.
+### 4. Gather Evidence in Multi-Component Systems
 
-#### 4. Gather boundary evidence
+For API→service→database, CI→build→deploy, or another chain, instrument EACH
+boundary before proposing a fix:
 
-For API→service→DB, CI→build→deploy, or other multi-component chains, instrument
-each boundary before fixing:
+- log data entering and exiting each component
+- verify environment/config propagation
+- check state at every layer
+- run once to show WHERE it breaks
+- analyze evidence, identify failing component, investigate there
 
-- data entering/exiting each component
-- environment/config propagation
-- state at each layer
+### 5. Trace Data Flow
 
-Run once; identify failing component; investigate there.
-
-#### 5. Trace data flow upstream
-
-For deep-stack errors, ask where bad value originates, who passed it, and keep
-tracing until source. Fix source, not symptom. Use `search_files`:
+For deep-stack errors, locate bad value origin, caller, and source; fix source,
+not symptom. Use `search_files`:
 
 ```python
 # Find where the function is called
@@ -132,9 +166,9 @@ search_files("function_name(", path="src/", file_glob="*.py")
 search_files("variable_name\\s*=", path="src/", file_glob="*.py")
 ```
 
-#### Phase 1 completion
+### Phase 1 Completion
 
-- [ ] all errors understood
+- [ ] errors/warnings fully read and understood
 - [ ] tight loop exists and ran once
 - [ ] loop asserts exact symptom and can go red
 - [ ] deterministic or high-repro flake
@@ -143,57 +177,91 @@ search_files("variable_name\\s*=", path="src/", file_glob="*.py")
 - [ ] component/code isolated
 - [ ] testable root-cause hypotheses stated
 
-**STOP:** no Phase 2 until why is understood.
+**STOP:** no Phase 2 until WHY is understood.
 
-### Phase 2: Pattern Analysis
+---
 
-#### 0. Minimize reproduction
+## Phase 2: Pattern Analysis
 
-With red loop, remove inputs/callers/config/data/steps one at a time; rerun after
-each cut. Done when removing any remaining element makes loop green. Minimal repro
-becomes regression test and narrows hypotheses.
+Find the pattern before fixing.
 
-#### 1. Find working examples
+### 0. Minimize the Reproduction
 
-Locate analogous working code:
+With red loop, remove inputs, callers, config, data, and steps one at a time;
+rerun after each cut. Keep only load-bearing elements. Done when removing any
+remaining element makes loop green. Minimal repro narrows hypotheses and often
+becomes the regression test.
+
+### 1. Find Working Examples
+
+Locate analogous working code; ask what works that resembles the broken path.
+Use `search_files`:
 
 ```python
 search_files("similar_pattern", path="src/", file_glob="*.py")
 ```
 
-#### 2. Read reference completely
+### 2. Compare Against References
 
-When applying a pattern, read reference implementation every line; do not skim.
+When applying a pattern, read the reference implementation COMPLETELY — every
+line, no skimming; understand it before adapting.
 
-#### 3. List every difference
+### 3. Identify Differences
 
-Compare working/broken; record even small differences; do not assume irrelevance.
+Compare working/broken and list every difference, however small; do not assume
+"that can't matter".
 
-#### 4. Understand dependencies
+### 4. Understand Dependencies
 
-Record components, settings/config/environment, and assumptions.
+Record required components, settings/config/environment, and assumptions.
 
-### Phase 3: Hypothesis and Testing
+---
 
-1. Generate 3-5 plausible, falsifiable hypotheses; rank by likelihood + cheapness.
-   State prediction: “If X causes it, changing/observing Y makes Z.” Discard
-   hypotheses without predictions. Show ranked list if user present; proceed if AFK.
-2. Test highest-ranked with smallest probe; change one variable; prefer debugger/
-   REPL; temporary logs use unique prefix such as `[DEBUG-a4f2]`.
-3. Verify: works → Phase 4; fails → new hypothesis; never stack fixes.
-4. If unknown: say “I don't understand X”; do not pretend; ask user or research.
+## Phase 3: Hypothesis and Testing
 
-### Phase 4: Implementation
+Scientific method:
 
-#### 1. Create failing regression test
+### 1. Form Ranked Falsifiable Hypotheses
 
-Smallest repro, automated when possible, **before fix**; use `test-driven-development`.
+Generate 3–5 plausible hypotheses before testing any. Rank by likelihood and
+cheapness to falsify. State prediction: "If X is cause, changing/observing Y
+should make Z happen." Discard/sharpen hypotheses without testable predictions.
+Show ranked list if user present (domain knowledge may re-rank); proceed ranked
+if AFK.
 
-#### 2. Implement one root fix
+### 2. Test Minimally
 
-One change at a time; no “while I'm here,” bundled refactor, or unrelated cleanup.
+Test highest-ranked with smallest probe; change one variable at a time; never fix
+multiple things together. Prefer debugger/REPL (one breakpoint > ten logs). If
+logs are needed, tag temporary lines with unique prefix such as `[DEBUG-a4f2]`.
 
-#### 3. Verify
+### 3. Verify Before Continuing
+
+- worked → Phase 4
+- failed → form NEW hypothesis
+- never stack fixes
+
+### 4. When You Don't Know
+
+Say "I don't understand X"; don't pretend; ask user for help or research more.
+
+---
+
+## Phase 4: Implementation
+
+Fix root cause, not symptom.
+
+### 1. Create Failing Test Case
+
+Use simplest reproduction; automate when possible; MUST exist before fix; use
+`test-driven-development`.
+
+### 2. Implement Single Fix
+
+Address identified root cause, ONE change at a time; no "while I'm here",
+bundled refactor, or unrelated improvement.
+
+### 3. Verify Fix
 
 ```bash
 # Run the specific regression test
@@ -203,69 +271,80 @@ pytest tests/test_module.py::test_regression -v
 pytest tests/ -q
 ```
 
-#### 4. Rule of Three
+### 4. If Fix Doesn't Work — Rule of Three
 
-If fix fails: STOP and count. `<3` → Phase 1 with new information. `≥3` →
-architecture discussion; no Fix #4.
+STOP and count attempts:
 
-#### 5. Question architecture after 3 failures
+- `<3` → return Phase 1 with new information
+- `≥3` → question architecture; no Fix #4 without architectural discussion
 
-Signals: each fix finds shared state/coupling elsewhere; fixes require massive
-refactor; each creates new symptoms. Ask whether pattern is sound, inertia-driven,
-or needs architectural refactor; discuss with user before further fixes. This is
-wrong architecture, not merely failed hypothesis.
+### 5. If 3+ Fixes Failed: Question Architecture
 
-## Red Flags
+Signals: each fix reveals shared state/coupling elsewhere; fixes need "massive
+refactoring"; each fix creates new symptoms. Ask:
 
-Any thought below → STOP, return Phase 1:
+- is the pattern fundamentally sound?
+- are we sticking with it through inertia?
+- refactor architecture or continue fixing symptoms?
 
-- quick fix now/investigate later
-- try X without evidence
-- multiple changes then tests
-- skip test/manual verify
-- probably X
-- do not fully understand
-- adapt reference differently
-- list solutions before data flow
-- one more fix after 2+
-- each fix reveals another location
+Discuss with user before more fixes. This is wrong architecture, not merely a
+failed hypothesis.
 
-≥3 failures → Phase 4 architecture question.
+---
+
+## Red Flags — STOP and Follow Process
+
+Any of these → STOP, return Phase 1:
+
+- "Quick fix for now, investigate later"
+- "Just try changing X and see if it works"
+- "Add multiple changes, run tests"
+- "Skip the test, I'll manually verify"
+- "It's probably X, let me fix that"
+- "I don't fully understand but this might work"
+- "Pattern says X but I'll adapt it differently"
+- "Here are the main problems" before investigation
+- proposing solutions before tracing data flow
+- "One more fix attempt" after 2+
+- each fix reveals a new problem elsewhere
+
+If 3+ fixes failed, question architecture (Phase 4 step 5).
 
 ## Common Rationalizations
 
 | Excuse | Reality |
-|---|---|
-| “Issue is simple, don't need process” | Simple issues have root causes; process is fast. |
-| “Emergency, no time for process” | Systematic debugging is faster than thrashing. |
-| “Just try this first” | First fix sets pattern; investigate first. |
-| “I'll write test after” | Untested fixes don't stick; test first proves it. |
-| “Multiple fixes save time” | Cannot isolate result; creates bugs. |
-| “Reference too long” | Partial understanding guarantees bugs; read completely. |
-| “I see the problem” | Symptom ≠ root cause. |
-| “One more fix” after 2+ | 3+ failures indicate architecture. |
+|--------|---------|
+| "Issue is simple, don't need process" | Simple issues have root causes; process is fast. |
+| "Emergency, no time for process" | Systematic debugging is FASTER than thrashing. |
+| "Just try this first, then investigate" | First fix sets the pattern; investigate first. |
+| "I'll write test after confirming fix" | Untested fixes don't stick; test first proves it. |
+| "Multiple fixes at once saves time" | Can't isolate what worked; causes new bugs. |
+| "Reference too long, I'll adapt" | Partial understanding guarantees bugs; read completely. |
+| "I see the problem, let me fix it" | Seeing symptoms ≠ understanding root cause. |
+| "One more fix attempt" after 2+ | 3+ failures = architecture problem. |
 
 ## Quick Reference
 
-| Phase | Key Activities | Success Criteria |
-|---|---|---|
-| **1. Root Cause** | Read errors, reproduce, changes, evidence, data flow | Understand WHAT + WHY |
-| **2. Pattern** | Working examples, complete comparison, differences | Know what's different |
-| **3. Hypothesis** | Ranked theory, minimal one-variable test | Confirmed/new hypothesis |
-| **4. Implementation** | Regression test, root fix, verification | Bug resolved, tests pass |
+| Phase | Key activities | Success criteria |
+|-------|---------------|------------------|
+| **1. Root Cause** | read errors, reproduce, changes, evidence, data flow | understand WHAT + WHY |
+| **2. Pattern** | working examples, complete comparison, differences | know what's different |
+| **3. Hypothesis** | ranked theory, minimal one-variable test | confirmed/new hypothesis |
+| **4. Implementation** | regression test, root fix, verification | bug resolved, all tests pass |
 
 ## Hermes Agent Integration
 
 ### Investigation Tools
 
-- `search_files`: errors, calls, variables, patterns
-- `read_file`: numbered source and precise context
-- `terminal`: tests, git history, repro
-- `web_search`/`web_extract`: error/library research
+- `search_files` — errors, calls, variables, patterns
+- `read_file` — numbered source and precise context
+- `terminal` — tests, git history, repro
+- `web_search`/`web_extract` — error and library research
 
-### Complex investigation with `delegate_task`
+### With delegate_task
 
-Investigation only; do not fix in the investigator prompt:
+For complex multi-component debugging, dispatch investigation only — do NOT fix
+inside the investigator prompt:
 
 ```python
 delegate_task(
@@ -287,10 +366,8 @@ delegate_task(
 
 ### With test-driven-development
 
-1. RED: failing reproduction
-2. investigate root cause
-3. GREEN: root fix
-4. regression test remains proof
+RED failing reproduction → investigate root cause → GREEN root fix → regression
+proof. Never fix bugs without a test.
 
 ## Pitfalls
 
@@ -300,26 +377,27 @@ delegate_task(
 - multiple variables/fixes in one probe
 - incomplete reference read or ignored small difference
 - temporary logs without unique cleanup prefix
-- instrumentation added but boundary evidence not collected
-- wrapper/parallel runner hides interactive debugging
+- instrumentation without boundary evidence
+- wrapper/parallel runner hiding interactive debugging
 - third failed fix followed by Fix #4 instead of architecture discussion
 
 ## Verification
 
-- Phase 1 checklist complete before any fix
-- minimized red repro removes any non-load-bearing setup
-- working/broken differences and dependencies documented
-- 3-5 ranked falsifiable hypotheses tested one at a time
-- regression test fails before fix and passes after
-- full suite has no regressions; no debug instrumentation remains
-- root cause, not symptom, changed; architecture escalation used after 3 failures
+- [ ] Phase 1 complete before any fix
+- [ ] minimal red repro removes non-load-bearing setup
+- [ ] working/broken differences + dependencies documented
+- [ ] 3–5 ranked falsifiable hypotheses tested one at a time
+- [ ] regression test fails before fix and passes after
+- [ ] full suite has no regressions; debug instrumentation removed
+- [ ] root cause, not symptom, changed; architecture escalation after 3 failures
 
 ## Real-World Impact
 
-Reported comparison from debugging sessions:
+From debugging sessions:
 
-- systematic: 15-30 minutes vs random: 2-3 hours
-- first-time fix: 95% vs 40%
+- systematic: 15–30 minutes to fix
+- random: 2–3 hours of thrashing
+- first-time fix rate: 95% vs 40%
 - new bugs: near zero vs common
 
 **No shortcuts. No guessing. Systematic always wins.**

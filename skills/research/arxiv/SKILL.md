@@ -19,9 +19,9 @@ inputs: keywords, author/category/ID, query operators, sort/pagination, paper ID
 outputs: Atom metadata, parsed paper list, BibTeX, abstracts/PDF content, citation/reference/recommendation/author data
 ¬: invent citations; ignore withdrawal notices; cite a later arXiv version than the one read; exceed API rate limits
 
-Use arXiv's free REST API (Atom XML; no key/dependencies) plus Semantic Scholar's
-free JSON API for citation data and recommendations. `scripts/search_arxiv.py`
-uses Python stdlib only.
+Search/retrieve academic papers with arXiv's free REST API (Atom XML; no API key
+or dependencies — just curl) plus Semantic Scholar's free JSON API for citation
+data/recommendations. `scripts/search_arxiv.py` uses Python stdlib only.
 
 ## When to Use
 
@@ -56,7 +56,8 @@ uses Python stdlib only.
 
 ### Search
 
-The API returns Atom XML. Parse with Python for clean output; use `search_files`/`patch` for local-file inspection or edits.
+The API returns Atom XML. Upstream permits grep/sed or a pipe through `python`
+for clean output; prefer `search_files`/`patch` for local-file inspection/edits.
 
 ### Basic search
 
@@ -175,7 +176,9 @@ print('}')
 
 ## Reading Paper Content
 
-```text
+After finding a paper, read it:
+
+```
 # Abstract page (fast, metadata + abstract)
 web_extract(urls=["https://arxiv.org/abs/2402.03300"])
 
@@ -275,17 +278,41 @@ curl -s "https://api.semanticscholar.org/graph/v1/author/search?query=Yann+LeCun
 6. **Get recommendations**: POST to Semantic Scholar recommendations endpoint
 7. **Track authors**: `curl -s "https://api.semanticscholar.org/graph/v1/author/search?query=NAME"`
 
+## Rate Limits
+
+| API | Rate | Auth |
+|-----|------|------|
+| arXiv | ~1 req / 3 seconds | None needed |
+| Semantic Scholar | 1 req / second | None (100/sec with API key) |
+
+## Notes
+
+- arXiv returns Atom XML — use helper script or parsing snippet for clean output
+- Semantic Scholar returns JSON — pipe through `python -m json.tool`
+- arXiv IDs: old (`hep-th/0601001`) vs new (`2402.03300`)
+- PDF: `https://arxiv.org/pdf/{id}` — abstract: `https://arxiv.org/abs/{id}`
+- HTML when available: `https://arxiv.org/html/{id}`
+- local PDF processing: see `ocr-and-documents` skill
+
+## ID Versioning
+
+- `arxiv.org/abs/1706.03762` resolves the **latest** version
+- `arxiv.org/abs/1706.03762v1` points to a specific immutable version
+- preserve the version suffix actually read to prevent citation drift
+- API `<id>` returns the versioned URL (e.g., `http://arxiv.org/abs/1706.03762v7`)
+
+## Withdrawn Papers
+
+Papers can be withdrawn after submission:
+
+- `<summary>` contains a withdrawal notice; look for "withdrawn" or "retracted"
+- metadata may be incomplete
+- always check `<summary>` before treating a result as valid
+
 ## Pitfalls
 
-- arXiv returns Atom XML; use the helper or parsing snippet for readable output
-- Semantic Scholar returns JSON; pipe through `python -m json.tool`
-- arXiv IDs have old (`hep-th/0601001`) and new (`2402.03300`) forms
-- `https://arxiv.org/pdf/{id}` = PDF; `https://arxiv.org/abs/{id}` = abstract; HTML when available: `https://arxiv.org/html/{id}`
-- API rates: arXiv ~1 request / 3 seconds; Semantic Scholar 1 request / second; no key (100/sec with Semantic Scholar API key)
-- paper snapshots can be stale; a withdrawn result may have incomplete metadata
-- `/abs/1706.03762` resolves latest; `/abs/1706.03762v1` resolves immutable version; cite the version actually read
-- The API `<id>` field returns the versioned URL (e.g., `http://arxiv.org/abs/1706.03762v7`)
-- always inspect `<summary>` for “withdrawn” or “retracted” before treating a result as valid
+- paper snapshots can be stale; withdrawn results may have incomplete metadata
+- never invent citations or cite a later version than the one read
 
 ## Verification
 

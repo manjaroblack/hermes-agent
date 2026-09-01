@@ -19,136 +19,172 @@ inputs: recent diff/scope, optional focus (`reuse|quality|simplification|efficie
 outputs: applied cleanup, risky findings for human review, targeted test/lint results, grouped summary
 ¬: auto-run without explicit request; bug-hunt as cleanup; fan out >4; split diff; remove intentional shims; auto-apply RISKY changes; refactor untouched code
 
-Four narrow reviewers run in parallel against the complete diff. This is cleanup
-of code that already works: remove duplication/complexity/waste and deepen
-band-aids; correctness bug hunting belongs to `requesting-code-review`.
+Review recent code changes with four focused reviewers in parallel; aggregate
+findings; apply only justified fixes. This is cleanup of already-working code:
+remove duplication/complexity/waste and deepen band-aids; correctness bug hunting
+belongs to `requesting-code-review`.
+
+Core principle: four narrow reviewers beat one broad reviewer. Each searches one
+problem class — reuse, quality, efficiency, altitude — without diluted attention;
+concurrency costs one review's latency, not four.
 
 ## When to Use
 
-- “simplify”, “simplify my/recent changes”
-- “review my code/recent changes”, “clean up my changes”
-- `/simplify`
+Triggers:
+
+- "simplify" / "simplify my changes" / "simplify these changes"
+- "review my code" / "review my recent changes" / "clean up my changes"
+- `/simplify` (Claude Code habit)
 
 Honor modifiers:
 
-- focus efficiency/reuse/quality (`simplification` alias)/altitude → run/weight that reviewer
-- dry run/just report → apply nothing; ask before applying
-- last commit/staged/file/branch → narrow diff source
+- Focus: "simplify focus on efficiency" → run only or weight `efficiency`;
+  recognized: `reuse`, `quality`/`simplification`, `efficiency`, `altitude`.
+- Dry run: "simplify but don't change anything" / "just report" → run all four,
+  present findings, apply NOTHING; ask before applying.
+- Scope: "simplify the last commit" / "simplify staged" / "simplify src/foo.py"
+  → narrow diff source (Phase 1).
 
-Do not append to unrelated edits; four subagents cost real tokens.
+¬ auto-run after every edit or append to unrelated tasks; four subagents cost
+real tokens; invoke only on explicit request.
 
 ## Prerequisites
 
-- git repo and recent changes or explicitly named files
+- git repo + recent changes or explicitly named/recent files
 - `terminal`, `read_file`, `search_files`; `delegate_task` when available
 - targeted project tests/lint/typecheck commands
-- user intent for scope/focus; no credentials needed
+- user intent for scope/focus; no credentials
 
-## Procedure
+## The Process
 
-### 1. Identify changes
+### Phase 1 — Identify the changes
 
-Default sources:
+Capture the complete diff and choose source by request:
 
 ```bash
 # 1. Default: uncommitted working-tree changes (tracked files)
 git diff
 
-# 2. If that's empty, include staged changes
+# 2. If empty, include staged changes
 git diff HEAD
 
-# 3. Scoped variants the user may request:
+# 3. Scoped variants
 git diff --staged                 # "staged changes"
-git diff HEAD~1                    # "the last commit"
+git diff HEAD~1                   # "the last commit"
 git diff main...HEAD              # "this branch" / "my PR"
 git diff -- src/foo.py            # specific file(s)
 ```
 
-If both diffs empty and no repo, use explicitly named/recent files; otherwise say
-nothing can be simplified and stop. Capture complete diff + size. >2000 changed
-lines → warn: four full copies are token-heavy; offer per-directory/commit scope.
+If `git diff` and `git diff HEAD` are empty and there is no repo/no change, use
+files explicitly named or recently created/edited this session; otherwise state
+there is nothing to simplify and stop. Record diff size. >2000 changed lines →
+warn: four full diff copies are token-heavy; offer per-directory/per-commit scope.
 
-### 2. Run four reviewers in parallel
+### Phase 2 — Launch four reviewers in parallel
 
-Use `delegate_task` batch `tasks` array. If unavailable (leaf, disabled, budget),
-run all four angles sequentially inline and state that handoff clearly.
+Use `delegate_task` batch mode with all four tasks in one `tasks` array; four is
+within `delegation.max_concurrent_children` on default installs. If unavailable
+(leaf, disabled, budget exhausted), work all four angles sequentially inline; do
+not skip angles, and state in summary that review was inline, not fan-out.
 
-Give every reviewer complete diff + absolute repo path + `terminal`, `file`,
-`search`. Require existing-code search, `git blame` before removal (Chesterton's
-Fence), and this finding format:
+Give every reviewer the complete diff (not fragments), absolute repo path, and
+`terminal`, `file`, `search` toolsets (`git`, `read_file`, `search_files`/grep).
+Require:
 
-```
-file:line → problem → cost (what's duplicated/wasted/harder to maintain) → suggested fix | confidence: high/medium/low | risk: SAFE/CAREFUL/RISKY
-```
+- existing-code search, not diff-only reasoning
+- `git blame` before removal (Chesterton's Fence); unclear purpose →
+  `confidence: low`, never guess
+- structured finding:
 
-Skip nits/style-only churn. Risk meanings:
+  ```
+  file:line → problem → cost (what's duplicated/wasted/harder to maintain) → suggested fix | confidence: high/medium/low | risk: SAFE/CAREFUL/RISKY
+  ```
 
-- SAFE = proven behavior-neutral (unused imports/comments/pass-through wrappers) → auto-apply
-- CAREFUL = semantic-preserving improvement (local rename/flatten/extract) → apply one file at a time + tests
-- RISKY = behavior/public-contract/memory-lifecycle/concurrency impact → human review, no auto-apply
+Cost is mandatory: a finding with no concrete cost is likely a nit. Skip
+style-only churn. Risk:
 
-Reviewer 1 — **Code Reuse**: search utilities/shared helpers/adjacent files for
-duplicated functions/constants/patterns; flag hand-rolled strings/paths/env checks,
-type guards, parsing; name existing symbol + location.
+- SAFE = proven behavior-neutral (unused imports, commented code, pass-through
+  wrappers, redundant assertions) → auto-apply
+- CAREFUL = semantic-preserving (local rename, flatten, extract, consolidate)
+  → one file at a time + tests
+- RISKY = behavior/public-contract/memory-lifecycle/concurrency impact → human
+  review; no auto-apply
 
-Reviewer 2 — **Code Quality**: inspect redundant state, parameter sprawl,
-copy-paste variation, leaky abstractions, stringly-typed code against registries,
-3+ level conditionals, AI slop (`as any`, unnecessary null checks/comments,
-inconsistent patterns); give concrete refactor.
+Reviewer 1 — Code Reuse:
+search utility/shared-helper/adjacent files for duplicate functions, constants,
+or patterns; hand-rolled string/path/env checks, type guards, or parsing. Name
+the existing symbol and location.
 
-Reviewer 3 — **Efficiency**: inspect repeated computation/reads/API/N+1,
-missed concurrency, startup/per-request blocking work, TOCTOU checks, unbounded
-memory/listener/handle/closure lifetime, broad reads, swallowed/ignored errors;
-state faster/safer fix.
+Reviewer 2 — Code Quality:
+inspect redundant/derivable state and needless caches; parameter sprawl;
+copy-paste variation; leaky abstractions; raw strings against canonical
+constant/enum/registry; 3+ level conditionals. Flag AI slop (`as any`, comments
+restating code such as `// increment counter` above `count++`, unnecessary null
+checks, inconsistent patterns). Check 3+ level `if/else` pyramids. Give concrete
+refactor.
 
-Reviewer 4 — **Altitude**: find call-site band-aids over shared infrastructure:
-caller special cases/type checks/magic escapes, sibling symptom patches, stacked
-workarounds, wrappers avoiding needed change, flags routing around broken default.
-Read surrounding code/blame; identify deeper fix or mark as separate task. Do not
-flag deliberate compat shims, staged migrations, or vendored isolation.
+Reviewer 3 — Efficiency:
+inspect repeated computation/file reads/API calls/N+1; missed concurrency;
+startup/per-request `heavy/blocking` hot-path work; TOCTOU pre-checks; unbounded memory,
+missing cleanup, listener/handle leaks; long-lived closures capturing whole
+scope (prefer small class or explicit-fields struct); broad reads; silent
+failures (`except: pass`, empty catches, ignored returns, `.catch(() => {})`,
+error-propagation gaps). Give faster/safer fix and rationale.
 
-### 3. Aggregate and apply
+Reviewer 4 — Altitude:
+find call-site band-aids over shared infrastructure: special cases such as
+`if (caller == X)`, type checks, magic escapes; sibling symptom patches; stacked workarounds; wrappers
+avoiding needed change; flags/config routing around broken defaults. Read context
+and blame; identify deeper fix or separate task. Do not flag deliberate compat
+shims, staged migrations, or vendored isolation.
 
-Wait for all four.
+### Phase 3 — Aggregate and apply
 
-1. Merge/dedupe same line/mechanism.
-2. Discard weak/false findings.
+Wait for all four (batch returns together), then:
+
+1. Merge findings; dedupe same line/mechanism.
+2. Discard weak/false positives; no obligation to argue with reviewer.
 3. Resolve conflicts: correctness > stated focus > readability/reuse > micro-perf;
-   touch less code when equally defensible; note alternative.
-4. Apply in order:
-   - SAFE: unused imports/comments/pass-through/redundant assertions; test
-   - CAREFUL: locals/ternaries/helpers/dupes, one file at a time; test each, revert breakage
-   - RISKY: N+1/public API/concurrency/error-handling/altitude; report for human, do not auto-apply
-   - dry run: present all, apply none
-5. Run touched-file tests + repo lint/typecheck; revert a fix that breaks tests.
-6. Summarize applied fixes by reviewer/risk and skipped findings; state inline-vs-parallel review.
+   prefer less code when equally defensible and note alternatives. Do not trade
+   clarity for perf unless path is genuinely hot.
+4. Apply risk order:
+   - SAFE: unused imports/comments/pass-through/redundant assertions; test.
+   - CAREFUL: locals/ternaries/helpers/dupes, one file at a time; test each,
+     revert breakage.
+   - RISKY: N+1/public API/concurrency/error-handling/altitude; report with risk
+     and coverage, never auto-apply; let user choose deeper fix vs follow-up.
+   - dry run: present all tiers, apply none.
+5. Run touched-file tests plus project lint/typecheck; revert any fix that breaks.
+6. Summarize applied fixes by reviewer/risk, skipped findings + reasons, and
+   inline-vs-parallel mode.
 
 ## Pitfalls
 
-- >4 reviewers increases cost/conflict without coverage gain
-- each reviewer needs whole diff; fragments hide cross-file issues
-- finding without `file:line` and existing-symbol evidence is noise
-- cleanup scope = recent diff + minimal required surroundings; do not rewrite module
-- genuine correctness bug is a separate prominent finding, not cleanup change
-- altitude deeper fix is flagged, not unilaterally implemented
+- ¬ >4 reviewers; cost/conflict rises without coverage
+- whole diff required; fragments hide cross-file duplication/N+1
+- reuse finding without `file:line` existing-symbol evidence = noise
+- cleanup scope = recent diff + minimal surroundings, not module rewrite
+- correctness bug = prominent separate finding, not cleanup change
+- altitude deep fix = flag, don't unilaterally implement
 - honor AGENTS/CLAUDE/HERMES/linter conventions
-- large diff should be scoped before delegation
+- scope large diff before delegation; 5000-line copies may truncate
 - `knip`/`ts-prune`/`depcheck` miss dynamic uses; search symbol before removal
-- public exports/routes/DB/config names are contracts; rename = RISKY
+- public exports/routes/DB columns/config keys are contracts; rename = RISKY
 - intentional empty catches/error handling are flagged, not removed
-- compat/staged/vendored special cases need blame/context; low confidence if unclear
+- compat/staged/vendored special cases need blame/context; uncertainty → low confidence
 
 ## Verification
 
-- requested scope and diff source captured; empty/no-repo handled honestly
-- four angles completed in parallel or all inline, with complete diff
-- findings have concrete cost, evidence, confidence, and risk
-- SAFE/CAREFUL changes only applied within scope; RISKY changes not auto-applied
-- targeted tests + linter/typecheck pass after each applied file
-- summary groups applied/skipped work and identifies genuine bugs separately
+- [ ] requested scope and diff source captured; empty/no-repo handled honestly
+- [ ] four angles completed in parallel or all inline, with complete diff
+- [ ] findings include cost, evidence, confidence, risk
+- [ ] SAFE/CAREFUL changes remain in scope; RISKY changes not auto-applied
+- [ ] targeted tests + linter/typecheck pass after each applied file
+- [ ] summary groups applied/skipped work and isolates genuine bugs
 
 ## Related
 
-`subagent-driven-development` covers parallel review during implementation;
-this skill is after-the-fact cleanup. `requesting-code-review` is the pre-commit
-security/quality bug hunt; this skill improves already-working code.
+If installed, optional `subagent-driven-development` covers parallel review
+during implementation, per task. This skill is standalone after-the-fact cleanup.
+Use `requesting-code-review` for the pre-commit security/quality bug hunt; this
+skill improves already-working code.

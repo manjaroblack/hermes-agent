@@ -19,7 +19,7 @@ inputs: local path or GitHub URL; repo SHA; scope/module cap; source files; outp
 outputs: `README.md`; architecture/module/API/getting-started docs; Mermaid diagrams; `.codewiki-state.json`; generated-path report
 ¬: invent symbols/components; document uninspected code; write in-repo without request; exceed scope silently; include secrets/vendor/generated code; use diagrams >20 nodes
 
-Generate reference wiki documentation for any codebase: overview, architecture, per-module deep dives, Mermaid class/sequence diagrams. Uses Hermes `terminal`, `read_file`, `search_files`, and `write_file`; no external service/dependency required.
+Generate full wiki documentation for any codebase — overview, architecture, per-module deep dives, Mermaid class/sequence diagrams. Works on local/private repos and any language; uses only Hermes `terminal`, `read_file`, `search_files`, and `write_file`; no Docker, external service, or extra dependency.
 
 This skill produces **reference documentation** (what/how). It does not produce strategic narrative (why — that's a different skill).
 
@@ -42,16 +42,16 @@ Do NOT use this for:
 - `git` on PATH for repo SHA tracking and remote clones.
 - Optional: `pygount` for language-breakdown stats (see the `codebase-inspection` skill).
 
-## Procedure
+## How to Run
 
 Invoke through the `terminal` tool from the target repo's root, then use `read_file` / `search_files` / `write_file` to produce the wiki. Default output location is `~/.hermes/wikis/<repo-name>/`. Only write into the repo (`docs/wiki/`) when the user explicitly requests it.
 
-### Quick Reference
+## Quick Reference
 
 | Step | Action |
 |---|---|
 | 1 | Resolve target — local cwd, given path, or `git clone --depth 50 <url>` to a temp dir |
-| 2 | Scan structure — `ls`, `find -maxdepth 3`, manifest files, README |
+| 2 | Scan structure — `search_files(target='files')`, `find -maxdepth 3`, manifest files, README |
 | 3 | Pick 8–10 modules to document |
 | 4 | Write `README.md` (overview + module map) |
 | 5 | Write `architecture.md` with Mermaid flowchart |
@@ -63,7 +63,7 @@ Invoke through the `terminal` tool from the target repo's root, then use `read_f
 | 11 | Write `.codewiki-state.json` |
 | 12 | Report paths to user |
 
-### Detailed Procedure
+## Procedure
 
 ### 1. Resolve the target
 
@@ -218,7 +218,7 @@ Cap at ~20 nodes per diagram. Split into sub-diagrams if larger.
 
 ### 6. Write per-module docs in `modules/`
 
-For each selected module, inspect its layout with `search_files (target='files')`, identify 3–5 most important files (by size, by being named `core.py` / `main.py` / `__init__.py`, by being imported a lot), then `read_file` those files (use `offset` / `limit` to read only what you need; prefer `search_files` for specific symbols).
+For each selected module, inspect its layout with `search_files(target='files')`, identify 3–5 most important files (by size, by being named `core.py` / `main.py` / `__init__.py`, by being imported a lot), then `read_file` those files (use `offset` / `limit` to read only what you need; prefer `search_files` for specific symbols). The upstream terminal equivalent is preserved in the scan example above.
 
 ````markdown
 # Module: `<module>`

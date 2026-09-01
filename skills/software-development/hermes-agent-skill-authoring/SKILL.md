@@ -19,52 +19,67 @@ inputs: reusable workflow, target `skills/` or `optional-skills/` path, human at
 outputs: committed SKILL.md, supporting references, templates, or scripts as needed, focused tests/docs, verified metadata and links
 ¬: write private skills into repo; use `skill_manage(create)` for in-repo creation; invent categories/routers; credit agent alone; use machine-local paths; skip tests/docs/validation
 
-Two locations:
+## Overview
 
-1. User-local `~/.hermes/skills/<maybe-category>/<name>/SKILL.md` — personal;
-   create with `skill_manage(action='create')`.
-2. In-repo `skills/<category>/<name>/SKILL.md` or
-   `optional-skills/<category>/<name>/SKILL.md` — committed/shipped; use
-   `write_file` + `git add`. `skill_manage(action='create')` does not target it.
+Two SKILL.md locations:
 
-Repo hardline standards are in AGENTS.md; this skill is the operational path.
+1. User-local: `~/.hermes/skills/<maybe-category>/<name>/SKILL.md` — personal,
+   not shared; create with `skill_manage(action='create')`.
+2. In-repo: `skills/<category>/<name>/SKILL.md` or
+   `optional-skills/<category>/<name>/SKILL.md` inside hermes-agent — committed
+   and shipped; use `write_file` + `git add`; `skill_manage(action='create')`
+   does NOT target this tree.
+
+In-repo skills must meet AGENTS.md `Skill authoring standards (HARDLINE)`;
+that section is source of truth, this skill is the operational walkthrough.
+Reviewers reject violations; satisfy hardline before review.
 
 ## When to Use
 
-- add a skill in the current repo/branch/commit
+- user asks to add a skill "in this branch / repo / commit"
 - commit a reusable workflow shipped with hermes-agent
-- edit an existing `skills/` or `optional-skills/` skill
-- audit frontmatter, platform gating, references, docs, or hygiene
-
-Don't use for personal `~/.hermes/skills/`; use `skill_manage`.
+- edit an existing `skills/` or `optional-skills/` skill; `patch` for small
+  edits, `write_file` for rewrites (`skill_manage` can patch in-repo, not `create`)
+- ¬ personal `~/.hermes/skills/` work; use `skill_manage`
 
 ## Prerequisites
 
-- target tier/category and existing skill inventory
-- human contributor attribution
-- repo test/docs generator and AGENTS.md
+- target tier/category; existing skill inventory and 2–3 peers
+- human contributor attribution; repo conventions and AGENTS.md
+- repo test/docs generator
 - `search_files`, `read_file`, `write_file`, `patch`, `terminal`
 
-## Procedure
+## Decide Tier and Category First
 
-### 1. Decide tier and category
-
-- **Bundled** `skills/<category>/`: broad daily-driver, low footprint; credible
-  use ≥5 sessions/month.
-- **Optional** `optional-skills/<category>/`: niche/vertical, recurring-job,
-  heavy, or one-app; install via `hermes skills install official/<category>/<skill>`.
-- When uncertain → optional; promotion is easier than demotion.
-- Choose category by what tool/workflow is, not its vibe. Inspect categories with
-  `search_files(pattern='*', target='files', path='skills')`.
-- No router/index/hub skill; catalog + sibling `When to Use` already route.
+- Bundled `skills/<category>/`: daily-driver, broadly useful, low footprint;
+  credible use ≥5 sessions/month.
+- Optional `optional-skills/<category>/`: niche/vertical (blockchain, gaming,
+  finance, one app), recurring-job/task, or heavy; install with
+  `hermes skills install official/<category>/<skill>`.
+- When uncertain → optional; promotion is easy, demotion causes churn. "Useful
+  to anyone who ever needs this" argues optional, not bundled.
+- Category follows what the tool/workflow IS, not its vibe (AI-agent CLI →
+  `autonomous-ai-agents/` even if it feels productivity). Confirm with
+  `search_files(pattern='*', target='files', path='skills')`; don't invent top-level
+  categories casually.
+- ¬ router/index/hub skill: catalog + sibling `When to Use` triggers already route;
+  a routing table only adds indirection and duplicates triggers.
 
 Done when tier/category/overlap decision is recorded and peers are known.
 
-### 2. Required frontmatter
+## Required Frontmatter
 
-Source of truth: `tools/skill_manager_tool.py::_validate_frontmatter`.
-Hard requirements: first bytes `---`; closing `\n---\n`; YAML mapping; `name`,
-`description`; non-empty body. Repo shape:
+Validator source: `tools/skill_manager_tool.py::_validate_frontmatter`.
+Hard requirements:
+
+- first bytes `---` (no leading blank/BOM)
+- closing `\n---\n` before body
+- YAML mapping
+- `name` and `description`
+- description validator ceiling 1024 chars (repo hardline is stricter)
+- non-empty body after closing `---`
+
+Repo shape (all fields expected even where validator is permissive):
 
 ```yaml
 ---
@@ -81,147 +96,181 @@ metadata:
 ---
 ```
 
-#### Description hardline
+### Description rules (HARDLINE)
 
-- ≤60 chars; one sentence; ends period; capability, not implementation/name
-- no marketing (`powerful`, `comprehensive`, `seamless`, `advanced`)
-- trigger/capability must be self-contained within 57 chars + index ellipsis
-- quote descriptions containing `:`; quotes do not count
+- ≤60 chars; one sentence; period-terminated
+- capability, not implementation or repeated skill name
+- ¬ marketing: `powerful`, `comprehensive`, `seamless`, `advanced`
+- trigger/capability self-contained within 57 chars + index `...`
+- description containing `:` → double-quote it; YAML otherwise parses mapping;
+  quotes don't count
+- good: `Track named companies for material news with cited digests.`
+- bad: `Use when a user asks to monitor named competitors or companies for product launches, pricing changes, funding, ...` (240 chars)
 
-Good: `Track named companies for material news with cited digests.`
-Bad: 240-char trigger paragraph.
-
-#### Author + links
+### Author rules
 
 - human first, then `Hermes Agent`: `Ben Barclay (benbarclay), Hermes Agent`
+- never `author: Hermes Agent` alone for contributed work
 - maintainer style: `Teknium (teknium1), Hermes Agent`
-- each `related_skills` entry must resolve to an in-repo skill in this tree;
-  verify with `search_files` in `skills/` and `optional-skills/`.
 
-### 3. Audit platform gating
+### Related-skill rules
 
-`platforms:` gates by host OS; infer from prose/scripts:
+- every entry resolves to an existing in-repo skill in the same tree state as
+  the change; ¬ planned, sibling-PR, or `~/.hermes/skills/` only
+- verify with `search_files(pattern='<name>', target='files', path='skills')`
+  and `optional-skills/`
+
+## Platform Gating: Audit, Don't Trust
+
+`platforms:` gates loading by host OS; infer from prose/scripts:
 
 | Skill uses only… | `platforms:` |
 |---|---|
 | Hermes tools + stdlib Python + cross-platform CLIs | `[linux, macos, windows]` |
-| bash pipelines and POSIX text-filter chains, heredocs | `[linux, macos]` |
+| bash pipelines, grep/awk/sed chains, heredocs | `[linux, macos]` |
 | `osascript`, `defaults`, `pmset` | `[macos]` |
 | `apt`/`systemctl`/`/proc` | `[linux]` |
 
-Search scripts for POSIX signals: `fcntl`, `termios`, `pty`, `os.fork`,
+Search `scripts/` for POSIX signals: `fcntl`, `termios`, `pty`, `os.fork`,
 `os.killpg`, `signal.SIGKILL`, `os.kill(pid, 0)`, hardcoded `/tmp` `/proc` `/etc`.
-Prefer cross-platform fixes (`tempfile.gettempdir()`, `pathlib.Path`,
-`psutil.pid_exists`); narrow only for genuine platform dependencies and explain
-why in Pitfalls.
+Default: fix cross-platform first (`tempfile.gettempdir()`, `pathlib.Path`,
+`psutil.pid_exists`); narrow only for genuine platform-bound dependencies and
+explain why in `## Pitfalls`.
 
-### 4. Author body and size
+## Size Limits
 
-Target ~100 lines simple, ~200 complex; hard max 100,000 chars
-(`MAX_SKILL_CONTENT_CHARS`). Move bulky examples/procedures to
-`references/*.md`, `templates/`, or `scripts/`; link them. Minimum structure:
+- hard max 100,000 chars (`MAX_SKILL_CONTENT_CHARS`)
+- target ~100 lines simple, ~200 complex; peers commonly 8–14k chars
+- move bulky or branch-specific material to `references/*.md`, `templates/`,
+  `scripts/`; point to it, don't inline
+- non-trivial parsers/logic belong in helper scripts, not re-written each call
 
-```
+## Body Structure
+
+```text
 # <Skill> Skill
 2-3 sentence intro: what it does, what it doesn't do, dependency stance.
 
-## When to Use          — bulleted triggers (+ "Don't use for:" counter-triggers)
+## When to Use          — triggers + "Don't use for:" counter-triggers
 ## Prerequisites        — exact env vars, installs, API key sourcing
-## How to Run           — canonical invocation through the `terminal` tool
+## How to Run           — canonical invocation through `terminal`
 ## Quick Reference      — flat command list, no narration
-## Procedure            — numbered steps, each with a checkable completion criterion
-## Pitfalls             — known limits, things that look broken but aren't
-## Verification         — how to prove the skill worked
+## Procedure            — numbered steps, each checkable
+## Pitfalls             — known limits and deceptive failures
+## Verification         — proof the skill worked
 ```
 
-When a capability is needed, name Hermes tools: `terminal`, `read_file`,
-`write_file`, `patch`, `search_files`, `web_search`, `web_extract`,
-`browser_navigate`, `vision_analyze`, `delegate_task`, `cronjob`. Do not name
-wrapped shell utilities as the agent API; map text search to `search_files`, file
-reads to `read_file`, edits to `patch`, and file enumeration to
-`search_files (target='files')`. CLI wrappers
-should frame calls as `terminal(command="<tool> ...", timeout=...)`.
+When/Procedure/Pitfalls/Verification are minimum actionable structure; Quick
+Reference may not apply to pure-procedure work. Cut marketing intros, no-op
+"Setup Check" sections, and repeated env-var explanations.
 
-Use repo-relative paths (`skills/...`, `tools/...`); never commit machine-local
-paths. Each ordered step ends with a checkable criterion.
+### Reference Hermes tools, not raw shell
 
-### Quality principles
+Name proper tools: `terminal`, `read_file`, `write_file`, `patch`, `search_files`,
+`web_search`, `web_extract`, `browser_navigate`, `vision_analyze`,
+`delegate_task`, `cronjob`. Map wrapped shell utilities: grep→`search_files`,
+cat→`read_file`, sed/awk→`patch`, find/ls→`search_files(target='files')`.
+CLI wrappers frame calls as `terminal(command="<tool> ...", timeout=...)`, not bare
+shell prose such as "run `foo --version`". If an MCP server is required, name it
+and document setup in Prerequisites.
 
-1. Optimize process predictability; cut behavior-neutral lines.
-2. Keep expensive routing description short; put depth in body/references.
-3. State exhaustive completion criteria.
-4. Co-locate rules with the concept governed.
-5. Lead with strong words: tight loop, root cause, regression test.
-6. Remove duplication/no-ops such as “be careful” and “best practices.”
+### Never use machine-local paths
 
-### 5. Tests and docs
+Use repo-relative `skills/...`, `tools/skill_manager_tool.py`; a baked
+`/home/<you>/...` path breaks other users and is an instant review flag.
 
-1. Tests: `tests/skills/test_<skill>_skill.py`, stdlib + pytest + `unittest.mock`,
-   no live network. Run:
+## Writing Quality Principles
 
-   ```bash
-   scripts/run_tests.sh tests/skills/test_<skill>_skill.py -q
-   ```
+A skill makes the agent's process predictable:
 
-2. Docs: run `python website/scripts/generate-skill-docs.py`; revert generated
-   unrelated drift. Final diff: SKILL.md, one per-skill page, one catalog row,
-   one `website/sidebars.ts` insertion. Verify sidebar slug with
-   `search_files(pattern='<your-slug>', path='website/sidebars.ts')` = exactly one.
+1. cut behavior-neutral lines; optimize process predictability
+2. description is paid every turn; put detail in body/references
+3. end ordered steps with checkable, exhaustive criteria ("every modified file
+   accounted for" > "summarize changes")
+4. co-locate rules with governed concepts
+5. lead with strong terms: "tight loop", "root cause", "regression test"
+6. prune duplication/no-ops ("be careful", "use best practices")
+
+## Tests and Docs (Required for Repo Skills)
+
+1. Tests: `tests/skills/test_<skill>_skill.py`; stdlib + pytest +
+   `unittest.mock`, no live network. Run
+   `scripts/run_tests.sh tests/skills/test_<skill>_skill.py -q`.
+   Generic `tests/tools/test_skill_manager_tool.py` passing proves nothing about
+   the authored skill.
+2. Docs: run `python website/scripts/generate-skill-docs.py`. It rewrites EVERY
+   auto-gen page; use `git checkout --` for unrelated drift. Final diff: SKILL.md,
+   one per-skill page, one catalog row, one `website/sidebars.ts` insertion.
+   Verify sidebar slug with
+   `search_files(pattern='<your-slug>', path='website/sidebars.ts')` = exactly one
+   hit; otherwise page is orphaned.
 3. New env vars only: one clearly delimited commented block in `.env.example`;
    touch nothing else.
 
-### 6. Validate and hand off
+## Workflow
 
-```python
-import yaml, re, pathlib
-content = pathlib.Path("skills/<category>/<name>/SKILL.md").read_text()
-assert content.startswith("---")
-m = re.search(r'\n---\s*\n', content[3:])
-fm = yaml.safe_load(content[3:m.start()+3])
-assert "name" in fm and "description" in fm
-assert len(fm["description"]) <= 60, f"description {len(fm['description'])} chars — hardline is 60"
-assert fm["description"].endswith(".")
-assert "platforms" in fm
-assert len(content) <= 100_000
-```
+1. Survey category peers with `search_files(target='files')` (or
+   `search_files target='files'`); read 2–3 peer
+   SKILL.md files; extend an existing skill before creating a narrow sibling.
+2. Decide tier/category above; when in doubt optional, ask before pushing.
+3. Draft with `write_file` to `skills/<category>/<name>/SKILL.md` or
+   `optional-skills/...`.
+4. Validate locally:
 
-Also verify every related skill exists in-repo, add focused tests, regenerate
-scoped docs, inspect diff, then `git add` + commit on intended branch/open PR.
-Current session loader is cached; new skills appear after a new session.
+   ```python
+   import yaml, re, pathlib
+   content = pathlib.Path("skills/<category>/<name>/SKILL.md").read_text()
+   assert content.startswith("---")
+   m = re.search(r'\n---\s*\n', content[3:])
+   fm = yaml.safe_load(content[3:m.start()+3])
+   assert "name" in fm and "description" in fm
+   assert len(fm["description"]) <= 60, f"description {len(fm['description'])} chars — hardline is 60"
+   assert fm["description"].endswith(".")
+   assert "platforms" in fm
+   assert len(content) <= 100_000
+   ```
+
+   Also verify every `related_skills` entry exists in-repo.
+5. Add focused tests and regenerate docs with scope discipline.
+6. `git add` + commit on active branch; open a PR.
+7. Current session's loader is cached: `skill_view` / `skills_list` see new
+   skills only after a new session; expected, not a bug.
 
 ## Editing Existing In-Repo Skills
 
 - small fix: `skill_manage(action='patch', ...)` or `patch`
-- major rewrite: `write_file` whole SKILL.md
+- major rewrite: `write_file` whole `SKILL.md`
 - supporting files: `write_file` under `references/`, `templates/`, `scripts/`
 - always commit; rerun docs generator when frontmatter changes
 
-## Pitfalls
+## Common Pitfalls
 
-- `skill_manage(action='create')` writes profile-local state, not repo tree
-- validator allows 1024-char descriptions; repo hardline is 60
-- contributed skill must credit human first
-- leading blank/BOM before `---` fails validation
-- generic/late trigger gets truncated from index
-- related skill may be user-local/planned/sibling-PR only; verify in-repo
-- duplicate sibling means survey/extend first
-- no docs regen or blind unrelated regen; scope generator output
-- current session cannot see newly authored skill until reload
-- when adding a rule, remove superseded sediment
+1. `skill_manage(action='create')` writes `~/.hermes/skills/`, not repo tree;
+   use `write_file`.
+2. Validator allows 1024-char descriptions; review hardline is 60 and also
+   checks `platforms`, author, tests, docs.
+3. `author: Hermes Agent` alone erases contributor credit; human first.
+4. Leading whitespace/BOM before `---` fails validation.
+5. Generic trigger or capability past char 57 is truncated.
+6. `related_skills` may point only to in-repo skills; verify state.
+7. Duplicate sibling means survey/extend first.
+8. No docs regen creates orphan; blind generator regen pushes unrelated drift.
+9. Current session cannot see new skill until reload.
+10. Adding rules without removing superseded wording accumulates sediment.
 
 ## Verification Checklist
 
-- [ ] Tier deliberate: bundled ≥5 sessions/month; else `optional-skills/`
-- [ ] Correct repo path; frontmatter starts byte 0 and closes correctly
-- [ ] `name`, `description`, `version`, `author`, `license`, `platforms`, and
+- [ ] tier deliberate: bundled ≥5 sessions/month; else `optional-skills/`
+- [ ] correct repo path; frontmatter byte 0 `---`, closes correctly
+- [ ] `name`, `description`, `version`, `author`, `license`, `platforms`,
       `metadata.hermes.{tags, related_skills}` present
-- [ ] Description ≤60 chars, one sentence, period, no marketing
-- [ ] Human contributor credited first
-- [ ] Platforms audited against actual prose/scripts
-- [ ] Related skills resolve in-repo
-- [ ] Body has routing, prerequisites, actionable procedure, pitfalls, verification
-- [ ] Hermes tool names and repo-relative paths used
-- [ ] Ordered steps have checkable criteria
-- [ ] Focused skill test passes via `scripts/run_tests.sh`
-- [ ] Docs regenerated with unrelated drift reverted; one sidebar entry
-- [ ] Intended files staged/committed; PR opened
+- [ ] description ≤60 chars, one sentence, period, no marketing
+- [ ] human contributor first in `author`
+- [ ] platforms audited against prose/scripts, not copied
+- [ ] every related skill resolves in-repo
+- [ ] body has routing, prerequisites, actionable procedure, pitfalls, verification
+- [ ] Hermes tool names + repo-relative paths used; no machine-local paths
+- [ ] ordered steps have checkable criteria
+- [ ] focused skill test passes via `scripts/run_tests.sh`
+- [ ] docs regenerated with unrelated drift reverted; exactly one sidebar entry
+- [ ] intended files staged/committed; PR opened
