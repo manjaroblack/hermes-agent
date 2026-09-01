@@ -13,54 +13,59 @@ metadata:
 
 # 1-3-1 Communication Rule
 
-Structured decision-making format for when a task has multiple viable approaches and the user needs a clear recommendation. Produces a concise problem framing, three options with trade-offs, and an actionable plan for the recommended path.
+role: decision-brief operator
+do: frame one problem; compare exactly three viable options; recommend one; define done; plan execution; update if choice changes
+inputs: decision, context/priorities, constraints, viable approaches, success criteria
+outputs: one Problem sentence, Options A/B/C with pros/cons, one Recommendation, aligned DoD and Implementation Plan
+¬: use for obvious one-answer questions; invent three fake options; hedge recommendation; mix two problems; leave DoD/plan tied to rejected choice
+
+Use this format when a technical or organizational decision has multiple meaningful trade-offs and the user needs a forwardable recommendation.
 
 ## When to Use
 
-- The user explicitly asks for a "1-3-1" response.
-- The user says "give me options" or "what are my choices" for a technical decision.
-- A task has multiple viable approaches with meaningful trade-offs (architecture, tooling, migration strategy).
-- The user needs a proposal they can forward to a team or stakeholder.
+- user explicitly asks for a `1-3-1`
+- user asks for options/choices on architecture, tooling, or migration
+- multiple viable approaches have meaningful trade-offs
+- user needs a proposal for a team or stakeholder
 
-Do NOT use for simple questions with one obvious answer, debugging sessions, or tasks where the user has already decided on an approach.
+Do not use for simple questions, debugging sessions, or decisions already made.
 
 ## Procedure
 
-1. **Problem** (one sentence)
-   - State the core decision or desired outcome in a single concise sentence.
-   - Focus on the *what*, not the *how* — no implementation details, tool names, or specific technologies.
-   - Keep it tight. If you need "and", you're describing two problems.
+1. **Problem** — exactly one sentence; state desired outcome/core decision, not implementation details or tool names. If `and` is needed, split the decision.
+2. **Options** — exactly A, B, C; each genuinely distinct and viable; include short description, pros, and cons.
+3. **Recommendation** — select one option directly; justify from user context and priorities.
+4. **Definition of Done** — concrete, verifiable success criteria for the recommendation.
+5. **Implementation Plan** — executable steps, commands/tools where useful; revise DoD + plan if the user selects another option.
 
-2. **Options** (exactly three)
-   - Present three distinct, viable approaches labeled A, B, C.
-   - Each option gets a brief description, pros, and cons.
-   - Options should represent genuinely different strategies, not minor variations of the same approach.
+## Output Template
 
-3. **Recommendation** (one option)
-   - State which option you recommend and why, based on the user's context and priorities.
-   - Be direct — this is your professional judgment, not a hedge.
+```markdown
+**Problem:** [one sentence]
 
-4. **Definition of Done**
-   - List the specific success criteria for the recommended option.
-   - These are concrete, verifiable outcomes — not vague aspirations.
-   - If the user picks a different option, revise this section to match.
+**Options:**
+- **Option A:** [approach]
+  Pros: [..]
+  Cons: [..]
+- **Option B:** [approach]
+  Pros: [..]
+  Cons: [..]
+- **Option C:** [approach]
+  Pros: [..]
+  Cons: [..]
 
-5. **Implementation Plan**
-   - Concrete steps to execute the recommended option.
-   - Include specific commands, tools, or actions where applicable.
-   - If the user picks a different option, revise this section to match.
+**Recommendation:** Option [A/B/C]. [contextual reason]
 
-## Verification
+**Definition of Done:**
+- [verifiable criterion]
 
-- Response has exactly one Problem sentence.
-- Response has exactly three Options (A, B, C) with pros and cons for each.
-- Response has a single Recommendation that picks one option with reasoning.
-- Definition of Done and Implementation Plan align with the recommended option.
-- If the user selects a different option, Recommendation, DoD, and Implementation Plan update accordingly.
+**Implementation Plan:**
+1. [step]
+```
 
 ## Example
 
-User: "Give me a 1-3-1 for adding retry logic to our API client."
+User: “Give me a 1-3-1 for adding retry logic to our API client.”
 
 Agent:
 
@@ -69,29 +74,46 @@ Agent:
 **Options:**
 
 - **Option A: Exponential backoff with jitter in a shared utility.**
-  Pros: Simple, well-understood pattern; single implementation shared across all callers.
-  Cons: No circuit-breaking; callers still block during retries.
+  Pros: Simple, understood, one implementation for all callers.
+  Cons: No circuit breaking; callers block during retries.
 
-- **Option B: Retry library (tenacity) as a decorator on each endpoint call.**
-  Pros: Configurable per-endpoint; built-in support for circuit breakers and rate limits.
-  Cons: Adds a dependency; decorator pattern can obscure control flow.
+- **Option B: Retry library (`tenacity`) as a decorator on each endpoint call.**
+  Pros: Per-endpoint configuration; built-in circuit-breaker/rate-limit support.
+  Cons: Adds a dependency; decorators can obscure control flow.
 
-- **Option C: Queue-based async retry with dead letter handling.**
-  Pros: Non-blocking; failed calls are tracked and replayable; scales well.
-  Cons: Significant complexity increase; requires a queue backend; overkill for low-volume services.
+- **Option C: Queue-based async retry with dead-letter handling.**
+  Pros: Non-blocking, replayable failures, scalable.
+  Cons: Queue backend and significant complexity; overkill at low volume.
 
-**Recommendation:** Option A. The call volume doesn't justify queue infrastructure, and a shared utility with exponential backoff + jitter covers the failure mode cleanly without new dependencies.
+**Recommendation:** Option A. The volume does not justify queue infrastructure; shared exponential backoff + jitter covers the failure without a new dependency.
 
 **Definition of Done:**
-- `api_retry()` utility handles transient HTTP errors (429, 502, 503, 504).
-- Retries up to 3 times with exponential backoff and jitter.
-- All external API calls route through the retry utility.
-- Logs each retry attempt with endpoint and attempt number.
-- Tests cover retry exhaustion, immediate success, and transient-then-success scenarios.
+- `api_retry()` handles transient HTTP 429, 502, 503, 504.
+- Up to 3 retries with exponential backoff and jitter.
+- All external API calls use the utility.
+- Each retry logs endpoint + attempt number.
+- Tests cover exhaustion, immediate success, and transient-then-success.
 
 **Implementation Plan:**
-1. Create `utils/api_retry.py` with configurable max retries, base delay, and retryable status codes.
-2. Add jitter using `random.uniform(0, base_delay)` to prevent thundering herd.
-3. Wrap existing API calls in `api_client.py` with the retry utility.
-4. Add unit tests mocking HTTP responses for each retry scenario.
-5. Verify under load with a simple stress test against a flaky endpoint mock.
+1. Create `utils/api_retry.py` with max retries, base delay, retryable statuses.
+2. Add `random.uniform(0, base_delay)` jitter.
+3. Wrap `api_client.py` calls.
+4. Add HTTP-response tests for each retry case.
+5. Run a stress test against a flaky endpoint mock.
+
+## Pitfalls
+
+- Exactly three options, not three cosmetic variants.
+- One problem sentence; keep what separate from how.
+- Recommendation is a decision, not a hedge.
+- DoD and plan must follow the selected option.
+- Revise Recommendation, DoD, and plan when the user chooses a different option.
+
+## Verification
+
+- one Problem sentence
+- exactly Options A, B, C
+- each option has pros + cons
+- one Recommendation with rationale
+- DoD and Implementation Plan align with it
+- user-selected alternative updates all dependent sections

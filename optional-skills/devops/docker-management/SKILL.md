@@ -14,25 +14,27 @@ metadata:
 
 # Docker Management
 
-Manage Docker containers, images, volumes, networks, and Compose stacks using standard Docker CLI commands. No additional dependencies beyond Docker itself.
+role: Docker/Compose operations operator
+do: classify request; inspect before destructive action; manage containers/images/volumes/networks; debug logs/resources; validate Compose; verify state/ports/disk; optimize Dockerfile
+inputs: Docker/Compose project, container/image/volume/network name, ports/env/limits, cleanup target
+outputs: running/stopped/inspected resources, Compose stack, diagnostics, verified disk/port/health state
+¬: destroy volumes without confirmation; expose passwords; prune broadly before diagnosis; assume service healthy from `docker ps`; bind app only to localhost in container; use unpinned `latest`; run privileged/root unnecessarily
+
+Manage Docker containers, images, volumes, networks, and Compose with the standard Docker CLI. No dependency beyond Docker.
 
 ## When to Use
 
-- Run, stop, restart, remove, or inspect containers
-- Build, pull, push, tag, or clean up Docker images
-- Work with Docker Compose (multi-service stacks)
-- Manage volumes or networks
-- Debug a crashing container or analyze logs
-- Check Docker disk usage or free up space
-- Review or optimize a Dockerfile
+- container lifecycle, shell/logs/inspect/stats/debugging
+- image build/pull/push/tag/cleanup
+- Compose multi-service stacks
+- volume/network management
+- Docker disk usage/cleanup or Dockerfile review
 
 ## Prerequisites
 
-- Docker Engine installed and running
-- User added to the `docker` group (or use `sudo`)
-- Docker Compose v2 (included with modern Docker installations)
-
-Quick check:
+- Docker Engine installed/running
+- user in `docker` group or permission to use `sudo`
+- Docker Compose v2
 
 ```bash
 docker --version && docker compose version
@@ -55,20 +57,16 @@ docker --version && docker compose version
 
 ## Procedure
 
-### 1. Identify the domain
+### 1. Classify request
 
-Figure out which area the request falls into:
+- lifecycle: run/stop/start/restart/rm/pause/unpause
+- interaction: exec/cp/logs/inspect/stats
+- image: build/pull/push/tag/rmi/save/load
+- Compose: up/down/ps/logs/exec/build/config
+- volumes/networks: create/inspect/rm/prune/connect
+- troubleshooting: logs, exit codes, resources
 
-- **Container lifecycle** → run, stop, start, restart, rm, pause/unpause
-- **Container interaction** → exec, cp, logs, inspect, stats
-- **Image management** → build, pull, push, tag, rmi, save/load
-- **Docker Compose** → up, down, ps, logs, exec, build, config
-- **Volumes & networks** → create, inspect, rm, prune, connect
-- **Troubleshooting** → log analysis, exit codes, resource issues
-
-### 2. Container operations
-
-**Run a new container:**
+### 2. Container lifecycle
 
 ```bash
 # Detached service with port mapping
@@ -90,22 +88,20 @@ docker run -it --rm ubuntu:22.04 /bin/bash
 docker run -d --memory=512m --cpus=1.5 --restart=unless-stopped --name app my-app
 ```
 
-Key flags: `-d` detached, `-it` interactive+tty, `--rm` auto-remove, `-p` port (host:container), `-e` env var, `-v` volume, `--name` name, `--restart` restart policy.
-
-**Manage running containers:**
+Flags: `-d` detached; `-it` interactive+TTY; `--rm` auto-remove; `-p` host:container port; `-e` env; `-v` volume; `--name`; `--restart`.
 
 ```bash
-docker ps                        # running containers
-docker ps -a                     # all (including stopped)
-docker stop NAME                 # graceful stop
-docker start NAME                # start stopped container
-docker restart NAME              # stop + start
-docker rm NAME                   # remove stopped container
-docker rm -f NAME                # force remove running container
-docker container prune           # remove ALL stopped containers
+docker ps
+docker ps -a
+docker stop NAME
+docker start NAME
+docker restart NAME
+docker rm NAME
+docker rm -f NAME
+docker container prune
 ```
 
-**Interact with containers:**
+Interact:
 
 ```bash
 docker exec -it NAME /bin/sh          # shell access (use /bin/bash if available)
@@ -120,7 +116,7 @@ docker stats --no-stream               # resource usage snapshot
 docker top NAME                        # running processes
 ```
 
-### 3. Image management
+### 3. Images
 
 ```bash
 # Build
@@ -146,7 +142,7 @@ docker image prune -a                  # remove ALL unused images (careful!)
 docker image prune -a --filter "until=168h"   # unused images older than 7 days
 ```
 
-### 4. Docker Compose
+### 4. Compose
 
 ```bash
 # Start/stop
@@ -169,7 +165,7 @@ docker compose restart api             # restart specific service
 docker compose config                  # validate and view resolved config
 ```
 
-**Minimal compose.yml example:**
+`down -v` destroys volumes; confirm first. Minimal example:
 
 ```yaml
 services:
@@ -202,7 +198,7 @@ volumes:
   pgdata:
 ```
 
-### 5. Volumes and networks
+### 5. Volumes/networks
 
 ```bash
 # Volumes
@@ -222,9 +218,81 @@ docker network rm mynet                # remove network
 docker network prune                   # remove unused networks
 ```
 
-### 6. Disk usage and cleanup
+### 6. Diagnose/clean disk
 
-Always start with a diagnostic before cleaning:
+Diagnose first:
+
+```bash
+docker system df
+docker system df -v
+docker container prune
+docker image prune
+docker volume prune
+docker network prune
+```
+
+Confirm with the user before:
+
+```bash
+docker system prune
+docker system prune -a
+docker system prune -a --volumes
+```
+
+The last command removes named volumes and potentially important data; never run without confirmation.
+
+## Pitfalls
+
+Use the troubleshooting matrix below after inspection; confirm destructive cleanup before running it.
+
+## Troubleshooting
+
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| Container exits immediately | Main process finished or crashed | Check `docker logs NAME`, try `docker run -it --entrypoint /bin/sh IMAGE` |
+| "port is already allocated" | Another process using that port | `docker ps` or `lsof -i :PORT` to find it |
+| "no space left on device" | Docker disk full | `docker system df` then targeted prune |
+| Can't connect to container | App binds to 127.0.0.1 inside container | App must bind to `0.0.0.0`, check `-p` mapping |
+| Permission denied on volume | UID/GID mismatch host vs container | Use `--user $(id -u):$(id -g)` or fix permissions |
+| Compose services can't reach each other | Wrong network or service name | Services use service name as hostname, check `docker compose config` |
+| Build cache not working | Layer order wrong in Dockerfile | Put rarely-changing layers first (deps before source code) |
+| Image too large | No multi-stage build, no .dockerignore | Use multi-stage builds, add `.dockerignore` |
+
+## Verification
+
+- started container: `docker ps`, status `Up`
+- logs: `docker logs --tail 20 NAME`, no unexpected errors
+- port: `curl -s http://localhost:PORT` or `docker port NAME`
+- image: `docker images | grep TAG`
+- Compose: `docker compose ps`, services `running`/`healthy`
+- cleanup: compare `docker system df` before/after
+
+## Dockerfile Optimization
+
+1. multi-stage build separates build/runtime
+2. dependencies before source for cache reuse
+3. combine `RUN` commands where useful
+4. `.dockerignore` excludes `node_modules`, `.git`, `__pycache__`, etc.
+5. pin base versions (`node:20-alpine`, not `node:latest`)
+6. run non-root with `USER`
+7. use slim/alpine bases (`python:3.12-slim`, not `python:3.12`)
+
+## Preserved Source Examples
+
+### Original example 1
+
+```bash
+docker ps                        # running containers
+docker ps -a                     # all (including stopped)
+docker stop NAME                 # graceful stop
+docker start NAME                # start stopped container
+docker restart NAME              # stop + start
+docker rm NAME                   # remove stopped container
+docker rm -f NAME                # force remove running container
+docker container prune           # remove ALL stopped containers
+```
+
+### Original example 2
 
 ```bash
 # Check what's using space
@@ -242,41 +310,3 @@ docker system prune                    # containers + images + networks
 docker system prune -a                 # also unused images
 docker system prune -a --volumes       # EVERYTHING — named volumes too
 ```
-
-**Warning:** Never run `docker system prune -a --volumes` without confirming with the user. This removes named volumes with potentially important data.
-
-## Pitfalls
-
-| Problem | Cause | Fix |
-|---------|-------|-----|
-| Container exits immediately | Main process finished or crashed | Check `docker logs NAME`, try `docker run -it --entrypoint /bin/sh IMAGE` |
-| "port is already allocated" | Another process using that port | `docker ps` or `lsof -i :PORT` to find it |
-| "no space left on device" | Docker disk full | `docker system df` then targeted prune |
-| Can't connect to container | App binds to 127.0.0.1 inside container | App must bind to `0.0.0.0`, check `-p` mapping |
-| Permission denied on volume | UID/GID mismatch host vs container | Use `--user $(id -u):$(id -g)` or fix permissions |
-| Compose services can't reach each other | Wrong network or service name | Services use service name as hostname, check `docker compose config` |
-| Build cache not working | Layer order wrong in Dockerfile | Put rarely-changing layers first (deps before source code) |
-| Image too large | No multi-stage build, no .dockerignore | Use multi-stage builds, add `.dockerignore` |
-
-## Verification
-
-After any Docker operation, verify the result:
-
-- **Container started?** → `docker ps` (check status is "Up")
-- **Logs clean?** → `docker logs --tail 20 NAME` (no errors)
-- **Port accessible?** → `curl -s http://localhost:PORT` or `docker port NAME`
-- **Image built?** → `docker images | grep TAG`
-- **Compose stack healthy?** → `docker compose ps` (all services "running" or "healthy")
-- **Disk freed?** → `docker system df` (compare before/after)
-
-## Dockerfile Optimization Tips
-
-When reviewing or creating a Dockerfile, suggest these improvements:
-
-1. **Multi-stage builds** — separate build environment from runtime to reduce final image size
-2. **Layer ordering** — put dependencies before source code so changes don't invalidate cached layers
-3. **Combine RUN commands** — fewer layers, smaller image
-4. **Use .dockerignore** — exclude `node_modules`, `.git`, `__pycache__`, etc.
-5. **Pin base image versions** — `node:20-alpine` not `node:latest`
-6. **Run as non-root** — add `USER` instruction for security
-7. **Use slim/alpine bases** — `python:3.12-slim` not `python:3.12`

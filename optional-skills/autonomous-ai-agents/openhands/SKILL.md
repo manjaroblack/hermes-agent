@@ -13,49 +13,51 @@ metadata:
 
 # OpenHands CLI
 
-Delegate coding tasks to the [OpenHands CLI](https://github.com/All-Hands-AI/OpenHands) via the `terminal` tool. OpenHands is model-agnostic: any LiteLLM-supported provider (OpenAI, Anthropic, OpenRouter, DeepSeek, Ollama, vLLM, etc.).
+role: OpenHands headless delegation operator
+do: install/verify; select LiteLLM model; set env; run JSONL task; resume conversation; inspect events; report outcome
+inputs: task prompt or file, project workdir, LiteLLM model/API/base URL, optional conversation ID
+outputs: JSONL events, changed workspace, resumable conversation, verified finish message
+¬: use interactive UI from Hermes; omit `--override-with-envs`; guess unsupported flags; parse banner/stderr as JSON; expose API keys
 
-This skill is the headless-mode wrapper for batch / one-shot delegation. The interactive textual UI is not used from Hermes.
+Delegate batch or one-shot coding to [OpenHands CLI](https://github.com/All-Hands-AI/OpenHands) through `terminal`. It is model-agnostic through LiteLLM (OpenAI, Anthropic, OpenRouter, DeepSeek, Ollama, vLLM, and others). This skill uses headless mode; Hermes does not drive the interactive textual UI.
 
 ## When to Use
 
-- User wants a coding task delegated to OpenHands specifically.
-- User wants a coding agent that can run on a non-Anthropic / non-OpenAI provider (DeepSeek, Qwen, Ollama, vLLM, Nous, etc.) — sibling skills `claude-code` and `codex` are tied to one vendor.
-- Multi-step file edits + shell commands inside a workspace.
+- user requests OpenHands specifically
+- multi-step file edits and shell commands in a workspace
+- non-Anthropic/non-OpenAI model routing through LiteLLM
 
-For Claude-native, prefer `claude-code`. For OpenAI-native, prefer `codex`. For Hermes-native subagents, use `delegate_task`.
+For Claude-native work prefer `claude-code`; for OpenAI-native work prefer `codex`; for Hermes-native subagents use `delegate_task`.
 
 ## Prerequisites
 
-1. Install upstream (requires Python 3.12+ and `uv`):
+1. Python 3.12+ and `uv`:
 
-   ```
+   ```python
    terminal(command="uv tool install openhands --python 3.12")
    ```
 
-   Verify: `openhands --version` (currently `OpenHands CLI 1.16.0` / `SDK v1.21.0` at time of writing).
+   Verify with `openhands --version` (CLI 1.16.0 / SDK v1.21.0 at time of writing).
+2. Model environment for `--override-with-envs`:
 
-2. Pick a model and set env vars for `--override-with-envs`:
-
-   ```
-   export LLM_MODEL=openrouter/openai/gpt-4o-mini       # or any LiteLLM slug
+   ```bash
+   export LLM_MODEL=openrouter/openai/gpt-4o-mini
    export LLM_API_KEY=$OPENROUTER_API_KEY
-   export LLM_BASE_URL=https://openrouter.ai/api/v1     # omit for native OpenAI
+   export LLM_BASE_URL=https://openrouter.ai/api/v1
    ```
 
-   `LLM_MODEL` uses LiteLLM's full slug. When the provider is OpenRouter the slug is doubly-prefixed: `openrouter/<vendor>/<model>` (e.g. `openrouter/anthropic/claude-sonnet-4.5`). For native Anthropic: `anthropic/claude-sonnet-4-5`. For native OpenAI: `openai/gpt-4o-mini`.
+   LiteLLM forms: OpenRouter `openrouter/<vendor>/<model>` (e.g. `openrouter/anthropic/claude-sonnet-4.5`); native Anthropic `anthropic/claude-sonnet-4-5`; native OpenAI `openai/gpt-4o-mini`.
+3. Suppress the banner for machine output:
 
-3. Suppress the startup banner so JSON output isn't preceded by ASCII art:
-
-   ```
+   ```bash
    export OPENHANDS_SUPPRESS_BANNER=1
    ```
 
-## How to Run
+## Procedure
 
-Always invoke through the `terminal` tool. Always pass `--headless --json --override-with-envs --exit-without-confirmation` for automation.
+### One-shot
 
-### One-shot task
+Always use `--headless --json --override-with-envs --exit-without-confirmation`:
 
 ```
 terminal(
@@ -65,7 +67,7 @@ terminal(
 )
 ```
 
-### Background for long tasks
+### Background
 
 ```
 terminal(command="<same as above>", workdir="/path/to/project", background=true, notify_on_complete=true)
@@ -73,9 +75,9 @@ process(action="poll", session_id="<id>")
 process(action="log", session_id="<id>")
 ```
 
-### Resume a previous conversation
+### Resume
 
-OpenHands prints `Conversation ID: <32-hex>` and a `Hint: openhands --resume <dashed-uuid>` line at the end of each run. Use the dashed form to resume:
+Each run prints an undashed `Conversation ID: <32-hex>` plus a dashed `Hint: openhands --resume <dashed-uuid>`. Resume with the dashed ID:
 
 ```
 terminal(
@@ -84,9 +86,9 @@ terminal(
 )
 ```
 
-## Real Flag List
+## Supported Flags
 
-Verified against `openhands --help` (CLI 1.16.0). Anything not in this table is not a flag — pass it via env var or settings file.
+Verified against OpenHands CLI 1.16.0; anything absent here is not a CLI flag.
 
 | Flag | Effect |
 |------|--------|
@@ -102,33 +104,29 @@ Verified against `openhands --help` (CLI 1.16.0). Anything not in this table is 
 | `--llm-approve` | LLM-based security gate (interactive only — does NOT work in headless). |
 | `--version` / `-v` | Print version and exit. |
 
-**There is no `--model`, `--max-iterations`, `--workspace`, `--sandbox`, `--sandbox-type` flag.** Model is `LLM_MODEL`. Workspace is the `workdir` you pass to the `terminal` tool. Sandbox / runtime is the `RUNTIME` and `SANDBOX_VOLUMES` env vars.
+No `--model`, `--max-iterations`, `--workspace`, `--sandbox`, or `--sandbox-type` flags. Model=`LLM_MODEL`; workspace=`terminal` `workdir`; sandbox/runtime=`RUNTIME` and `SANDBOX_VOLUMES`.
 
 ## JSON Event Schema
 
-With `--json --headless`, OpenHands emits JSONL — one JSON object per line, plus a handful of non-JSON status lines (`Initializing agent...`, `Agent is working`, `Agent finished`, the final summary box, `Goodbye!`, `Conversation ID:`, `Hint:`). Filter for lines starting with `{`.
+`--json --headless` emits JSONL plus non-JSON status/banner lines (`Initializing agent...`, `Agent is working`, `Agent finished`, final summary, `Goodbye!`, `Conversation ID:`, `Hint:`). Parse stdout line-by-line and keep lines beginning with `{`; LiteLLM/Authlib warnings go to stderr.
 
-Top-level `kind` field discriminates events:
-
-- `MessageEvent` — user / agent text turn. `source` is `user` or `agent`.
-- `ActionEvent` — agent picked a tool. Read `tool_name` (`file_editor`, `terminal`, `finish`) and `action.kind` (`FileEditorAction`, `TerminalAction`, `FinishAction`).
-- `ObservationEvent` — tool result. `observation.is_error` is the success flag. `source` is `environment`.
-- `FinishAction` inside an `ActionEvent` carries the agent's final message in `action.message`.
-
-The cli prints all stderr from LiteLLM/Authlib first — see Pitfalls. Parse only stdout, line by line, ignoring lines that don't start with `{`.
+- `MessageEvent`: user/agent text; `source`=`user` or `agent`.
+- `ActionEvent`: selected tool; inspect `tool_name` (`file_editor`, `terminal`, `finish`) and `action.kind` (`FileEditorAction`, `TerminalAction`, `FinishAction`).
+- `ObservationEvent`: tool result; `observation.is_error` is the success flag; `source`=`environment`.
+- `FinishAction`: final text in `action.message`.
 
 ## Pitfalls
 
-- **LiteLLM warnings on every invocation.** The CLI prints `bedrock-runtime` and `sagemaker-runtime` warnings to stderr because `botocore` isn't installed. Plus an Authlib deprecation. These are noise, not failures. Pipe stderr to `/dev/null` or filter it out before showing the user.
-- **Banner spam.** Without `OPENHANDS_SUPPRESS_BANNER=1`, every run starts with a multi-line `+--+` ASCII box advertising the SDK. Always export it.
-- **`--override-with-envs` is mandatory for automation.** Without it, OpenHands ignores `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` and falls back to `~/.openhands/settings.json`. On a fresh install this file doesn't exist and the CLI hangs waiting for first-run setup.
-- **Model slug is LiteLLM's, not the provider's.** `openrouter/openai/gpt-4o-mini` works; `openai/gpt-4o-mini` while pointed at OpenRouter does not. `anthropic/claude-sonnet-4-5` (hyphen) is native Anthropic; `openrouter/anthropic/claude-sonnet-4.5` (dot) is via OpenRouter. Get it wrong → cryptic LiteLLM 400.
-- **`pip install openhands-ai` is the wrong package.** That's the legacy V0 SDK. The new CLI is `uv tool install openhands --python 3.12`. There is no maintained conda package.
-- **Resume ID format is fiddly.** The CLI ends with `Conversation ID: f46573d9cfdb45e492ca189bde40019b` (no dashes) and then a `Hint: openhands --resume f46573d9-cfdb-45e4-92ca-189bde40019b` (with dashes). Use the dashed form.
-- **Headless ignores `--llm-approve`.** If you pass it, you get an argparse error. Headless mode hardcodes always-approve.
-- **No Windows support upstream.** The OpenHands docs require WSL on Windows. This skill is gated `[linux, macos]` accordingly.
-- **`~/.openhands/conversations/<id>/` accumulates.** Each run persists a trajectory. Clean it up if running batches.
-- **Heavy install (~200 packages).** Use `uv tool install` (isolated venv) to avoid dependency conflicts with the active project.
+- stderr may print `bedrock-runtime`, `sagemaker-runtime`, and Authlib warnings; noise, not necessarily failure. Filter only when presenting results.
+- `OPENHANDS_SUPPRESS_BANNER=1` avoids ASCII banner pollution.
+- Without `--override-with-envs`, env model/key/base URL are ignored and `~/.openhands/settings.json` may trigger first-run setup/hang.
+- LiteLLM slug must match the endpoint: OpenRouter uses `openrouter/openai/gpt-4o-mini`; native Anthropic uses `anthropic/claude-sonnet-4-5`; wrong slug can yield a cryptic 400.
+- `pip install openhands-ai` is the legacy V0 SDK; use `uv tool install openhands --python 3.12`; no maintained conda package.
+- Resume with the dashed ID from the final hint, not the undashed display ID.
+- Headless ignores `--llm-approve`; passing it causes argparse failure.
+- Windows requires WSL upstream; frontmatter is gated `[linux, macos]`.
+- `~/.openhands/conversations/<id>/` grows per run; clean it after batches.
+- `uv tool install` isolates the roughly 200-package install from the project.
 
 ## Verification
 
@@ -140,10 +138,10 @@ terminal(
 )
 ```
 
-If the JSONL stream ends with a `FinishAction` whose `action.message` mentions `OPENHANDS_OK`, the install is working.
+Working output is JSONL ending in a `FinishAction` whose `action.message` mentions `OPENHANDS_OK`.
 
 ## Related
 
 - [OpenHands GitHub](https://github.com/All-Hands-AI/OpenHands)
 - [OpenHands CLI command reference](https://docs.openhands.dev/openhands/usage/cli/command-reference)
-- Sibling skills: `claude-code` (Anthropic-only), `codex` (OpenAI-only), `opencode` (multi-provider via OpenCode), `hermes-agent` (Hermes subagents via `delegate_task`).
+- sibling skills: `claude-code`, `codex`, `opencode`, `hermes-agent`

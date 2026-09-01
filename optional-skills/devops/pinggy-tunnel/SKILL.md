@@ -13,27 +13,26 @@ metadata:
 
 # Pinggy Tunnel Skill
 
-Expose a local service (dev server, webhook receiver, MCP endpoint, demo) to the public internet using a Pinggy SSH reverse tunnel. No daemon to install — the user's stock SSH client connects to `a.pinggy.io:443` and Pinggy hands back a public HTTP/HTTPS URL.
+role: Pinggy tunnel operator
+do: verify loopback origin; select HTTP/TCP/TLS/auth mode; launch background SSH reverse tunnel; parse URL; verify reachability; tear down process
+inputs: local port/service, tunnel mode, optional access-control keywords, optional `PINGGY_TOKEN`
+outputs: public URL/endpoint, access-control details, origin/tunnel verification, teardown handle
+¬: expose sensitive origins without `b:`, `k:`, or `w:`; foreground-block on long tunnel; leak tokens/passwords; assume TCP/TLS returns HTTPS; trust URL before origin check; use tunnel as durable storage/config
 
-Free tier: 60-minute tunnels, random subdomain, no signup. Pro tier ($3/mo) is an opt-in with a token.
+Expose a local dev server, webhook receiver, MCP HTTP endpoint, demo, or local LLM through the stock SSH client to `a.pinggy.io:443`; no daemon install. Free tier: 60-minute random-subdomain tunnel, no signup. Pro is opt-in via token ($3/mo; persistent/custom domain, multiple tunnels, no cap).
 
 ## When to Use
 
-- User asks to "expose this locally", "share my dev server", "make this URL public", "tunnel port N", "get a public URL for a webhook"
-- Need to receive a webhook callback during a local task (Stripe, GitHub, Discord, AgentMail)
-- Sharing a one-off HTTP demo (MCP server, Ollama/vLLM endpoint, dashboard) with a remote party
-- The host has SSH but no `cloudflared` / `ngrok` binary, and installing one would be overkill
-
-If the host already has `cloudflared` configured, prefer the `cloudflared-quick-tunnel` skill — Cloudflare quick tunnels don't expire after 60 minutes.
+- expose localhost, share a dev server, make a URL public, tunnel a port, or receive webhooks
+- one-off HTTP demo for MCP, Ollama/vLLM, or dashboard
+- host has SSH but no configured `cloudflared`/`ngrok`
+- use `cloudflared-quick-tunnel` instead when already configured; its quick tunnels do not expire after 60 minutes
 
 ## Prerequisites
 
-- `ssh` on PATH (`ssh -V`). Default on Linux, macOS, and Windows 10+. No other install.
-- A local service listening on `127.0.0.1:<port>` before the tunnel starts. Pinggy will return URLs but they'll 502 until the local origin is up.
-
-Optional:
-
-- `PINGGY_TOKEN` env var for paid Pro features (persistent subdomain, custom domain, multiple tunnels, no 60-minute cap). Free tier needs no credentials.
+- `ssh` on PATH (`ssh -V`); stock Linux/macOS/Windows 10+ client
+- origin listening on `127.0.0.1:<port>`; Pinggy URL returns 502 until origin exists
+- optional `PINGGY_TOKEN` for Pro; free tier needs no credential
 
 ## Quick Reference
 
@@ -70,7 +69,7 @@ ssh -p 443 -o StrictHostKeyChecking=no -R0:localhost:8000 "$PINGGY_TOKEN+a.pingg
 
 ## Procedure — Start a Tunnel and Get the URL
 
-The model SHOULD use the `terminal` tool. The tunnel must stay alive for the duration of the share, so run it as a background process and parse the public URL from stdout.
+Use `terminal` for the tunnel; keep it in a background process, capture stdout/stderr, parse the URL, verify the origin through the tunnel, and retain a kill/process handle.
 
 ### 1. Confirm a local origin is up
 
@@ -79,11 +78,11 @@ curl -sI http://127.0.0.1:8000/ | head -1
 # expect HTTP/1.x 200 (or any non-connection-refused response)
 ```
 
-If nothing is listening yet, start it first (e.g. `python -m http.server 8000 --bind 127.0.0.1`). Pinggy will happily return a URL pointed at nothing — the user will see 502 until the origin comes up.
+If absent, start the origin first, e.g. `python -m http.server 8000 --bind 127.0.0.1`. Pinggy returns a URL even when the origin is absent; users see 502 until it starts.
 
 ### 2. Launch the tunnel as a background process
 
-Use `terminal(background=True)` and capture output to a logfile (Pinggy prints the URLs on stdout, then keeps the connection open):
+Use `terminal(background=True)` and redirect the banner to a logfile:
 
 ```bash
 LOG=/tmp/pinggy-8000.log
@@ -97,7 +96,7 @@ nohup ssh -p 443 \
 echo $! > /tmp/pinggy-8000.pid
 ```
 
-`StrictHostKeyChecking=no` + `UserKnownHostsFile=/dev/null` skips the first-run host-key prompt. `ServerAliveInterval=30` keeps the SSH session from getting torn down by an idle NAT.
+`StrictHostKeyChecking=no` + `UserKnownHostsFile=/dev/null` skips the first-run prompt. `ServerAliveInterval=30` avoids idle-NAT teardown.
 
 ### 3. Parse the URL out of the log
 
@@ -115,7 +114,7 @@ http://yqycl-98-162-69-48.a.free.pinggy.link
 https://yqycl-98-162-69-48.a.free.pinggy.link
 ```
 
-Hand the `https://...pinggy.link` URL to the user.
+Return the `https://...pinggy.link` URL, not the banner text.
 
 ### 4. Verify
 
@@ -124,7 +123,7 @@ curl -sI https://<the-url>/ | head -3
 # expect 200/302/whatever the local origin actually returns
 ```
 
-If you get `502 Bad Gateway`, the SSH session is up but the local origin isn't listening — fix step 1 first.
+502 means SSH is up but the local origin is not listening; repair step 1.
 
 ### 5. Teardown
 
@@ -134,11 +133,11 @@ kill "$(cat /tmp/pinggy-8000.pid)"
 pkill -f 'ssh -p 443 .* free@a\.pinggy\.io'
 ```
 
-If you have a session_id from `terminal(background=True)`, prefer `process(action='kill', session_id=...)`.
+If `terminal(background=True)` returned a session, prefer `process(action='kill', session_id=...)`.
 
 ## Access Control via Username Keywords
 
-Pinggy stacks control flags into the SSH username separated by `+`. Always quote the whole `user@host` argument when it contains a `+`:
+Flags stack in the SSH username with `+`; quote the whole `user@host` value whenever it contains `+`.
 
 | Keyword | Effect |
 |---------|--------|
@@ -152,37 +151,37 @@ Pinggy stacks control flags into the SSH username separated by `+`. Always quote
 | `r:Name` | Remove request header |
 | `qr` | Print a QR code of the URL to stdout (handy for mobile sharing) |
 
-Combine freely: `"b:admin:secret+co+x:https+free@a.pinggy.io"`.
+Combine flags: `"b:admin:secret+co+x:https+free@a.pinggy.io"`.
 
-## Web Debugger (optional)
+## Web Debugger (Optional)
 
-Pinggy can mirror the inbound traffic to `localhost:4300` for inspection. Add a local forward to the SSH command:
+Mirror inbound traffic to `localhost:4300` with a local forward, then open the debugger:
 
 ```bash
 ssh -p 443 -L4300:localhost:4300 -R0:localhost:8000 free@a.pinggy.io
 ```
 
-Then open `http://localhost:4300` in a browser to see live request/response pairs.
+Open `http://localhost:4300` to inspect live request/response pairs.
 
 ## Pitfalls
 
-- **60-minute hard cap on the free tier.** The SSH session terminates at the 60-minute mark; the URL goes dead. For longer shares, either use `PINGGY_TOKEN` (Pro) or auto-restart with a shell loop (note that the URL changes on every restart for free-tier).
-- **Free-tier URL is random and changes on restart.** Don't bookmark it, don't paste it into a config file. Re-parse from the log each time.
-- **Concurrent free tunnels are limited to one per source IP.** Starting a second tunnel from the same machine usually kills the first. Pro tier lifts this.
-- **`+` in usernames must be quoted.** Bare `ssh ... b:admin:secret+free@a.pinggy.io` works in bash but breaks under shells that treat `+` specially or when assembled programmatically. Always wrap in double quotes.
-- **Don't tunnel anything sensitive without an access-control flag.** A bare HTTP tunnel is reachable by anyone with the URL. Use `b:`, `k:`, or `w:` for non-public services.
-- **`process(action='log')` may miss SSH banner output.** Pinggy prints the URLs and then the SSH session goes interactive. Always redirect to a logfile and `grep` the file directly — same pattern as `cloudflared-quick-tunnel`.
-- **Host-key prompt on first run.** Default OpenSSH config asks the user to accept Pinggy's host key. Always pass `-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null` for unattended runs.
-- **TCP and TLS tunnels return a `<subdomain>.a.pinggy.online:<port>` pair, not an https URL.** Parse with a different regex (`tcp://` and a port). Don't assume every Pinggy tunnel is HTTP.
-- **Pro mode requires the token as the username, not a flag.** Use `"$PINGGY_TOKEN+a.pinggy.io"` (no `free@`). With a token you can also add `:persistent` for a stable subdomain — see `pinggy.io/docs/`.
+- free tier hard-stops at 60 minutes; Pro or an auto-restart loop is required for longer shares; free restarts change URL
+- free URL is random and changes on restart; never bookmark or put it in config; re-parse logs
+- one concurrent free tunnel per source IP is typical; Pro lifts it
+- quote usernames containing `+`
+- bare HTTP is public; protect non-public services with `b:`, `k:`, or `w:`
+- `process(action='log')` may miss the interactive SSH banner; redirect and grep the logfile
+- disable host-key prompt for unattended runs with both `StrictHostKeyChecking=no` and `UserKnownHostsFile=/dev/null`
+- TCP/TLS returns `<subdomain>.a.pinggy.online:<port>`, not HTTPS; parse with the mode-specific form
+- Pro token is the username (`"$PINGGY_TOKEN+a.pinggy.io"`), not a flag; `:persistent` can request a stable subdomain
 
 ## Recipes
 
-Composite patterns combining a local origin with a Pinggy tunnel. Each recipe is self-contained — start the origin, start the tunnel, parse the URL, hand it back to the user.
+Each recipe: start loopback origin, start protected tunnel, parse URL, hand it to the caller, then tear down both processes.
 
 ### Recipe 1 — Receive a webhook callback
 
-Use this when an external service (Stripe, GitHub, Discord, AgentMail, etc.) needs to POST to a publicly reachable URL during a local task.
+Use for Stripe, GitHub, Discord, AgentMail, or another external POST callback.
 
 ```bash
 # 1. Tiny capturing server: every request gets appended to /tmp/webhook-hits.log
@@ -220,11 +219,11 @@ echo "Webhook URL: $URL"
 tail -f /tmp/webhook-hits.log
 ```
 
-Hand `$URL` to the service that needs to call you. Teardown: `kill $(cat /tmp/webhook-server.pid) $(cat /tmp/webhook-pinggy.pid)`.
+Hand `$URL` to the caller. Teardown: `kill $(cat /tmp/webhook-server.pid) $(cat /tmp/webhook-pinggy.pid)`.
 
 ### Recipe 2 — Expose an MCP server over HTTP/SSE
 
-Use when a remote MCP client (Claude Desktop on another machine, a teammate's editor, etc.) needs to reach an MCP server running on the local box. Only works for MCP servers that speak HTTP transport — stdio-mode servers can't be tunneled.
+Only HTTP-transport MCP servers can be tunneled; stdio servers cannot.
 
 ```bash
 # 1. Start the MCP server in HTTP mode (example: a FastMCP server on port 8765)
@@ -245,11 +244,11 @@ echo "MCP URL: $URL"
 echo "Bearer token: $TOKEN"
 ```
 
-The remote client connects to `$URL` with `Authorization: Bearer $TOKEN`. Hermes' own native MCP client config: `{"transport": "http", "url": "<URL>", "headers": {"Authorization": "Bearer <TOKEN>"}}`.
+Connect the remote client with `Authorization: Bearer ***`; Hermes native MCP config shape: `{"transport": "http", "url": "<URL>", "headers": {"Authorization": "Bearer <TOKEN>"}}`.
 
-### Recipe 3 — Expose a local LLM endpoint (Ollama / vLLM / llama.cpp)
+### Recipe 3 — Expose a local LLM endpoint
 
-Share a local model with a remote caller (another agent, a phone, a teammate). Ollama listens on `:11434`, vLLM and llama.cpp typically on `:8000`.
+Ollama defaults to `:11434`; vLLM/llama.cpp typically use `:8000`.
 
 ```bash
 # Pre-req: the model server is already running on 127.0.0.1:11434 (Ollama default)
@@ -268,11 +267,11 @@ echo "Token:    $TOKEN"
 curl -s "$URL/api/tags" -H "Authorization: Bearer $TOKEN" | head
 ```
 
-`co` enables CORS so a browser caller can hit the endpoint. Drop `co` for backend-only callers. For an OpenAI-compatible vLLM/llama.cpp endpoint, callers use base URL `$URL/v1` with `Authorization: Bearer $TOKEN` — but note Pinggy strips/replaces nothing in the body, so the model server itself sees Pinggy's token; the local server should be configured to ignore auth (it's already on `127.0.0.1`) and let Pinggy do the gating.
+`co` enables browser CORS; drop it for backend-only callers. OpenAI-compatible callers use `$URL/v1` with `Authorization: Bearer ***`; Pinggy does not rewrite the body, so local server auth should be ignored on loopback while Pinggy gates access.
 
 ### Recipe 4 — Share a dev server with a one-shot password
 
-The fastest "let a teammate poke at my running app" pattern. Random password, prints once, dies when you Ctrl-C.
+Generate a one-time password; share URL + password; Ctrl-C tears down.
 
 ```bash
 PASS=$(openssl rand -base64 12 | tr -d '+/=' | head -c 12)
@@ -283,7 +282,7 @@ ssh -p 443 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
 # URL prints to the terminal. Share URL + password. Ctrl-C to tear down.
 ```
 
-`b:dev:$PASS` gates the URL with HTTP Basic auth. `x:https` forces TLS. `co` adds CORS for SPA frontends.
+`b:dev:$PASS` gates Basic auth; `x:https` forces TLS; `co` enables CORS.
 
 ## Verification
 

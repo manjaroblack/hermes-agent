@@ -11,45 +11,31 @@ metadata:
     related_skills: []
 ---
 
-# Solana Blockchain Skill
+# Solana Blockchain
 
-Query Solana on-chain data enriched with USD pricing via CoinGecko.
-8 commands: wallet portfolio, token info, transactions, activity, NFTs,
-whale detection, network stats, and price lookup.
+role: read-only Solana/RPC portfolio operator
+do: select command; verify RPC; query wallet/token/tx/activity/NFT/whale/stats/price; enrich USD; report rate limits/heuristics; verify response
+inputs: wallet address, tx signature, token mint/symbol, whale threshold, RPC URL, limit/price flags
+outputs: SOL/SPL balances and USD values, tx/activity/token/NFT/network/whale data
+¬: sign/send transactions; claim historical whale scan; treat heuristic NFT list as complete; hide rate limits; expose private RPC key; claim stale public RPC data is live
 
-No API key needed. Uses only Python standard library (urllib, json, argparse).
-
----
+Query Solana on-chain data enriched with USD pricing via CoinGecko. Eight commands: wallet portfolio, token info, transaction, activity, NFTs, whale detection, network stats, and price. Helper uses only Python stdlib (`urllib`, `json`, `argparse`); no key required.
 
 ## When to Use
 
-- User asks for a Solana wallet balance, token holdings, or portfolio value
-- User wants to inspect a specific transaction by signature
-- User wants SPL token metadata, price, supply, or top holders
-- User wants recent transaction history for an address
-- User wants NFTs owned by a wallet
-- User wants to find large SOL transfers (whale detection)
-- User wants Solana network health, TPS, epoch, or SOL price
-- User asks "what's the price of BONK/JUP/SOL?"
-
----
+- wallet balance/holdings/portfolio USD
+- transaction signature details or recent address activity
+- SPL metadata/price/supply/top holders
+- NFT list, large SOL transfers, network health/TPS/epoch, token price
 
 ## Prerequisites
 
-The helper script uses only Python standard library (urllib, json, argparse).
-No external packages required.
-
-Pricing data comes from CoinGecko's free API (no key needed, rate-limited
-to ~10-30 requests/minute). For faster lookups, use `--no-prices` flag.
-
----
+- Python standard library only
+- default RPC `https://api.mainnet-beta.solana.com`; optional `SOLANA_RPC_URL` private endpoint
+- CoinGecko free API, ~10-30 requests/min; `--no-prices` skips it
+- helper: `~/.hermes/skills/blockchain/solana/scripts/solana_client.py`
 
 ## Quick Reference
-
-RPC endpoint (default): https://api.mainnet-beta.solana.com
-Override: export SOLANA_RPC_URL=https://your-private-rpc.com
-
-Helper script path: ~/.hermes/skills/blockchain/solana/scripts/solana_client.py
 
 ```
 python solana_client.py wallet   <address> [--limit N] [--all] [--no-prices]
@@ -62,11 +48,9 @@ python solana_client.py stats
 python solana_client.py price    <mint_or_symbol>
 ```
 
----
-
 ## Procedure
 
-### 0. Setup Check
+### 0. Connectivity
 
 ```bash
 python --version
@@ -78,94 +62,72 @@ export SOLANA_RPC_URL="https://api.mainnet-beta.solana.com"
 python ~/.hermes/skills/blockchain/solana/scripts/solana_client.py stats
 ```
 
-### 1. Wallet Portfolio
+Use a private RPC (Helius, QuickNode, Triton) for production/rate limits; do not print private credentials.
 
-Get SOL balance, SPL token holdings with USD values, NFT count, and
-portfolio total. Tokens sorted by value, dust filtered, known tokens
-labeled by name (BONK, JUP, USDC, etc.).
+### 1. Wallet portfolio
 
 ```bash
 python ~/.hermes/skills/blockchain/solana/scripts/solana_client.py \
   wallet 9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM
 ```
 
-Flags:
-- `--limit N` — show top N tokens (default: 20)
-- `--all` — show all tokens, no dust filter, no limit
-- `--no-prices` — skip CoinGecko price lookups (faster, RPC-only)
+Outputs SOL + USD, SPL tokens with price/value sorted by value, dust count, NFT summary, total USD. `--limit N` default 20; `--all` removes dust filter/limit; `--no-prices` RPC-only.
 
-Output includes: SOL balance + USD value, token list with prices sorted
-by value, dust count, NFT summary, total portfolio value in USD.
-
-### 2. Transaction Details
-
-Inspect a full transaction by its base58 signature. Shows balance changes
-in both SOL and USD.
+### 2. Transaction
 
 ```bash
 python ~/.hermes/skills/blockchain/solana/scripts/solana_client.py \
   tx 5j7s8K...your_signature_here
 ```
 
-Output: slot, timestamp, fee, status, balance changes (SOL + USD),
-program invocations.
+Shows slot, timestamp, fee, status, SOL/USD balance changes, and program invocations.
 
-### 3. Token Info
-
-Get SPL token metadata, current price, market cap, supply, decimals,
-mint/freeze authorities, and top 5 holders.
+### 3. Token info
 
 ```bash
 python ~/.hermes/skills/blockchain/solana/scripts/solana_client.py \
   token DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263
 ```
 
-Output: name, symbol, decimals, supply, price, market cap, top 5
-holders with percentages.
+Shows metadata, price, market cap, supply, decimals, mint/freeze authorities, top 5 holder percentages.
 
-### 4. Recent Activity
-
-List recent transactions for an address (default: last 10, max: 25).
+### 4. Activity
 
 ```bash
 python ~/.hermes/skills/blockchain/solana/scripts/solana_client.py \
   activity 9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM --limit 25
 ```
 
-### 5. NFT Portfolio
+Default last 10; max 25.
 
-List NFTs owned by a wallet (heuristic: SPL tokens with amount=1, decimals=0).
+### 5. NFTs
 
 ```bash
 python ~/.hermes/skills/blockchain/solana/scripts/solana_client.py \
   nft 9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM
 ```
 
-Note: Compressed NFTs (cNFTs) are not detected by this heuristic.
+Heuristic: SPL amount=1 and decimals=0; compressed NFTs and Token-2022 NFTs are absent.
 
-### 6. Whale Detector
-
-Scan the most recent block for large SOL transfers with USD values.
+### 6. Whales
 
 ```bash
 python ~/.hermes/skills/blockchain/solana/scripts/solana_client.py \
   whales --min-sol 500
 ```
 
-Note: scans the latest block only — point-in-time snapshot, not historical.
+Scans latest block only—a point-in-time snapshot, not history.
 
-### 7. Network Stats
-
-Live Solana network health: current slot, epoch, TPS, supply, validator
-version, SOL price, and market cap.
+### 7. Stats
 
 ```bash
+# Should print current Solana slot, TPS, and SOL price
 python ~/.hermes/skills/blockchain/solana/scripts/solana_client.py stats
 ```
 
-### 8. Price Lookup
+Shows current slot, epoch, TPS, supply, validator version, SOL price, market cap.
 
-Quick price check for any token by mint address or known symbol.
+### 8. Price
 
 ```bash
 python ~/.hermes/skills/blockchain/solana/scripts/solana_client.py price BONK
@@ -174,35 +136,22 @@ python ~/.hermes/skills/blockchain/solana/scripts/solana_client.py price SOL
 python ~/.hermes/skills/blockchain/solana/scripts/solana_client.py price DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263
 ```
 
-Known symbols: SOL, USDC, USDT, BONK, JUP, WETH, JTO, mSOL, stSOL,
-PYTH, HNT, RNDR, WEN, W, TNSR, DRIFT, bSOL, JLP, WIF, MEW, BOME, PENGU.
-
----
+Known symbols: `SOL USDC USDT BONK JUP WETH JTO mSOL stSOL PYTH HNT RNDR WEN W TNSR DRIFT bSOL JLP WIF MEW BOME PENGU`.
 
 ## Pitfalls
 
-- **CoinGecko rate-limits** — free tier allows ~10-30 requests/minute.
-  Price lookups use 1 request per token. Wallets with many tokens may
-  not get prices for all of them. Use `--no-prices` for speed.
-- **Public RPC rate-limits** — Solana mainnet public RPC limits requests.
-  For production use, set SOLANA_RPC_URL to a private endpoint
-  (Helius, QuickNode, Triton).
-- **NFT detection is heuristic** — amount=1 + decimals=0. Compressed
-  NFTs (cNFTs) and Token-2022 NFTs won't appear.
-- **Whale detector scans latest block only** — not historical. Results
-  vary by the moment you query.
-- **Transaction history** — public RPC keeps ~2 days. Older transactions
-  may not be available.
-- **Token names** — ~25 well-known tokens are labeled by name. Others
-  show abbreviated mint addresses. Use the `token` command for full info.
-- **Retry on 429** — both RPC and CoinGecko calls retry up to 2 times
-  with exponential backoff on rate-limit errors.
-
----
+- CoinGecko ~10-30 req/min; wallet many tokens may miss prices; `--no-prices` is faster
+- public RPC rate-limits; set private `SOLANA_RPC_URL` for production
+- NFT list is heuristic and incomplete
+- whale scan latest block only; results vary by query moment
+- public RPC history is ~2 days; older signatures may be unavailable
+- only ~25 well-known tokens are named; others use abbreviated mints; `token` gives full info
+- RPC/CoinGecko 429s retry up to 2 times with exponential backoff
 
 ## Verification
 
 ```bash
-# Should print current Solana slot, TPS, and SOL price
 python ~/.hermes/skills/blockchain/solana/scripts/solana_client.py stats
 ```
+
+Expected current slot/TPS/SOL price; wallet/token/tx outputs should contain the requested address/signature and clearly label USD source/heuristics.

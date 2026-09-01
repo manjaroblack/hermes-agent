@@ -17,25 +17,29 @@ metadata:
 
 # HyperFrames
 
-HTML is the source of truth for video. A composition is an HTML file with `data-*` attributes for timing, a GSAP timeline for animation, and CSS for appearance. The HyperFrames engine captures the page frame-by-frame and encodes to MP4/WebM with FFmpeg.
+role: deterministic HTML-to-video production operator
+do: plan hero frames; define DESIGN.md; scaffold; layout; animate GSAP timelines; add media/transitions; lint/validate/inspect; render; inspect output; clean preview workers
+inputs: narrative/URL/script, HTML/CSS/JS composition, media, duration/fps/quality/format, visual identity
+outputs: MP4/WebM, optional captions/audio, animation map, validation evidence
+¬: generic visual identity; infinite repeats; nondeterministic clocks/randomness; async timeline construction; jump cuts; visible caption leaks; leave preview workers running; claim render without media/ffprobe checks
 
-**Complement to `manim-video`:** Use `manim-video` for mathematical/geometric explainers (equations, 3B1B-style). Use `hyperframes` for motion-graphics, talking-head with captions, product tours, social overlays, shader transitions, and anything driven by real video/audio media.
+HTML is the source of truth: `data-*` timing, GSAP timeline animation, CSS appearance. HyperFrames captures frames and encodes MP4/WebM through FFmpeg.
+
+Use `manim-video` for mathematical/geometric explainers; use HyperFrames for motion graphics, talking-head captions, product tours, social overlays, shader transitions, and real audio/video media.
 
 ## When to Use
 
-- User asks for a rendered video from text, a script, or a website
-- Animated title cards, lower thirds, or typographic intros
-- Captioned narration video (TTS + captions synced to waveform)
-- Audio-reactive visuals (beat sync, spectrum bars, pulsing glow)
-- Scene-to-scene transitions (crossfade, wipe, shader warp, flash-through-white)
-- Social overlays (Instagram/TikTok/YouTube style)
-- Website-to-video pipeline (capture a URL, produce a promo)
-- Any HTML/CSS/JS animation that must render deterministically to a video file
+- render a video from text, script, website, HTML/CSS/JS, or real media
+- title cards, lower thirds, typography, TTS/captions, audio-reactive visuals
+- scene transitions, social overlays, website-to-video, deterministic animation
 
-Do **not** use this skill for:
-- Pure math/equation animation (→ `manim-video`)
-- Image generation or memes (→ `meme-generation`, image models)
-- Live video conferencing or streaming
+Do not use for pure math/equation animation (`manim-video`), image/meme generation, or live conferencing/streaming.
+
+## Prerequisites
+
+- Node.js >=22, FFmpeg, `npx`; run `npx hyperframes doctor`
+- one-time setup script and Chrome headless shell
+- `references/` files as needed
 
 ## Quick Reference
 
@@ -48,46 +52,29 @@ npx hyperframes render --output final.mp4   # render to MP4
 npx hyperframes doctor                      # diagnose environment issues
 ```
 
-`preview` is a **long-lived** Next.js server that holds Chrome render workers open. Always stop it when done (see [Cleanup](#cleanup)) — a forgotten preview keeps idle `chrome-headless-shell` workers alive that, on GPU-less hosts (WSL, containers, CI), spin a CPU core each indefinitely via software WebGL (swiftshader).
+`preview` is long-lived Next.js and keeps Chrome workers open; stop it after review. Render flags: `--quality draft|standard|high`, `--fps 24|30|60`, `--format mp4|webm`, `--docker`, `--strict`. Full CLI: `references/cli.md`.
 
-Render flags: `--quality draft|standard|high` · `--fps 24|30|60` · `--format mp4|webm` · `--docker` (reproducible) · `--strict`.
-
-Full CLI reference: [references/cli.md](references/cli.md).
-
-## Setup (one-time)
+## Setup
 
 ```bash
 bash "$(dirname "$(find ~/.hermes/skills -path '*/hyperframes/SKILL.md' 2>/dev/null | head -1)")/scripts/setup.sh"
 ```
 
-The script:
-1. Verifies Node.js >= 22 and FFmpeg are installed (prints fix instructions if not).
-2. Installs the `hyperframes` CLI globally (`npm install -g hyperframes@>=0.4.2`).
-3. Pre-caches `chrome-headless-shell` via Puppeteer — **required** for best-quality rendering via Chrome's `HeadlessExperimental.beginFrame` capture path.
-4. Runs `npx hyperframes doctor` and reports the result.
-
-See [references/troubleshooting.md](references/troubleshooting.md) if setup fails.
+The script verifies Node >=22/FFmpeg, installs `hyperframes@>=0.4.2`, pre-caches Puppeteer `chrome-headless-shell` for `HeadlessExperimental.beginFrame`, then runs `doctor`. Setup failures: `references/troubleshooting.md`.
 
 ## Procedure
 
-### 1. Plan before writing HTML
+### 1. Plan and pass the visual identity gate
 
-Before touching code, articulate at a high level:
-- **What** — narrative arc, key moments, emotional beats
-- **Structure** — compositions, tracks (video/audio/overlays), durations
-- **Visual identity** — colors, fonts, motion character (explosive / cinematic / fluid / technical)
-- **Hero frame** — for each scene, the moment when the most elements are simultaneously visible. This is the static layout you'll build first.
+Define narrative arc, key moments, emotional beats; tracks/durations; colors/fonts/motion character; and each scene's hero frame.
 
-**Visual Identity Gate (HARD-GATE).** Before writing ANY composition HTML, a visual identity must be defined. Do NOT write compositions with default or generic colors (`#333`, `#3b82f6`, `Roboto` are tells that this step was skipped). Check in order:
+**Hard gate before any composition HTML:**
 
-1. **`DESIGN.md` at project root?** → Use its exact colors, fonts, motion rules, and "What NOT to Do" constraints.
-2. **User named a style** (e.g. "Swiss Pulse", "dark and techy", "luxury brand")? → Generate a minimal `DESIGN.md` with `## Style Prompt`, `## Colors` (3-5 hex with roles), `## Typography` (1-2 families), `## What NOT to Do` (3-5 anti-patterns).
-3. **None of the above?** → Ask 3 questions before writing any HTML:
-   - Mood? (explosive / cinematic / fluid / technical / chaotic / warm)
-   - Light or dark canvas?
-   - Any brand colors, fonts, or visual references?
+1. `DESIGN.md` exists → follow exact colors, fonts, motion rules, and “What NOT to Do”.
+2. User named a style → create minimal `DESIGN.md` with `## Style Prompt`, `## Colors` (3-5 role-labeled hexes), `## Typography` (1-2 families), `## What NOT to Do` (3-5 anti-patterns).
+3. Neither → ask mood (explosive/cinematic/fluid/technical/chaotic/warm), light/dark canvas, and brand colors/fonts/references; write `DESIGN.md`.
 
-   Then generate a `DESIGN.md` from the answers. Every composition must trace its palette and typography back to `DESIGN.md` or explicit user direction.
+Reject generic `#333`, `#3b82f6`, or `Roboto` defaults unless explicitly required. Every composition palette/type traces to `DESIGN.md` or user direction.
 
 ### 2. Scaffold
 
@@ -95,45 +82,43 @@ Before touching code, articulate at a high level:
 npx hyperframes init my-video --non-interactive
 ```
 
-Templates: `blank`, `warm-grain`, `play-mode`, `swiss-grid`, `vignelli`, `decision-tree`, `kinetic-type`, `product-promo`, `nyt-graph`. Pass `--example <name>` to pick one, `--video clip.mp4` or `--audio track.mp3` to seed with media.
+Templates: `blank`, `warm-grain`, `play-mode`, `swiss-grid`, `vignelli`, `decision-tree`, `kinetic-type`, `product-promo`, `nyt-graph`. Optional `--example <name>`, `--video clip.mp4`, `--audio track.mp3`.
 
 ### 3. Layout before animation
 
-Write the static HTML+CSS for the **hero frame first** — no GSAP yet. The `.scene-content` container must fill the scene (`width:100%; height:100%; padding:Npx`) with `display:flex` + `gap`. Use padding to push content inward — never `position: absolute; top: Npx` on a content container (content overflows when taller than the remaining space).
+Build static HTML+CSS for the hero frame first. `.scene-content` fills the scene (`width:100%; height:100%; padding:Npx`, `display:flex`, `gap`); use padding, not `position: absolute; top: Npx` on content containers, which overflows when content grows. After visual approval, add `gsap.from()` entrances to CSS position and `gsap.to()` exits from it. See `references/composition.md`.
 
-Only after the hero frame looks right, add `gsap.from()` entrances (animate **to** the CSS position) and `gsap.to()` exits (animate **from** it).
+### 4. Build deterministic GSAP timelines
 
-See [references/composition.md](references/composition.md) for the full data-attribute schema and composition rules.
+Every composition:
 
-### 4. Animate with GSAP
+- registers `window.__timelines["<composition-id>"] = tl`
+- starts paused: `gsap.timeline({ paused: true })`
+- uses finite repeats; never `repeat: -1`; calculate `repeat: Math.ceil(duration / cycleDuration) - 1`
+- avoids `Math.random()`, `Date.now()`, wall-clock logic; use seeded PRNG for pseudo-randomness
+- constructs synchronously; no `async`/`await`, `setTimeout`, or Promises around timeline construction
 
-Every composition must:
-- Register its timeline: `window.__timelines["<composition-id>"] = tl`
-- Start paused: `gsap.timeline({ paused: true })` — the player controls playback
-- Use finite `repeat` values (no `repeat: -1` — breaks the capture engine). Calculate: `repeat: Math.ceil(duration / cycleDuration) - 1`.
-- Be deterministic — no `Math.random()`, `Date.now()`, or wall-clock logic. Use a seeded PRNG if you need pseudo-randomness.
-- Build synchronously — no `async`/`await`, `setTimeout`, or Promises around timeline construction.
+GSAP API: `references/gsap.md`.
 
-See [references/gsap.md](references/gsap.md) for the core GSAP API (tweens, eases, stagger, timelines).
+### 5. Transition scenes
 
-### 5. Transitions between scenes
+For multi-scene output:
 
-Multi-scene compositions require transitions. Rules:
-1. **Always use a transition between scenes** — no jump cuts.
-2. **Always use entrance animations** on every scene element (`gsap.from(...)`).
-3. **Never use exit animations** except on the final scene — the transition IS the exit.
-4. The final scene may fade out.
+1. always add a transition, never a jump cut
+2. add entrance animation to every scene element (`gsap.from(...)`)
+3. do not add exits except final scene; transition is the exit
+4. final scene may fade out
 
-Use `npx hyperframes add <transition-name>` to install shader transitions (`flash-through-white`, `liquid-wipe`, etc.). Full list: `npx hyperframes add --list`.
+Install shaders with `npx hyperframes add <transition-name>`; list with `npx hyperframes add --list`. Do not mix CSS and shader transitions in one composition.
 
-### 6. Audio, captions, TTS, audio-reactive, highlighting
+### 6. Media features
 
-- **Audio:** always a separate `<audio>` element (video is `muted playsinline`).
-- **TTS:** `npx hyperframes tts "Script text" --voice af_nova --output narration.wav`. List voices with `--list`. Voice ID first letter encodes language (`a`/`b`=English, `e`=Spanish, `f`=French, `j`=Japanese, `z`=Mandarin, etc.) — the CLI auto-infers the phonemizer locale; pass `--lang` only to override. Non-English phonemization requires `espeak-ng` installed system-wide.
-- **Captions:** `npx hyperframes transcribe narration.wav` → word-level transcript. Pick style from the transcript tone (hype / corporate / tutorial / storytelling / social — see the table in `references/features.md`). **Language rule:** never use `.en` whisper models unless the audio is confirmed English — `.en` translates non-English audio instead of transcribing it. Every caption group MUST have a hard `tl.set(el, { opacity: 0, visibility: "hidden" }, group.end)` kill after its exit tween — otherwise groups leak visible into later ones.
-- **Audio-reactive visuals:** pre-extract audio bands (bass / mid / treble) and sample per-frame inside the timeline with a `for` loop of `tl.call(draw, [], f / fps)` — a single long tween does NOT react to audio. Map bass → `scale` (pulse), treble → `textShadow`/`boxShadow` (glow), overall amplitude → `opacity`/`y`/`backgroundColor`. Avoid equalizer-bar clichés — let content guide the visual, audio drive its behavior.
-- **Marker-style highlighting:** highlight, circle, burst, scribble, sketchout effects for text emphasis are deterministic CSS+GSAP — see `references/features.md#marker-highlighting`. Fully seekable, no animated SVG filters.
-- **Scene transitions:** every multi-scene composition MUST use transitions (no jump cuts). Pick from CSS primitives (push slide, blur crossfade, zoom through, staggered blocks) or shader transitions (`flash-through-white`, `liquid-wipe`, `cross-warp-morph`, `chromatic-split`, etc.) via `npx hyperframes add`. Mood and energy tables live in `references/features.md#transitions`. Do not mix CSS and shader transitions in the same composition.
+- **Audio:** separate `<audio>`; video=`muted playsinline`.
+- **TTS:** `npx hyperframes tts "Script text" --voice af_nova --output narration.wav`; list `--list`. Voice prefix: `a`/`b` English, `e` Spanish, `f` French, `j` Japanese, `z` Mandarin; `--lang` overrides. Non-English phonemization needs `espeak-ng`.
+- **Captions:** `npx hyperframes transcribe narration.wav` gives word-level transcript. Choose hype/corporate/tutorial/storytelling/social style from transcript tone (`references/features.md`). Never use `.en` Whisper models unless audio is confirmed English; `.en` translates non-English. Every caption group gets `tl.set(el, { opacity: 0, visibility: "hidden" }, group.end)` after exit.
+- **Audio reactive:** pre-extract bass/mid/treble; sample each frame via `for` + `tl.call(draw, [], f / fps)`, not one long tween. Map bass→`scale`, treble→`textShadow`/`boxShadow`, amplitude→`opacity`/`y`/`backgroundColor`; avoid equalizer clichés.
+- **Marker highlights:** deterministic CSS+GSAP highlight/circle/burst/scribble/sketchout; `references/features.md#marker-highlighting`.
+- **Scene transitions:** CSS primitives or shader names including `flash-through-white`, `liquid-wipe`, `cross-warp-morph`, `chromatic-split`; choose from mood/energy table; no CSS+shader mixing.
 
 ### 7. Lint, validate, inspect, preview, render
 
@@ -146,63 +131,60 @@ npx hyperframes render --quality draft --output draft.mp4    # fast iteration
 npx hyperframes render --quality high --output final.mp4     # final delivery
 ```
 
-`hyperframes validate` samples background pixels behind every text element and warns on contrast ratios below 4.5:1 (or 3:1 for large text). `hyperframes inspect` is the layout-side companion — runs the page at multiple timestamps and flags issues that a static lint can't see (a caption that wraps past the safe area only at 4.5s, a card that overflows when its title is the longest variant, an element that ends up behind a transition shader). Run `inspect` especially on compositions with speech bubbles, cards, captions, or tight typography.
+`validate` samples background behind text and warns below 4.5:1 (3:1 for large text). `inspect` renders multiple timestamps and finds overflow, off-frame elements, occlusion, wrapping, and transition-hidden elements; especially run it for speech bubbles/cards/captions/tight typography.
 
-### 8. Website-to-video (if the user gives a URL)
+### 8. Website-to-video
 
-Use the 7-step capture-to-video workflow in [references/website-to-video.md](references/website-to-video.md): capture → DESIGN.md → SCRIPT.md → storyboard → composition → render → deliver.
+When input is a URL, follow `references/website-to-video.md`: capture → `DESIGN.md` → `SCRIPT.md` → storyboard → composition → render → deliver.
 
 ## Cleanup
 
-`render` is one-shot (workers exit when it finishes). `preview` is **not** — it runs a background Next.js server that keeps Chrome workers resident until you stop it. Never leave one running: on GPU-less hosts each idle worker's swiftshader process pegs a CPU core, and a preview left open for days stacks up multiple.
-
-Stop a preview when the user is done reviewing (or before starting a new one):
+`render` exits workers; `preview` does not. On WSL/containers/CI, idle Chrome swiftshader can consume a CPU core each.
 
 ```bash
 pkill -f "hyperframes.*preview"     # the Studio server (frees port 3002)
 pkill -f chrome-headless-shell      # its render workers; only safe if nothing else uses them
 ```
 
-If unsure whether other tools use `chrome-headless-shell`, check first: `pgrep -af chrome-headless-shell`. Recover a wedged host (many idle workers spinning CPU) the same way — see [references/troubleshooting.md](references/troubleshooting.md#runaway-cpu-from-leftover-preview-workers).
+Before killing shared Chrome, check `pgrep -af chrome-headless-shell`. Recovery details: `references/troubleshooting.md#runaway-cpu-from-leftover-preview-workers`.
 
 ## Pitfalls
 
-- **Leaving `preview` running** — it's a long-lived server holding Chrome workers; on WSL/containers/CI those idle workers spin a CPU core each (software WebGL). Stop it when done — see [Cleanup](#cleanup).
-
-- **`HeadlessExperimental.beginFrame' wasn't found`** — Chromium 147+ removed this protocol. Ensure you're on `hyperframes@>=0.4.2` (auto-detects and falls back to screenshot mode). Escape hatch: `export PRODUCER_FORCE_SCREENSHOT=true`. See [hyperframes#294](https://github.com/heygen-com/hyperframes/issues/294) and [references/troubleshooting.md](references/troubleshooting.md).
-- **System Chrome (not `chrome-headless-shell`)** — renders hang for 120s then timeout. Run `npx puppeteer browsers install chrome-headless-shell` (setup.sh does this). `hyperframes doctor` reports which binary will be used.
-- **`repeat: -1` anywhere** — breaks the capture engine. Always compute a finite repeat count.
-- **`gsap.set()` on clip elements that enter later** — the element doesn't exist at page load. Use `tl.set(selector, vars, timePosition)` inside the timeline instead, at or after the clip's `data-start`.
-- **`<br>` inside content text** — forced breaks don't know the rendered font width, so natural wrap + `<br>` double-breaks. Use `max-width` to let text wrap. Exception: short display titles where each word is deliberately on its own line.
-- **Animating `visibility` or `display`** — GSAP can't tween these. Use `autoAlpha` (handles both visibility and opacity).
-- **Calling `video.play()` or `audio.play()`** — the framework owns playback. Never call these yourself.
-- **Building timelines async** — the capture engine reads `window.__timelines` synchronously after page load. Never wrap timeline construction in `async`, `setTimeout`, or a Promise.
-- **Standalone `index.html` wrapped in `<template>`** — hides all content from the browser. Only **sub-compositions** loaded via `data-composition-src` use `<template>`.
-- **Using video for audio** — always muted `<video>` + separate `<audio>`.
+- forgotten `preview` leaves long-lived Next.js/Chrome workers
+- `HeadlessExperimental.beginFrame` missing on Chromium 147+: use `hyperframes@>=0.4.2` fallback or `export PRODUCER_FORCE_SCREENSHOT=true`; see [hyperframes#294](https://github.com/heygen-com/hyperframes/issues/294)
+- system Chrome instead of `chrome-headless-shell` hangs; run `npx puppeteer browsers install chrome-headless-shell`; `doctor` reports binary
+- `repeat: -1` breaks capture
+- `gsap.set()` on later clip elements runs too early; use `tl.set(...)` at/after `data-start`
+- forced `<br>` plus natural wrapping double-breaks; use `max-width`, except deliberate short display titles
+- GSAP cannot tween `visibility`/`display`; use `autoAlpha`
+- never call `video.play()`/`audio.play()`; framework owns playback
+- async timeline construction is invisible to synchronous capture
+- root `index.html` inside `<template>` hides page; only `data-composition-src` sub-compositions use `<template>`
+- use muted video + separate audio
 
 ## Verification
 
-Before and after rendering:
+1. Run `npx hyperframes lint --strict && npx hyperframes validate && npx hyperframes inspect`.
+2. For new/significant animation, run:
 
-1. **Lint + validate + inspect pass:** `npx hyperframes lint --strict && npx hyperframes validate && npx hyperframes inspect` (lint catches structural issues, validate catches contrast, inspect catches visual layout / overflow issues — see troubleshooting.md if warnings appear).
-2. **Animation choreography** — for new compositions or significant animation changes, run the animation map. `npx hyperframes init` copies the skill scripts into the project, so the path is project-local:
    ```bash
    node skills/hyperframes/scripts/animation-map.mjs <composition-dir> \
      --out <composition-dir>/.hyperframes/anim-map
    ```
-   Outputs a single `animation-map.json` with per-tween summaries, ASCII Gantt timeline, stagger detection, dead zones (>1s with no animation), element lifecycles, and flags (`offscreen`, `collision`, `invisible`, `paced-fast` <0.2s, `paced-slow` >2s). Scan summaries and flags — fix or justify each. Skip on small edits.
-3. **File exists + non-zero:** `ls -lh final.mp4`.
-4. **Duration matches `data-duration`:** `ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 final.mp4`.
-5. **Visual check:** extract a mid-composition frame: `ffmpeg -i final.mp4 -ss 00:00:05 -vframes 1 preview.png`.
-6. **Audio present if expected:** `ffprobe -v error -show_streams -select_streams a -of default=nw=1:nk=1 final.mp4 | head -1`.
 
-If `hyperframes render` fails, run `npx hyperframes doctor` and attach its output when reporting.
+   Review `animation-map.json`: per-tween summary, ASCII Gantt, stagger/dead zones (>1s), lifecycles, and flags `offscreen`, `collision`, `invisible`, `paced-fast` (<0.2s), `paced-slow` (>2s); fix or justify flags. Skip for small edits.
+3. File non-empty: `ls -lh final.mp4`.
+4. Duration matches `data-duration`: `ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 final.mp4`.
+5. Visual frame: `ffmpeg -i final.mp4 -ss 00:00:05 -vframes 1 preview.png`.
+6. Expected audio: `ffprobe -v error -show_streams -select_streams a -of default=nw=1:nk=1 final.mp4 | head -1`.
+
+Render failure → run `npx hyperframes doctor` and attach output when reporting.
 
 ## References
 
-- [composition.md](references/composition.md) — data attributes, timeline contract, non-negotiable rules, typography/asset rules
-- [cli.md](references/cli.md) — every CLI command (init, capture, lint, validate, inspect, preview, render, transcribe, tts, doctor, browser, info, upgrade, benchmark)
-- [gsap.md](references/gsap.md) — GSAP core API for HyperFrames (tweens, eases, stagger, timelines, matchMedia)
-- [features.md](references/features.md) — captions, TTS, audio-reactive, marker highlighting, transitions (load on demand)
-- [website-to-video.md](references/website-to-video.md) — 7-step capture-to-video workflow
-- [troubleshooting.md](references/troubleshooting.md) — OpenClaw fix, env vars, common render errors
+- `references/composition.md` — data attributes, timeline contract, typography/assets
+- `references/cli.md` — init/capture/lint/validate/inspect/preview/render/transcribe/tts/doctor/browser/info/upgrade/benchmark
+- `references/gsap.md` — tweens, eases, stagger, timelines, matchMedia
+- `references/features.md` — captions, TTS, audio-reactive, markers, transitions
+- `references/website-to-video.md` — capture-to-video workflow
+- `references/troubleshooting.md` — fixes, env vars, render errors

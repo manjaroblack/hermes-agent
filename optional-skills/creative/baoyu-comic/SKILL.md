@@ -13,24 +13,33 @@ metadata:
 
 # Knowledge Comic Creator
 
-Adapted from [baoyu-comic](https://github.com/JimLiu/baoyu-skills) for Hermes Agent's tool ecosystem.
+role: knowledge-comic production operator
+do: ingest/analyze source; preserve language; resolve references; confirm style/options; storyboard; define characters; save prompts; generate/download pages; review/finalize
+inputs: topic/text/file/URL, optional reference images, art/tone/layout/aspect/language, partial-workflow choice
+outputs: source, analysis, storyboard, character definitions/sheet, prompt files, downloaded page PNGs, completion report
+¬: pass reference PNG to `image_generate`; generate before prompt save; hide timeout defaults; use relative download paths; skip required confirmation; alter source facts; expose secrets
 
-Create original knowledge comics with flexible art style × tone combinations.
+Create original educational, biography, tutorial, or Logicomix-style knowledge comics from text, files, URLs, or topics. Adapted from [baoyu-comic](https://github.com/JimLiu/baoyu-skills) for Hermes tools.
 
 ## When to Use
 
-Trigger this skill when the user asks to create a knowledge/educational comic, biography comic, tutorial comic, or uses terms like "知识漫画", "教育漫画", or "Logicomix-style". The user provides content (text, file path, URL, or topic) and optionally specifies art style, tone, layout, aspect ratio, or language.
+- `知识漫画`, `教育漫画`, biography/tutorial comic, or Logicomix-style request
+- source content plus optional art style, tone, layout, aspect, language, or reference image
+- storyboard-only, prompts-only, images-only, or page regeneration workflow
+
+## Prerequisites
+
+- source content or topic; output directory decision
+- `clarify`, `vision_analyze`, `image_generate`, `terminal`, `read_file`, `write_file`
+- `image_generate` is prompt-only: accepts `prompt` + `aspect_ratio`, returns URL, no reference-image input
 
 ## Reference Images
 
-Hermes' `image_generate` tool is **prompt-only** — it accepts a text prompt and an aspect ratio, and returns an image URL. It does **NOT** accept reference images. When the user supplies a reference image, use it to **extract traits in text** that get embedded in every page prompt:
+Extract traits as text; never pass a reference image to `image_generate`.
 
-**Intake**: Accept file paths when the user provides them (or pastes images in conversation).
-- File path(s) → copy to `refs/NN-ref-{slug}.{ext}` alongside the comic output for provenance
-- Pasted image with no path → ask the user for the path via `clarify`, or extract style traits verbally as a text fallback
-- No reference → skip this section
-
-**Usage modes** (per reference):
+- path/attachment → copy to `refs/NN-ref-{slug}.{ext}` for provenance
+- pasted image without path → ask path via `clarify`, or use a verbal text fallback
+- no reference → skip
 
 | Usage | Effect |
 |-------|--------|
@@ -38,7 +47,7 @@ Hermes' `image_generate` tool is **prompt-only** — it accepts a text prompt an
 | `palette` | Extract hex colors and append to every page's prompt body |
 | `scene` | Extract scene composition or subject notes and append to the relevant page(s) |
 
-**Record in each page's prompt frontmatter** when refs exist:
+When refs exist, record each in page prompt frontmatter:
 
 ```yaml
 references:
@@ -48,11 +57,11 @@ references:
     traits: "muted earth tones, soft-edged ink wash, low-contrast backgrounds"
 ```
 
-Character consistency is driven by **text descriptions** in `characters/characters.md` (written in Step 3) that get embedded inline in every page prompt (Step 5). The optional PNG character sheet generated in Step 7.1 is a human-facing review artifact, not an input to `image_generate`.
+Character consistency uses text in `characters/characters.md`, embedded inline in every page prompt. Optional `characters/characters.png` is a human review/regeneration artifact only; it is not model input.
 
 ## Options
 
-### Visual Dimensions
+### Visual
 
 | Option | Values | Description |
 |--------|--------|-------------|
@@ -63,7 +72,7 @@ Character consistency is driven by **text descriptions** in `characters/characte
 | Language | auto (default), zh, en, ja, etc. | Output language |
 | Refs | File paths | Reference images used for style / palette trait extraction (not passed to the image model). See [Reference Images](#reference-images) above. |
 
-### Partial Workflow Options
+### Partial workflows
 
 | Option | Description |
 |--------|-------------|
@@ -72,13 +81,9 @@ Character consistency is driven by **text descriptions** in `characters/characte
 | Images only | Generate images from existing prompts directory |
 | Regenerate N | Regenerate specific page(s) only (e.g., `3` or `2,5,8`) |
 
-Details: [references/partial-workflows.md](references/partial-workflows.md)
+Details: `references/partial-workflows.md`.
 
-### Art, Tone & Preset Catalogue
-
-- **Art styles** (6): `ligne-claire`, `manga`, `realistic`, `ink-brush`, `chalk`, `minimalist`. Full definitions at `references/art-styles/<style>.md`.
-- **Tones** (7): `neutral`, `warm`, `dramatic`, `romantic`, `energetic`, `vintage`, `action`. Full definitions at `references/tones/<tone>.md`.
-- **Presets** (5) with special rules beyond plain art+tone:
+### Presets
 
   | Preset | Equivalent | Hook |
   |--------|-----------|------|
@@ -88,17 +93,12 @@ Details: [references/partial-workflows.md](references/partial-workflows.md)
   | `concept-story` | manga + warm | Visual symbol system, growth arc, dialogue+action balance |
   | `four-panel` | minimalist + neutral + four-panel layout | 起承转合 structure, B&W + spot color, stick-figure characters |
 
-  Full rules at `references/presets/<preset>.md` — load the file when a preset is picked.
+Full definitions: `references/art-styles/<style>.md`, `references/tones/<tone>.md`, `references/presets/<preset>.md`, `references/auto-selection.md`.
 
-- **Compatibility matrix** and **content-signal → preset** table live in [references/auto-selection.md](references/auto-selection.md). Read it before recommending combinations in Step 2.
+## File Contract
 
-## File Structure
+Output: `comic/{topic-slug}/`, slug=2-4 kebab-case words; conflict→timestamp, e.g. `turing-story-20260118-143052`.
 
-Output directory: `comic/{topic-slug}/`
-- Slug: 2-4 words kebab-case from topic (e.g., `alan-turing-bio`)
-- Conflict: append timestamp (e.g., `turing-story-20260118-143052`)
-
-**Contents**:
 | File | Description |
 |------|-------------|
 | `source-{slug}.md` | Saved source content (kebab-case slug matches the output directory) |
@@ -110,24 +110,13 @@ Output directory: `comic/{topic-slug}/`
 | `NN-{cover\|page}-[slug].png` | Generated images (downloaded from `image_generate`) |
 | `refs/NN-ref-{slug}.{ext}` | User-supplied reference images (optional, for provenance) |
 
-## Language Handling
+## Language Contract
 
-**Detection Priority**:
-1. User-specified language (explicit option)
-2. User's conversation language
-3. Source content language
+Detection priority: explicit user language → conversation language → source language. Use the selected user/input language for storyboard, scene descriptions, prompts, options, confirmations, progress, errors, and summaries. Technical terms stay English.
 
-**Rule**: Use user's input language for ALL interactions:
-- Storyboard outlines and scene descriptions
-- Image generation prompts
-- User selection options and confirmations
-- Progress updates, questions, errors, summaries
+## Procedure
 
-Technical terms remain in English.
-
-## Workflow
-
-### Progress Checklist
+### Progress gate
 
 ```
 Comic Progress:
@@ -145,13 +134,7 @@ Comic Progress:
 - [ ] Step 8: Completion report
 ```
 
-### Flow
-
-```
-Input → Analyze → [Check Existing?] → [Confirm: Style + Reviews] → Storyboard → [Review?] → Prompts → [Review?] → Images → Complete
-```
-
-### Step Summary
+Flow: `Input → Analyze → [Check Existing?] → [Confirm: Style + Reviews] → Storyboard → [Review?] → Prompts → [Review?] → Images → Complete`.
 
 | Step | Action | Key Output |
 |------|--------|------------|
@@ -166,64 +149,41 @@ Input → Analyze → [Check Existing?] → [Confirm: Style + Reviews] → Story
 | 7.2 | Generate pages | `*.png` files |
 | 8 | Completion report | Summary |
 
-### User Questions
+### 1. Setup and analyze
 
-Use the `clarify` tool to confirm options. Since `clarify` handles one question at a time, ask the most important question first and proceed sequentially. See [references/workflow.md](references/workflow.md) for the full Step 2 question set.
+Read source, save source copy, analyze content, detect existing output directory, and handle conflicts before generation.
 
-**Timeout handling (CRITICAL)**: `clarify` can return `"The user did not provide a response within the time limit. Use your best judgement to make the choice and proceed."` — this is NOT user consent to default everything.
+### 2. Confirm options
 
-- Treat it as a default **for that one question only**. Continue asking the remaining Step 2 questions in sequence; each question is an independent consent point.
-- **Surface the default to the user visibly** in your next message so they have a chance to correct it: e.g. `"Style: defaulted to ohmsha preset (clarify timed out). Say the word to switch."` — an unreported default is indistinguishable from never having asked.
-- Do NOT collapse Step 2 into a single "use all defaults" pass after one timeout. If the user is genuinely absent, they will be equally absent for all five questions — but they can correct visible defaults when they return, and cannot correct invisible ones.
+Use `clarify` sequentially; ask the important question first and skip answers already supplied. Critical timeout behavior: if `clarify` returns `"The user did not provide a response within the time limit. Use your best judgement to make the choice and proceed."`, default only that question; continue remaining questions; visibly tell the user the default, e.g. `Style: defaulted to ohmsha preset (clarify timed out). Say the word to switch.` Do not collapse all five questions into invisible defaults. Ask no more than 2-3 in a row.
 
-### Step 7: Image Generation
+### 3. Storyboard and characters
 
-Use Hermes' built-in `image_generate` tool for all image rendering. Its schema accepts only `prompt` and `aspect_ratio` (`landscape` | `portrait` | `square`); it **returns a URL**, not a local file. Every generated page or character sheet must therefore be downloaded to the output directory.
+Generate `storyboard.md` and text character definitions. Embed those descriptions into every page prompt.
 
-**Prompt file requirement (hard)**: write each image's full, final prompt to a standalone file under `prompts/` (naming: `NN-{type}-[slug].md`) BEFORE calling `image_generate`. The prompt file is the reproducibility record.
+### 4-6. Review and prompt records
 
-**Aspect ratio mapping** — the storyboard's `aspect_ratio` field maps to `image_generate`'s format as follows:
+Honor requested outline/prompt review gates. Before any `image_generate`, save every full final prompt under `prompts/NN-{cover|page}-[slug].md`; prompt files are reproducibility records.
 
-| Storyboard ratio | `image_generate` format |
-|------------------|-------------------------|
-| `3:4`, `9:16`, `2:3` | `portrait` |
-| `4:3`, `16:9`, `3:2` | `landscape` |
-| `1:1` | `square` |
+### 7. Generate images
 
-**Download step** — after every `image_generate` call:
-1. Read the URL from the tool result
-2. Fetch the image bytes using an **absolute** output path, e.g.
-   `curl -fsSL "<url>" -o /abs/path/to/comic/<slug>/NN-page-<slug>.png`
-3. Verify the file exists and is non-empty at that exact path before proceeding to the next page
+1. Use `image_generate` with only `prompt` and `aspect_ratio`.
+2. Map storyboard ratio: `3:4`, `9:16`, `2:3`→`portrait`; `4:3`, `16:9`, `3:2`→`landscape`; `1:1`→`square`.
+3. Read returned URL; download bytes with an **absolute** path, e.g. `curl -fsSL "<url>" -o /abs/path/to/comic/<slug>/NN-page-<slug>.png`.
+4. Verify exact path exists and is non-empty before the next page.
+5. Retry generation once on failure.
 
-**Never rely on shell CWD persistence for `-o` paths.** The terminal tool's persistent-shell CWD can change between batches (session expiry, `TERMINAL_LIFETIME_SECONDS`, a failed `cd` that leaves you in the wrong directory). `curl -o relative/path.png` is a silent footgun: if CWD has drifted, the file lands somewhere else with no error. **Always pass a fully-qualified absolute path to `-o`**, or pass `workdir=<abs path>` to the terminal tool. Incident Apr 2026: pages 06-09 of a 10-page comic landed at the repo root instead of `comic/<slug>/` because batch 3 inherited a stale CWD from batch 2 and `curl -o 06-page-skills.png` wrote to the wrong directory. The agent then spent several turns claiming the files existed where they didn't.
+Never rely on shell CWD persistence: `curl -o relative/path.png` can silently land in the wrong directory after session/CWD drift.
 
-**7.1 Character sheet** — generate it (to `characters/characters.png`, aspect `landscape`) when the comic is multi-page with recurring characters. Skip for simple presets (e.g., four-panel minimalist) or single-page comics. The prompt file at `characters/characters.md` must exist before invoking `image_generate`. The rendered PNG is a **human-facing review artifact** (so the user can visually verify character design) and a reference for later regenerations or manual prompt edits — it does **not** drive Step 7.2. Page prompts are already written in Step 5 from the **text descriptions** in `characters/characters.md`; `image_generate` cannot accept images as visual input.
+#### 7.1 Character sheet
 
-**7.2 Pages** — each page's prompt MUST already be at `prompts/NN-{cover|page}-[slug].md` before invoking `image_generate`. Because `image_generate` is prompt-only, character consistency is enforced by **embedding character descriptions (sourced from `characters/characters.md`) inline in every page prompt during Step 5**. The embedding is done uniformly whether or not a PNG sheet is produced in 7.1; the PNG is only a review/regeneration aid.
+For recurring characters in multi-page comics, write `characters/characters.md`, save its prompt before generation, then generate/download `characters/characters.png` with `landscape`. Skip for one-page/simple presets such as four-panel minimalist. The PNG is for human review/regeneration; page prompts always use text descriptions because image input is unsupported.
 
-**Backup rule**: existing `prompts/…md` and `…png` files → rename with `-backup-YYYYMMDD-HHMMSS` suffix before regenerating.
+#### 7.2 Pages and backups
 
-Full step-by-step workflow (analysis, storyboard, review gates, regeneration variants): [references/workflow.md](references/workflow.md).
+Each page prompt must exist before generation. Embed `characters/characters.md` descriptions uniformly, with or without a PNG sheet. Before regenerating, rename existing `prompts/…md` and `…png` files with `-backup-YYYYMMDD-HHMMSS`.
 
-## References
-
-**Core Templates**:
-- [analysis-framework.md](references/analysis-framework.md) - Deep content analysis
-- [character-template.md](references/character-template.md) - Character definition format
-- [storyboard-template.md](references/storyboard-template.md) - Storyboard structure
-- [ohmsha-guide.md](references/ohmsha-guide.md) - Ohmsha manga specifics
-
-**Style Definitions**:
-- `references/art-styles/` - Art styles (ligne-claire, manga, realistic, ink-brush, chalk, minimalist)
-- `references/tones/` - Tones (neutral, warm, dramatic, romantic, energetic, vintage, action)
-- `references/presets/` - Presets with special rules (ohmsha, wuxia, shoujo, concept-story, four-panel)
-- `references/layouts/` - Layouts (standard, cinematic, dense, splash, mixed, webtoon, four-panel)
-
-**Workflow**:
-- [workflow.md](references/workflow.md) - Full workflow details
-- [auto-selection.md](references/auto-selection.md) - Content signal analysis
-- [partial-workflows.md](references/partial-workflows.md) - Partial workflow options
+Detailed analysis/storyboard/review/regeneration workflow: `references/workflow.md`.
 
 ## Page Modification
 
@@ -233,15 +193,48 @@ Full step-by-step workflow (analysis, storyboard, review gates, regeneration var
 | **Add** | Create prompt at position → generate with character descriptions embedded → renumber subsequent → update storyboard |
 | **Delete** | Remove files → renumber subsequent → update storyboard |
 
-**IMPORTANT**: When updating pages, ALWAYS update the prompt file (`prompts/NN-{cover|page}-[slug].md`) FIRST before regenerating. This ensures changes are documented and reproducible.
+## References
+
+- `references/analysis-framework.md` — content analysis
+- `references/character-template.md` — character format
+- `references/storyboard-template.md` — storyboard format
+- `references/ohmsha-guide.md` — Ohmsha specifics
+- `references/art-styles/`, `references/tones/`, `references/presets/`, `references/layouts/`
+- `references/workflow.md`, `references/auto-selection.md`, `references/partial-workflows.md`
 
 ## Pitfalls
 
-- Image generation: 10-30 seconds per page; auto-retry once on failure
-- **Always download** the URL returned by `image_generate` to a local PNG — downstream tooling (and the user's review) expects files in the output directory, not ephemeral URLs
-- **Use absolute paths for `curl -o`** — never rely on persistent-shell CWD across batches. Silent footgun: files land in the wrong directory and subsequent `ls` on the intended path shows nothing. See Step 7 "Download step".
-- Use stylized alternatives for sensitive public figures
-- **Step 2 confirmation required** - do not skip
-- **Steps 4/6 conditional** - only if user requested in Step 2
-- **Step 7.1 character sheet** - recommended for multi-page comics, optional for simple presets. The PNG is a review/regeneration aid; page prompts (written in Step 5) use the text descriptions in `characters/characters.md`, not the PNG. `image_generate` does not accept images as visual input
-- **Strip secrets** — scan source content for API keys, tokens, or credentials before writing any output file
+- generation takes 10-30s/page; retry once on failure
+- download every returned URL to local PNG; downstream review expects files, not ephemeral URLs
+- use absolute `curl -o` paths; CWD drift caused pages 06-09 to land at repo root in a prior incident
+- use stylized alternatives for sensitive public figures
+- Step 2 confirmation is required; Steps 4/6 only when requested
+- character sheet is optional/review-only; page prompts use text, not PNG
+- strip API keys, tokens, credentials before writing output
+
+## Verification
+
+- selected language is used in all user-facing/generated text
+- `analysis.md`, `storyboard.md`, characters, and prompt records exist as applicable
+- every generated page has an existing prompt and non-empty PNG at exact absolute path
+- aspect ratio mapping is valid; references are recorded with usage/traits
+- rendered character/page consistency is checked from text descriptions
+- backup suffix used before regeneration; completion report includes generated pages and paths
+
+## Preserved Source Tables
+
+### Original table 1
+
+| Storyboard ratio | `image_generate` format |
+|------------------|-------------------------|
+| `3:4`, `9:16`, `2:3` | `portrait` |
+| `4:3`, `16:9`, `3:2` | `landscape` |
+| `1:1` | `square` |
+
+## Preserved Source Examples
+
+### Original example 1
+
+```
+Input → Analyze → [Check Existing?] → [Confirm: Style + Reviews] → Storyboard → [Review?] → Prompts → [Review?] → Images → Complete
+```

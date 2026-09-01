@@ -13,79 +13,56 @@ metadata:
 
 # Adversarial UX Test
 
-Roleplay the worst-case user for your product — the person who hates technology, doesn't want your software, and will find every reason to complain. Then filter their feedback through a pragmatism layer to separate real UX problems from "I hate computers" noise.
+role: hostile-persona UX dogfood operator
+do: define hardest persona; browse actual task; capture screenshots/console errors; write in-character rant; pragmatically filter; create bounded tickets; report evidence
+inputs: staging/deployed URL, product docs, target audience, optional persona, core task, ticket destination
+outputs: persona profile, in-character review, RED/YELLOW/WHITE/GREEN assessment, max 10 tickets, screenshots and links
+¬: feature-tour instead of core task; mix personas; skip pragmatism filter; file raw persona noise; test local dev; exceed 10 tickets; claim UX issue without screenshot; use pre-seeded admin account when cold start is testable
 
-Think of it as an automated "mom test" — but angry.
+Roleplay the worst-case user—technology-averse, impatient, and ready to return to their old method—then separate real friction from “I hate computers” noise. This is an angry automated mom test: most QA finds correctness bugs; this finds terminology, steps, onboarding, accessibility, cold-start, and paywall friction.
 
-## Why This Works
+## When to Use
 
-Most QA finds bugs. This finds **friction**. A technically correct app can still be unusable for real humans. The adversarial persona catches:
-- Confusing terminology that makes sense to developers but not users
-- Too many steps to accomplish basic tasks
-- Missing onboarding or "aha moments"
-- Accessibility issues (font size, contrast, click targets)
-- Cold-start problems (empty states, no demo content)
-- Paywall/signup friction that kills conversion
+- `Run an adversarial UX test on [URL]`
+- “Be a grumpy [persona] and test [app]”
+- hostile user test on staging/deployed product
 
-The **pragmatism filter** (Phase 3) is what makes this useful instead of just entertaining. Without it, you'd add a "print this page" button to every screen because Grandpa can't figure out PDFs.
+## Prerequisites
 
-## How to Use
+- staging/deployed app, not local dev
+- browser tools, screenshot capture, console inspection
+- project docs/known issues and ticket destination
+- one persona + one core task per session
 
-Tell the agent:
-```
-"Run an adversarial UX test on [URL]"
-"Be a grumpy [persona type] and test [app name]"
-"Do an asshole user test on my staging site"
-```
+## Procedure
 
-You can provide a persona or let the agent generate one based on your product's target audience.
+### 1. Define one specific persona
 
-## Step 1: Define the Persona
+If absent, answer:
 
-If no persona is provided, generate one by answering:
+1. hardest user for the product (age, role, old method)
+2. tech comfort (lower is better: WhatsApp-only/paper/email set up by spouse)
+3. one job they need done, not feature list
+4. abandonment trigger (clicks, jargon, slowness, confusion)
+5. frustrated voice (blunt, sweary, dismissive, sighing)
 
-1. **Who is the HARDEST user for this product?** (age 50+, non-technical role, decades of experience doing it "the old way")
-2. **What is their tech comfort level?** (the lower the better — WhatsApp-only, paper notebooks, wife set up their email)
-3. **What is the ONE thing they need to accomplish?** (their core job, not your feature list)
-4. **What would make them give up?** (too many clicks, jargon, slow, confusing)
-5. **How do they talk when frustrated?** (blunt, sweary, dismissive, sighing)
+Example: **“Big Mick” McAllister**, 58-year-old S&C coach, WhatsApp only, paper notebook, must log 25 players, hates small text/jargon/passwords, quits after 10 seconds. A vague “user who dislikes the app” is invalid; persona must hold for ~20 minutes.
 
-### Good Persona Example
-> **"Big Mick" McAllister** — 58-year-old S&C coach. Uses WhatsApp and that's it. His "spreadsheet" is a paper notebook. "If I can't figure it out in 10 seconds I'm going back to my notebook." Needs to log session results for 25 players. Hates small text, jargon, and passwords.
+### 2. Browse in character
 
-### Bad Persona Example
-> "A user who doesn't like the app" — too vague, no constraints, no voice.
+1. Read docs for context/URLs.
+2. Fully inhabit limitations, goals, and frustrations.
+3. Navigate with browser tools.
+4. Attempt only the actual core task first:
+   - steps/clicks/screens
+   - confusion/lost points/anger
+   - what causes abandonment
+5. Test first impression, core workflow, error recovery, readability/contrast/density, speed, terminology, navigation.
+6. Register a new user when possible; test cold start/empty states and expired/paywall accounts where relevant.
+7. Capture a screenshot for every complaint and check browser console JS errors on every page.
+8. Count clicks; >5 for the one task is almost always RED.
 
-The persona must be **specific enough to stay in character** for 20 minutes of testing.
-
-## Step 2: Become the Asshole (Browse as the Persona)
-
-1. Read any available project docs for app context and URLs
-2. **Fully inhabit the persona** — their frustrations, limitations, goals
-3. Navigate to the app using browser tools
-4. **Attempt the persona's ACTUAL TASKS** (not a feature tour):
-   - Can they do what they came to do?
-   - How many clicks/screens to accomplish it?
-   - What confuses them?
-   - What makes them angry?
-   - Where do they get lost?
-   - What would make them give up and go back to their old way?
-
-5. Test these friction categories:
-   - **First impression** — would they even bother past the landing page?
-   - **Core workflow** — the ONE thing they need to do most often
-   - **Error recovery** — what happens when they do something wrong?
-   - **Readability** — text size, contrast, information density
-   - **Speed** — does it feel faster than their current method?
-   - **Terminology** — any jargon they wouldn't understand?
-   - **Navigation** — can they find their way back? do they know where they are?
-
-6. Take screenshots of every pain point
-7. Check browser console for JS errors on every page
-
-## Step 3: The Rant (Write Feedback in Character)
-
-Write the feedback AS THE PERSONA — in their voice, with their frustrations. This is not a bug report. This is a real human venting.
+### 3. Write the rant (still in character)
 
 ```
 [PERSONA NAME]'s Review of [PRODUCT]
@@ -108,66 +85,32 @@ SPECIFIC COMPLAINTS:
 VERDICT: "[one-line persona quote summarizing their experience]"
 ```
 
-## Step 4: The Pragmatism Filter (Critical — Do Not Skip)
+### 4. Apply mandatory pragmatism filter
 
-Step OUT of the persona. Evaluate each complaint as a product person:
+Break character. Classify every complaint:
 
-- **RED: REAL UX BUG** — Any user would have this problem, not just grumpy ones. Fix it.
-- **YELLOW: VALID BUT LOW PRIORITY** — Real issue but only for extreme users. Note it.
-- **WHITE: PERSONA NOISE** — "I hate computers" talking, not a product problem. Skip it.
-- **GREEN: FEATURE REQUEST** — Good idea hidden in the complaint. Consider it.
+| Class | Meaning | Action |
+|---|---|---|
+| **RED** | any competent user has it; accessibility; genuine workflow blocker | fix/ticket |
+| **YELLOW** | valid, mainly extreme user/low priority | one catch-all ticket |
+| **WHITE** | “I hate computers”/paper-only resistance; complexity would hurt 80% | report only |
+| **GREEN** | feature/onboarding opportunity hidden in complaint | consider/ticket |
 
-### Filter Criteria
-1. Would a 35-year-old competent-but-busy user have the same complaint? → RED
-2. Is this a genuine accessibility issue (font size, contrast, click targets)? → RED
-3. Is this "I want it to work like paper" resistance to digital? → WHITE
-4. Is this a real workflow inefficiency the persona stumbled on? → YELLOW or RED
-5. Would fixing this add complexity for the 80% who are fine? → WHITE
-6. Does the complaint reveal a missing onboarding moment? → GREEN
+Criteria: same for a busy competent 35-year-old? RED; font/contrast/click target? RED; “work like paper”? WHITE; real inefficiency? YELLOW/RED; added complexity for satisfied 80%? WHITE; missing aha/onboarding? GREEN. Never ship raw persona complaints.
 
-**This filter is MANDATORY.** Never ship raw persona complaints as tickets.
+### 5. Create tickets
 
-## Step 5: Create Tickets
+Only RED/GREEN: actionable title, verbatim quote, objective UX issue, suggested fix, `ux-review` label. YELLOW: one catch-all. WHITE: report only. Max 10 tickets; include links.
 
-For **RED** and **GREEN** items only:
-- Clear, actionable title
-- Include the persona's verbatim quote (entertaining + memorable)
-- The real UX issue underneath (objective)
-- A suggested fix (actionable)
-- Tag/label: "ux-review"
+### 6. Report
 
-For **YELLOW** items: one catch-all ticket with all notes.
+1. persona rant
+2. filtered assessment
+3. created tickets + links
+4. screenshots of key issues
+5. console errors and known-issue cross-check
 
-**WHITE** items appear in the report only. No tickets.
-
-**Max 10 tickets per session** — focus on the worst issues.
-
-## Step 6: Report
-
-Deliver:
-1. The persona rant (Step 3) — entertaining and visceral
-2. The filtered assessment (Step 4) — pragmatic and actionable
-3. Tickets created (Step 5) — with links
-4. Screenshots of key issues
-
-## Tips
-
-- **One persona per session.** Don't mix perspectives.
-- **Stay in character during Steps 2-3.** Break character only at Step 4.
-- **Test the CORE WORKFLOW first.** Don't get distracted by settings pages.
-- **Empty states are gold.** New user experience reveals the most friction.
-- **The best findings are RED items the persona found accidentally** while trying to do something else.
-- **If the persona has zero complaints, your persona is too tech-savvy.** Make them older, less patient, more set in their ways.
-- **Run this before demos, launches, or after shipping a batch of features.**
-- **Register as a NEW user when possible.** Don't use pre-seeded admin accounts — the cold start experience is where most friction lives.
-- **Zero WHITE items is a signal, not a failure.** If the pragmatism filter finds no noise, your product has real UX problems, not just a grumpy persona.
-- **Check known issues in project docs AFTER the test.** If the persona found a bug that's already in the known issues list, that's actually the most damning finding — it means the team knew about it but never felt the user's pain.
-- **Subscription/paywall testing is critical.** Test with expired accounts, not just active ones. The "what happens when you can't pay" experience reveals whether the product respects users or holds their data hostage.
-- **Count the clicks to accomplish the persona's ONE task.** If it's more than 5, that's almost always a RED finding regardless of persona tech level.
-
-## Example Personas by Industry
-
-These are starting points — customize for your specific product:
+## Persona Starters
 
 | Product Type | Persona | Age | Key Trait |
 |-------------|---------|-----|-----------|
@@ -180,12 +123,31 @@ These are starting points — customize for your specific product:
 | Healthcare | Senior GP | 63 | Dictates notes, nurse handles the computer |
 | Education | Veteran teacher | 57 | Chalk and talk, worksheets in ring binders |
 
-## Rules
+## Pitfalls
 
-- Stay in character during Steps 2-3
-- Be genuinely mean but fair — find real problems, not manufactured ones
-- The pragmatism filter (Step 4) is **MANDATORY**
-- Screenshots required for every complaint
-- Max 10 tickets per session
-- Test on staging/deployed app, not local dev
-- One persona, one session, one report
+- stay in character only through Steps 2-3; step out for filter
+- one persona/session/report; do not mix perspectives
+- test core workflow before settings
+- zero WHITE items can be a useful signal: real UX problems may dominate
+- check known issues after testing; known-but-unfelt bugs are damning
+- test expired subscription/paywall flows; users must not lose data
+- persona with zero complaints is too tech-savvy; make constraints concrete
+
+## Verification
+
+- staging/deployed target and one persona/core task recorded
+- every complaint has screenshot; every page console checked
+- rant is in persona voice; assessment is out of character
+- all complaints classified; mandatory filter completed
+- ticket count <=10; only RED/GREEN individually ticketed, YELLOW grouped, WHITE report-only
+- report includes links/evidence and known-issue comparison
+
+## Preserved Source Examples
+
+### Original example 1
+
+```
+"Run an adversarial UX test on [URL]"
+"Be a grumpy [persona type] and test [app name]"
+"Do an asshole user test on my staging site"
+```

@@ -14,15 +14,21 @@ metadata:
 
 # Article Illustrator
 
-Adapted from [baoyu-article-illustrator](https://github.com/JimLiu/baoyu-skills) for Hermes Agent's tool ecosystem.
+role: article-to-illustration production operator
+do: read/analyze source; select type/style/palette; confirm settings; write outline/prompts; generate/download images; insert links; report
+inputs: article path/content, optional reference images, type, style, palette, density, language, output layout
+outputs: `analysis.md`, `outline.md`, reproducible prompt files, PNGs, article image inserts
+¬: alter article data; write prompt after generation; copy binary through text tools; expose secrets; claim backend/model selection; insert an unverified image path
 
-Analyze articles, identify illustration positions, generate images with **Type × Style × Palette** consistency.
+Analyze an article, place illustrations where they add information, and generate images with consistent **Type × Style × Palette**. Adapted from [baoyu-article-illustrator](https://github.com/JimLiu/baoyu-skills) for Hermes tools.
 
 ## When to Use
 
-Trigger this skill when the user asks to illustrate an article, add images to an article, generate illustrations for content, or uses phrases like "为文章配图", "illustrate article", or "add images". The user provides an article (file path or pasted content) and optionally specifies type, style, palette, or density.
+- illustrate an article or add images to content
+- generate illustrations from a file or pasted article
+- user asks `为文章配图`, `illustrate article`, or `add images`
 
-## Three Dimensions
+## Dimensions
 
 | Dimension | Controls | Examples |
 |-----------|----------|----------|
@@ -30,11 +36,7 @@ Trigger this skill when the user asks to illustrate an article, add images to an
 | **Style** | Rendering approach | notion, warm, minimal, blueprint, watercolor, elegant |
 | **Palette** | Color scheme (optional) | macaron, warm, neon — overrides style's default colors |
 
-Combine freely: `type=infographic, style=vector-illustration, palette=macaron`.
-
-Or use presets: `edu-visual` → type + style + palette in one shot. See [style-presets.md](references/style-presets.md).
-
-## Types
+Combine dimensions, e.g. `type=infographic, style=vector-illustration, palette=macaron`; preset `edu-visual` supplies all three. See `references/style-presets.md`.
 
 | Type | Best For |
 |------|----------|
@@ -45,11 +47,15 @@ Or use presets: `edu-visual` → type + style + palette in one shot. See [style-
 | `framework` | Models, architecture |
 | `timeline` | History, evolution |
 
-## Styles
+Styles, gallery, and Type × Style compatibility: `references/styles.md`.
 
-See [references/styles.md](references/styles.md) for Core Styles, the full gallery, and Type × Style compatibility.
+## Prerequisites
 
-## Output Structure
+- article path or content; optional reference images
+- `vision_analyze`, `image_generate`, `clarify`, `terminal`, `read_file`, `write_file`
+- output path/layout decision
+
+## Output Contract
 
 ```
 {output-dir}/
@@ -60,25 +66,21 @@ See [references/styles.md](references/styles.md) for Core Styles, the full galle
 └── NN-{type}-{slug}.png
 ```
 
-**Default output directory**:
-
 | Input | Output Directory | Markdown Insert Path |
 |-------|------------------|----------------------|
 | Article file path | `{article-dir}/imgs/` | `imgs/NN-{type}-{slug}.png` |
 | Pasted content | `illustrations/{topic-slug}/` (cwd) | `illustrations/{topic-slug}/NN-{type}-{slug}.png` |
 
-If the user asks for a different layout (e.g., images alongside the article, or a `illustrations/` subdirectory), honor that.
+Honor an explicit layout. Slug=2-4 kebab-case words; conflict→`-YYYYMMDD-HHMMSS`.
 
-**Slug**: 2-4 words, kebab-case. **Conflict**: append `-YYYYMMDD-HHMMSS`.
+## Core Rules
 
-## Core Principles
+- visualize concepts, not literal metaphors such as `电锯切西瓜`
+- labels use article numbers, terms, and quotes; never generic placeholders
+- save every prompt under `prompts/` before generation
+- scan source for API keys, tokens, credentials before writing output
 
-- **Visualize concepts, not metaphors** — if the article uses a metaphor (e.g., "电锯切西瓜"), illustrate the underlying concept, not the literal image.
-- **Labels use article data** — actual numbers, terms, and quotes from the article, not generic placeholders.
-- **Prompt files are reproducibility records** — every illustration must have a saved prompt file under `prompts/` before any image is generated.
-- **Strip secrets** — scan source content for API keys, tokens, or credentials before writing anything to disk.
-
-## Workflow
+## Procedure
 
 ```
 - [ ] Step 1: Detect reference images (if provided)
@@ -90,17 +92,17 @@ If the user asks for a different layout (e.g., images alongside the article, or 
 - [ ] Step 7: Finalize
 ```
 
-### Step 1: Detect Reference Images
+### 1. Detect reference images
 
-If the user supplies reference images (paths pasted inline, attachments, or a URL):
+For each path/attachment/URL:
 
-1. For each reference, call `vision_analyze` with the path/URL and a question asking for style, palette, composition, and subject. Record the returned description in `{output-dir}/references/NN-ref-{slug}.md` via `write_file`.
-2. **Do not** try to copy the binary via `write_file` / `read_file` — those are text-only. If you want a local copy for the record, use `terminal` (`cp "$src" "{output-dir}/references/NN-ref-{slug}.{ext}"`). The skill itself never needs to read the binary; it works off the vision description.
-3. Since `image_generate` doesn't take image inputs, the vision description is what gets embedded in prompts during Step 5.
+1. Call `vision_analyze`; record style, palette, composition, subject in the output `references` directory as `NN-ref-{slug}.md` with `write_file`.
+2. Do not copy binary via `write_file`/`read_file`; optional local copy uses `terminal` into the output `references` directory.
+3. Embed the textual vision description in prompts because `image_generate` accepts no image input.
 
-Full procedures: [references/workflow.md](references/workflow.md#step-1-detect-reference-images).
+Full procedure: `references/workflow.md#step-1-detect-reference-images`.
 
-### Step 2: Analyze
+### 2. Analyze
 
 | Analysis | Output |
 |----------|--------|
@@ -109,13 +111,11 @@ Full procedures: [references/workflow.md](references/workflow.md#step-1-detect-r
 | Core arguments | 2-5 main points |
 | Positions | Where illustrations add value |
 
-Read source (file path → `read_file`, or pasted text) and write the analysis to `{output-dir}/analysis.md` using `write_file`.
+Read file with `read_file` or use pasted text; write `{output-dir}/analysis.md`. Full procedure: `references/workflow.md#step-2-analyze`.
 
-Full procedures: [references/workflow.md](references/workflow.md#step-2-analyze).
+### 3. Confirm settings
 
-### Step 3: Confirm Settings
-
-Use the `clarify` tool. Since `clarify` handles one question at a time, ask the most important question first. Skip any question whose answer is already present in the user's request.
+Use `clarify`, one question at a time; skip answered questions; ask no more than 2-3 in a row.
 
 | Order | Question | Options |
 |-------|----------|---------|
@@ -125,13 +125,9 @@ Use the `clarify` tool. Since `clarify` handles one question at a time, ask the 
 | Q4 | **Palette** *(optional)* | Default (style colors), macaron, warm, neon |
 | Q5 | **Language** *(only if article language is ambiguous)* | article language / user language |
 
-Don't ask more than 2-3 `clarify` questions in a row. If the user already specified these in their request, skip entirely.
+### 4. Outline
 
-Full procedures: [references/workflow.md](references/workflow.md#step-3-confirm-settings).
-
-### Step 4: Generate Outline → `outline.md`
-
-Save `{output-dir}/outline.md` using `write_file` with frontmatter (type, density, style, palette, image_count) and one entry per illustration:
+Write `{output-dir}/outline.md` with frontmatter `(type, density, style, palette, image_count)` and one entry per illustration:
 
 ```yaml
 ## Illustration 1
@@ -141,36 +137,32 @@ Save `{output-dir}/outline.md` using `write_file` with frontmatter (type, densit
 **Filename**: 01-infographic-concept-name.png
 ```
 
-Full template: [references/workflow.md](references/workflow.md#step-4-generate-outline).
+Template: `references/workflow.md#step-4-generate-outline`.
 
-### Step 5: Generate Prompts
+### 5. Prompts
 
-**BLOCKING**: Every illustration must have a saved prompt file before any image is generated — the prompt file is the reproducibility record.
+**Hard gate:** save each full final prompt before any image generation.
 
-For each illustration:
+1. Follow `references/prompt-construction.md`.
+2. Save `prompts/NN-{type}-{slug}.md` with YAML frontmatter.
+3. Use type-specific `ZONES / LABELS / COLORS / STYLE / ASPECT` sections.
+4. Put actual article numbers, terms, metrics, and quotes in `LABELS`.
+5. Apply `direct`/`style`/`palette` reference semantics; for `direct`, embed textual traits because image input is unsupported.
 
-1. Create a prompt file per [references/prompt-construction.md](references/prompt-construction.md).
-2. Save to `{output-dir}/prompts/NN-{type}-{slug}.md` using `write_file` with YAML frontmatter.
-3. Prompts MUST use type-specific templates with structured sections (ZONES / LABELS / COLORS / STYLE / ASPECT).
-4. LABELS MUST include article-specific data: actual numbers, terms, metrics, quotes.
-5. Process references (`direct`/`style`/`palette`) per prompt frontmatter — for `direct` usage, embed a textual description of the reference in the prompt (since `image_generate` doesn't take reference-image inputs).
+### 6. Generate and download
 
-### Step 6: Generate Images
+For each prompt:
 
-For each prompt file:
+1. Call `image_generate(prompt=..., aspect_ratio=...)`; result is an image URL, not a file.
+2. Map `16:9`→`landscape`, `9:16`→`portrait`, `1:1`→`square`; custom ratios→nearest enum.
+3. Download via `terminal` to `{output-dir}/NN-{type}-{slug}.png`, e.g. `curl -sSL -o "{output-dir}/NN-{type}-{slug}.png" "{url}"`.
+4. Retry once on failure.
 
-1. Call `image_generate(prompt=..., aspect_ratio=...)`. `image_generate` returns a JSON result containing an image URL; it does NOT write to disk and does NOT accept an output path.
-2. Map the prompt's `ASPECT` to `image_generate`'s enum: `16:9` → `landscape`, `9:16` → `portrait`, `1:1` → `square`. Custom ratios → nearest named aspect.
-3. Download the returned URL to `{output-dir}/NN-{type}-{slug}.png` via `terminal` (e.g. `curl -sSL -o "{output-dir}/NN-{type}-{slug}.png" "{url}"`).
-4. On generation failure, auto-retry once.
+Backend is user-configured (default FAL FLUX 2 Klein 9B), not agent-selectable through `image_generate`; do not route by writing model names into prompts.
 
-Note: the underlying image-generation backend is user-configured (default: FAL FLUX 2 Klein 9B) and is NOT agent-selectable via `image_generate`. Do not write model names into prompts expecting them to route.
+### 7. Finalize
 
-### Step 7: Finalize
-
-Insert `![description]({relative-path}/NN-{type}-{slug}.png)` after the corresponding paragraph. Alt text: concise description in the article's language.
-
-Report:
+Insert `![description]({relative-path}/NN-{type}-{slug}.png)` after the matching paragraph; alt text is concise and in article language.
 
 ```
 Article Illustration Complete!
@@ -198,10 +190,18 @@ Images: X/N generated
 
 ## Pitfalls
 
-1. **Data integrity is paramount** — never summarize, paraphrase, or alter source statistics. "73% increase" stays "73% increase".
-2. **Strip secrets** — scan source content for API keys, tokens, or credentials before including in any output file.
-3. **Don't illustrate metaphors literally** — visualize the underlying concept.
-4. **Prompt files are mandatory** — no image generation without a saved prompt file. The file is what lets you regenerate or switch backends later.
-5. **`image_generate` aspect ratios** — the tool supports `landscape`, `portrait`, and `square`. Custom ratios map to the nearest option.
-6. **`image_generate` returns a URL, not a local file** — always download via `terminal` (`curl`) before inserting local image paths into the article.
-7. **No backend selection from the agent** — `image_generate` uses whatever model the user configured (default: FAL FLUX 2 Klein 9B). Don't write `"use <model> to generate this"` into prompts expecting it to route.
+- Preserve source statistics exactly: `73% increase` stays `73% increase`.
+- Strip API keys, tokens, credentials before writing any output.
+- Do not illustrate metaphors literally.
+- No `image_generate` call before its prompt file exists.
+- `image_generate` supports only `landscape`, `portrait`, `square`; returns URL, so download before insertion.
+- Agent cannot select the generation backend; default is FAL FLUX 2 Klein 9B.
+
+## Verification
+
+- source analysis and outline exist at the chosen output directory
+- every image has a saved prompt and article-specific labels
+- PNG exists at the exact downloaded path and is non-empty
+- aspect mapping and alt text match the article
+- inserted links resolve relative to the article
+- report states generated count `X/N`

@@ -15,50 +15,33 @@ metadata:
 
 # EVM Blockchain Skill
 
-Query EVM-compatible blockchain data across 8 chains with USD pricing.
-14 commands: wallet portfolio, token info, transactions, activity, gas tracker,
-network stats, price lookup, multi-chain scan, whale detection, ENS resolution,
-allowance checker, contract inspector, and transaction decoder.
+role: read-only EVM data operator
+do: select chain/command; run standard-library client; inspect wallet/token/tx/gas/contract data; report limits and risk flags
+inputs: address, token/tx hash, ENS name, chain, query options; optional `EVM_RPC_URL`
+outputs: USD-enriched JSON or human-readable wallet, market, transaction, gas, ENS, contract, allowance, whale data
+¬: sign/send transactions; expose credentials; treat known-token scans as complete; treat L2 gas as full transaction cost; bypass input validation
 
-Supports 8 chains: Ethereum, BNB Chain (BSC), Base, Arbitrum One, Polygon,
-Optimism, Avalanche (C-Chain), zkSync Era.
+Query EVM-compatible blockchain data across 8 chains with USD pricing. Fourteen commands cover wallet portfolio, token info, transactions, activity, gas, network stats, prices, multi-chain scans, whale detection, ENS, allowances, contract inspection, and decoding. No API key; Python standard library only (`urllib`, `json`, `argparse`, `threading`).
 
-No API key needed. Zero external dependencies — Python standard library only
-(urllib, json, argparse, threading).
-
-> **Supersedes the standalone `base` skill.** Base-specific tokens (AERO, DEGEN,
-> TOSHI, BRETT, WELL, cbETH, cbBTC, wstETH, rETH) and all Base RPC functionality
-> previously living under `optional-skills/blockchain/base/` have been folded
-> into this skill. Pass `--chain base` to any command for Base coverage.
-
----
+Supports Ethereum, BNB Chain (BSC), Base, Arbitrum One, Polygon, Optimism, Avalanche C-Chain, and zkSync Era. This skill supersedes standalone `base`; pass `--chain base` for Base coverage, including AERO, DEGEN, TOSHI, BRETT, WELL, cbETH, cbBTC, wstETH, and rETH.
 
 ## When to Use
-- User asks for a wallet balance or portfolio on any EVM chain
-- User wants to check the same wallet across ALL chains at once
-- User wants to inspect a transaction by hash (or decode what it did)
-- User wants ERC-20 token metadata, price, supply, or market cap
-- User wants recent transaction history for an address
-- User wants current gas prices or to compare fees across chains
-- User wants to find large whale transfers in recent blocks
-- User asks to resolve an ENS name (vitalik.eth) or reverse-lookup an address
-- User wants to check if a contract has dangerous token approvals
-- User wants to inspect a smart contract (proxy? ERC-20? ERC-721? bytecode size?)
-- User wants to compare gas costs across chains before a transaction
 
----
+- wallet balance/portfolio on an EVM chain or across all chains
+- ERC-20 metadata, price, supply, or market cap
+- transaction details, input decoding, or recent address activity
+- current gas prices or cross-chain fee comparison
+- large transfers, ENS forward/reverse lookup, dangerous allowances
+- proxy/ERC-20/ERC-721/ERC-165 and bytecode inspection
 
 ## Prerequisites
-Python 3.8+ standard library only. No pip installs required.
-Pricing: CoinGecko free API (rate-limited, ~10-30 req/min).
-ENS: ensideas.com public API.
-Tx decoding: 4byte.directory public API.
 
-Override RPC endpoint: `export EVM_RPC_URL=https://your-rpc.com`
-
-Helper script path: `~/.hermes/skills/blockchain/evm/scripts/evm_client.py`
-
----
+- Python 3.8+ standard library; no pip install
+- CoinGecko free API for pricing (~10-30 requests/min)
+- ensideas.com public API for ENS
+- 4byte.directory public API for transaction decoding
+- optional RPC override: `export EVM_RPC_URL=https://your-rpc.com`
+- helper: `~/.hermes/skills/blockchain/evm/scripts/evm_client.py`
 
 ## Quick Reference
 
@@ -102,79 +85,44 @@ python $SCRIPT whale                            # Large transfers (last 20 block
 python $SCRIPT whale --blocks 50 --min-usd 100000 --chain arbitrum
 ```
 
----
-
 ## Procedure
 
-### 0. Setup Check
+### 0. Setup
+
 ```bash
 python --version   # 3.8+ required
 python ~/.hermes/skills/blockchain/evm/scripts/evm_client.py stats
 ```
 
-### 1. Wallet Portfolio
-Native balance + known ERC-20 tokens, sorted by USD value.
+### 1. Portfolio and multi-chain scan
+
 ```bash
 python $SCRIPT wallet 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045
 python $SCRIPT wallet 0xd8dA... --chain bsc --no-prices   # faster
 ```
 
-### 2. Multi-Chain Scan
-Scans all 8 chains simultaneously for the same address using threads.
-```bash
-python $SCRIPT multichain 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045
-```
-Output: per-chain native balance + token holdings + grand total USD.
+`wallet` returns native balance + known ERC-20 tokens sorted by USD; `multichain` scans all 8 chains in parallel and adds a grand USD total.
 
-### 3. Compare (Gas + Prices)
-All 8 chains queried in parallel. Shows cheapest/most expensive chain.
-```bash
-python $SCRIPT compare
-```
+### 2. Tokens, transactions, and ENS
 
-### 4. Transaction Details & Decode
 ```bash
 python $SCRIPT tx 0x5c504ed432cb51138bcf09aa5e8a410dd4a1e204ef84bfed1be16dfba1b22060
 python $SCRIPT decode 0x5c504ed...   # Shows human-readable function signature
 ```
-Decode uses 4byte.directory to translate 0xa9059cbb -> transfer(address,uint256).
 
-### 5. ENS Resolution
-```bash
-python $SCRIPT ens vitalik.eth          # -> 0xd8dA... + avatar + social links
-python $SCRIPT ens 0xd8dA...96045       # -> vitalik.eth
-```
+Token output includes metadata/market cap; decode maps selectors such as `0xa9059cbb` to `transfer(address,uint256)`; ENS returns address/profile or reverse name.
 
-### 6. Allowance Checker (Security)
-Checks ERC-20 approvals granted to known DEX/bridge contracts.
-```bash
-python $SCRIPT allowance 0xYourWallet
-```
-Flags UNLIMITED approvals as HIGH risk.
+### 3. Security, contracts, whales, gas
 
-### 7. Contract Inspector
 ```bash
 python $SCRIPT contract 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48   # USDC (proxy)
 python $SCRIPT contract 0xdAC17F958D2ee523a2206206994597C13D831ec7   # USDT (ERC-20)
 ```
-Detects: proxy (EIP-1967/EIP-1167), ERC-20, ERC-721, ERC-165. Shows bytecode size and implementation address for proxies.
 
-### 8. Whale Detection
-```bash
-python $SCRIPT whale                                    # ETH, last 20 blocks, >$10k
-python $SCRIPT whale --blocks 50 --min-usd 50000 --chain bsc
-```
-
-### 9. Gas Tracker
-```bash
-python $SCRIPT gas
-python $SCRIPT gas --chain polygon
-```
-Shows gwei price + USD cost for: transfer, ERC-20 transfer, approve, swap, NFT mint, NFT transfer.
-
----
+`allowance` flags unlimited approvals to known DEX/bridge contracts as HIGH risk. `contract` detects EIP-1967/EIP-1167 proxies, ERC-20/721/165, bytecode size, and implementation address. `gas` shows gwei + USD estimates for transfer, ERC-20 transfer, approve, swap, NFT mint, and NFT transfer. `whale` defaults to last 20 blocks and >$10k.
 
 ## Supported Chains
+
 | Key       | Name           | Native | Chain ID |
 |-----------|----------------|--------|----------|
 | ethereum  | Ethereum       | ETH    | 1        |
@@ -186,26 +134,67 @@ Shows gwei price + USD cost for: transfer, ERC-20 transfer, approve, swap, NFT m
 | avalanche | Avalanche C    | AVAX   | 43114    |
 | zksync    | zkSync Era     | ETH    | 324      |
 
----
-
 ## Pitfalls
-- CoinGecko free tier: ~10-30 req/min. Use `--no-prices` for faster wallet scans.
-- Public RPCs may throttle. Set EVM_RPC_URL to a private endpoint for production.
-- `wallet` and `allowance` only check known token list (~30 tokens per chain). Use a block explorer for complete token discovery.
-- `activity` scans recent blocks only (max 200). For full history, use Etherscan API.
-- `multichain` runs 8 parallel threads — can trigger rate limits on public RPCs.
-- ENS resolution depends on a single public endpoint (ensideas.com / ens.vitalik.ca) with no fallback. If that endpoint is down, `ens` will fail — re-run later or use a block explorer.
-- Tx decoding depends on a single public endpoint (4byte.directory) with no fallback. Selectors not in their database show up as `unknown`.
-- **L2 gas estimates are L2-execution only.** On rollups like Base, Arbitrum, Optimism, and zkSync, the actual transaction cost also includes an L1 data-posting fee that depends on calldata size and current L1 gas prices. The `gas` command does not estimate that L1 component. For Base specifically, see the network's L1 fee oracle (contract `0x420000000000000000000000000000000000000F`).
-- Address / tx-hash inputs are validated for 0x-prefix + correct length + hex, but EIP-55 checksum casing is **not** enforced (RPC endpoints accept any-case hex).
 
----
+- CoinGecko free tier is ~10-30 req/min; use `--no-prices` for faster scans.
+- Public RPCs throttle; use a private `EVM_RPC_URL` for production.
+- `wallet`/`allowance` inspect only the known token list (~30/chain); use an explorer for full discovery.
+- `activity` scans recent blocks only (max 200); full history needs Etherscan API.
+- `multichain` starts 8 threads and can trigger rate limits.
+- ENS uses one public endpoint (`ensideas.com` / `ens.vitalik.ca`) with no fallback.
+- Decode uses 4byte.directory with no fallback; unknown selectors remain `unknown`.
+- L2 `gas` is L2 execution only; rollups also charge an L1 data-posting fee. Base's fee oracle is `0x420000000000000000000000000000000000000F`.
+- Address/tx inputs require `0x` + length + hex; EIP-55 checksum casing is not enforced.
 
 ## Verification
+
 ```bash
 # Should print current block, gas price, ETH price
 python ~/.hermes/skills/blockchain/evm/scripts/evm_client.py stats
 
 # Should resolve vitalik.eth to 0xd8dA...
 python ~/.hermes/skills/blockchain/evm/scripts/evm_client.py ens vitalik.eth
+```
+
+Expected: current block/gas/ETH price, then a resolution of `vitalik.eth` to `0xd8dA...`.
+
+## Preserved Source Examples
+
+### Original example 1
+
+```bash
+python $SCRIPT multichain 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045
+```
+
+### Original example 2
+
+```bash
+python $SCRIPT compare
+```
+
+### Original example 3
+
+```bash
+python $SCRIPT ens vitalik.eth          # -> 0xd8dA... + avatar + social links
+python $SCRIPT ens 0xd8dA...96045       # -> vitalik.eth
+```
+
+### Original example 4
+
+```bash
+python $SCRIPT allowance 0xYourWallet
+```
+
+### Original example 5
+
+```bash
+python $SCRIPT whale                                    # ETH, last 20 blocks, >$10k
+python $SCRIPT whale --blocks 50 --min-usd 50000 --chain bsc
+```
+
+### Original example 6
+
+```bash
+python $SCRIPT gas
+python $SCRIPT gas --chain polygon
 ```

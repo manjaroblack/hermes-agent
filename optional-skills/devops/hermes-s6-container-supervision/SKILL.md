@@ -14,18 +14,30 @@ metadata:
 
 # Hermes s6-overlay Container Supervision
 
-## When to use this skill
+role: Hermes s6-overlay container maintainer
+do: inspect PID1/entrypoint; preserve CMD exit semantics; trace cont-init/profile reconciliation; edit one service source; test signals/restarts/ownership; run Docker harness
+inputs: Hermes Docker image, profile/gateway state, s6 service path, entrypoint/CMD args, container logs
+outputs: supervised static/profile service, corrected entrypoint/run script, verified boot/restart/exit behavior
+¬: supervise main Hermes as a replacement for CMD; swallow exit codes; drop `exec`/signals; run s6 helpers from wrong PATH; chown away required permissions; alter `stage2-hook.sh` without boot test; claim health from PID1 alone
 
-Load this skill when you're working on:
-- Adding or removing a static service in the Hermes Docker image (something that should be supervised at every container start, like the dashboard)
-- Diagnosing why a per-profile gateway isn't starting, restarting, or surviving `docker restart`
-- Understanding why the container's CMD is `/opt/hermes/docker/main-wrapper.sh` and how leading-dash args reach the user's program
-- Modifying `cont-init.d` boot scripts (UID remap, volume seeding, profile reconciliation)
-- Changing the rendered run-script for per-profile gateways (Phase 4)
+Use this skill when adding/removing a static service, diagnosing a per-profile gateway across `docker restart`, tracing leading-dash CMD arguments, modifying `cont-init.d`, or changing the Phase-4 profile-gateway run script. For ordinary Docker use, see `website/docs/user-guide/docker.md`.
 
-If you're just running the Hermes Agent and want to use Docker, see `website/docs/user-guide/docker.md` instead.
+## When to Use
 
-## Architecture at a glance
+- static service in the Hermes Docker image (for example dashboard)
+- per-profile gateway fails to start/restart/survive restart
+- container CMD `/opt/hermes/docker/main-wrapper.sh` or leading-dash args
+- `cont-init.d` UID remap, volume seed, profile reconciliation
+- per-profile gateway run-script or s6 test harness
+
+## Prerequisites
+
+- Linux Docker image with s6-overlay v3.2.3.0 and `environments: [s6]`
+- Hermes Dockerfile/entrypoint and profile volume
+- Docker available for harness (`tests/docker/` skips when unavailable)
+- inspect with `docker exec`, `docker logs`, and absolute `/command/` s6 paths
+
+## Architecture at a Glance
 
 ```
 /init                                  ← PID 1 (s6-overlay v3.2.3.0)
@@ -59,7 +71,7 @@ If you're just running the Hermes Agent and want to use Docker, see `website/doc
         — exec'd by /init with stdin/stdout/stderr inherited (TTY for --tui)
 ```
 
-## Key files
+## Key Files
 
 | Path | Role |
 |---|---|
@@ -75,27 +87,25 @@ If you're just running the Hermes Agent and want to use Docker, see `website/doc
 | `hermes_cli/container_boot.py` | `reconcile_profile_gateways()` — walks persistent profiles, regenerates s6 slots, emits `container-boot.log`. |
 | `hermes_cli/gateway.py::_dispatch_via_service_manager_if_s6` | Intercepts `hermes gateway start/stop/restart` and routes to s6 when running in a container. |
 
-## Why Architecture B (CMD as main program, not s6-supervised)
+## Why Architecture B
 
-The original plan (v1–v3) called for main hermes to run as a supervised s6-rc service. Two real s6-overlay v3 mechanics blocked that:
+The v1-v3 plan supervised main Hermes as an s6-rc service, but two s6-overlay v3 constraints make the CMD/main-program pattern load-bearing:
 
-1. **cont-init.d scripts receive no CMD args** — so the stage2 hook can't parse `docker run <image> chat -q "hi"` to set `HERMES_ARGS` for a service `run` script to consume.
-2. **`/run/s6/basedir/bin/halt` does NOT propagate the exit code** written to `/run/s6-linux-init-container-results/exitcode`. Containers always exit 143 (SIGTERM) regardless. Confirmed by skarnet (s6 author) in [issue #477](https://github.com/just-containers/s6-overlay/issues/477): _"if you want a container shutdown, you need to either have your CMD exit, or, if you have no CMD, write the container exit code you want then call halt"_.
+1. `cont-init.d` receives no CMD args, so stage2 cannot parse `docker run <image> chat -q "hi"` into `HERMES_ARGS` for a service run script.
+2. `/run/s6/basedir/bin/halt` does **not** propagate the exit code written to `/run/s6-linux-init-container-results/exitcode`; containers exit 143 (SIGTERM). skarnet confirms this in [issue #477](https://github.com/just-containers/s6-overlay/issues/477): _"if you want a container shutdown, you need to either have your CMD exit, or, if you have no CMD, write the container exit code you want then call halt"_.
 
-So we use the s6-overlay-native CMD pattern via the dispatcher: `ENTRYPOINT ["/opt/hermes/docker/entrypoint-dispatch.sh"]`, which under PID 1 exec's `/init /opt/hermes/docker/main-wrapper.sh "$@"`. The wrapper is prepended to user args automatically — so `docker run <image> --version` becomes `/init main-wrapper.sh --version`, and `--version` doesn't get intercepted by /init's POSIX shell. The wrapper drops to hermes via `s6-setuidgid`, then exec's the chosen program. The program's exit code becomes the container exit code, exactly matching the pre-s6 tini contract. When the entrypoint is NOT PID 1 (Fly Machines, `docker run --init`), the dispatcher skips `/init` entirely (it would abort with `can only run as pid 1`), restores the s6 helper PATH, runs stage2-hook.sh, and exec's main-wrapper.sh directly — no supervised services on that path (#38349).
+Therefore `ENTRYPOINT ["/opt/hermes/docker/entrypoint-dispatch.sh"]` under PID1 execs `/init /opt/hermes/docker/main-wrapper.sh "$@"`. `docker run <image> --version` becomes `/init main-wrapper.sh --version`; the wrapper drops to Hermes through `s6-setuidgid` and execs the chosen program, preserving the pre-s6 tini exit contract. If entrypoint is not PID1 (Fly Machines, `docker run --init`), dispatcher skips `/init` (`can only run as pid 1`), restores helper PATH, runs stage2-hook, and execs main-wrapper directly; no supervised services on that path (#38349).
 
-Trade-off: main hermes is unsupervised under s6. That exactly matches its behavior under tini (the pre-s6 image). Dashboard supervision is the only **new** guarantee — and per-profile gateways under `/run/service/` get full supervision.
+Trade-off: main Hermes remains unsupervised under s6, exactly as under tini; dashboard is the new static guarantee and profile gateways under `/run/service/` are fully supervised.
 
-## Quick recipes
+## Procedure
 
-### Verify s6 is PID 1 in a running container
+### 1. Verify PID1 and gateway state
 
 ```sh
 docker exec <c> sh -c 'cat /proc/1/comm; readlink /proc/1/exe'
 # Expect: s6-svscan or init / /package/admin/s6/.../s6-svscan
 ```
-
-### Inspect a profile gateway service
 
 ```sh
 # /command/ isn't on docker-exec PATH — use absolute path
@@ -105,7 +115,7 @@ docker exec <c> /command/s6-svstat /run/service/gateway-<name>
 # "down … normally up, ready …"     → user stopped it
 ```
 
-### Bring a service up/down manually
+### 2. Control service and read reconciliation log
 
 ```sh
 docker exec <c> /command/s6-svc -u /run/service/gateway-<name>   # up
@@ -113,27 +123,24 @@ docker exec <c> /command/s6-svc -d /run/service/gateway-<name>   # down
 docker exec <c> /command/s6-svc -t /run/service/gateway-<name>   # SIGTERM (restart)
 ```
 
-### Watch the cont-init reconciler log
-
 ```sh
 docker exec <c> tail -n 50 /opt/data/logs/container-boot.log
 # 2026-05-21T06:18:05+0000 profile=coder prior_state=running action=started
 # 2026-05-21T06:18:05+0000 profile=writer prior_state=stopped action=registered
 ```
 
-### Add a new static service
+### 3. Add static service
 
-1. Create `docker/s6-rc.d/<name>/type` with `longrun\n` and `docker/s6-rc.d/<name>/run` (use `#!/command/with-contenv sh` + `# shellcheck shell=sh`).
-2. Drop to hermes via `s6-setuidgid hermes` at the top of run (unless you specifically need root).
-3. Create empty `docker/s6-rc.d/<name>/dependencies.d/base` so it waits for the base bundle.
-4. Create empty `docker/s6-rc.d/user/contents.d/<name>` so it joins the user bundle.
-5. The `COPY docker/s6-rc.d/` in the Dockerfile picks it up automatically — no other changes.
+1. Add `docker/s6-rc.d/<name>/type` with `longrun\n` and `run` using `#!/command/with-contenv sh` + `# shellcheck shell=sh`.
+2. Drop to `s6-setuidgid hermes` unless root is required.
+3. Add empty `dependencies.d/base`; add empty `user/contents.d/<name>`.
+4. Dockerfile `COPY docker/s6-rc.d/` picks it up; no registry edit.
 
-### Change the per-profile gateway run command
+### 4. Change profile gateway run command
 
-Edit `S6ServiceManager._render_run_script` in `hermes_cli/service_manager.py`. The function is also called by `hermes_cli/container_boot.py::_register_service` during boot reconciliation, so it's the single source of truth. Update the corresponding assertion in `tests/hermes_cli/test_service_manager.py::test_s6_register_creates_service_dir_and_triggers_scan`.
+Edit `S6ServiceManager._render_run_script` in `hermes_cli/service_manager.py`; `hermes_cli/container_boot.py::_register_service` calls it during reconciliation, so it is the single source of truth. Update `tests/hermes_cli/test_service_manager.py::test_s6_register_creates_service_dir_and_triggers_scan` assertion.
 
-### Run the docker test harness
+### 5. Run Docker harness
 
 ```sh
 docker build -t hermes-agent-harness:latest .
@@ -141,39 +148,29 @@ HERMES_TEST_IMAGE=hermes-agent-harness:latest scripts/run_tests.sh tests/docker/
 # Expect 19 passed, 0 xfailed against the s6 image
 ```
 
-The harness lives in `tests/docker/` and skips when Docker isn't available. The per-test timeout is bumped to 180s (see `tests/docker/conftest.py`).
+The harness is under `tests/docker/`; its per-test timeout is 180s (`tests/docker/conftest.py`).
 
-## Common pitfalls
+## Pitfalls
 
-### "command not found" via `docker exec`
+- `/command/` is on PATH only for supervision-tree processes; `docker exec <c> s6-svstat` fails. Use `/command/s6-svstat`; `hermes` works through Dockerfile `/opt/hermes/.venv/bin` PATH.
+- `02-reconcile-profiles` runs as hermes. Root-owned profiles can block `SOUL.md`; `stage2-hook.sh` chowns `$HERMES_HOME/profiles` to hermes **every boot**, idempotently. Do not remove it.
+- `docker exec` defaults root; pass `--user hermes` for profile writes or expect the next boot sweep; in-flight operations can still hit permissions.
+- `/run/service` is tmpfs; after restart, wait for reconciliation or inspect `docker logs <c> | grep '02-reconcile'`.
+- Gateway `down (exitcode 1)` usually means profile has no model/auth; run `hermes -p <profile> setup`. s6 restart loop is desired until fixed.
+- Reconciler uses `SOUL.md` presence as the real-profile marker; missing file is intentional skip. Add even empty `SOUL.md` to opt in.
+- `s6-svscanctl -t`/`/run/s6/basedir/bin/halt` produce 143; let CMD/main-wrapper exit for desired code, never control it from finish.
 
-`/command/` (where s6-overlay puts its binaries) is on PATH only for processes spawned by the supervision tree — services, cont-init.d, main-wrapper.sh. `docker exec <c> s6-svstat …` will fail with "command not found"; always use the absolute path `/command/s6-svstat`. The `hermes` binary works because the Dockerfile adds `/opt/hermes/.venv/bin` to the runtime `ENV PATH`.
+## Verification
 
-### Profile directory ownership
+- PID1 is `s6-svscan`/s6 init; entrypoint path matches runtime topology
+- `s6-svstat` distinguishes running, crash-loop, and user-stopped state
+- boot log records `prior_state` and started/registered action
+- static service has type/run/dependency/user bundle entries and uses `exec`
+- profile gateway survives restart/reconciliation with ownership intact
+- Docker harness passes `19 passed, 0 xfailed` when Docker is available
+- ordinary CMD exit code is preserved; non-PID1 fallback does not invoke `/init`
 
-The cont-init reconciler runs as hermes (`s6-setuidgid hermes` in `02-reconcile-profiles`). If a profile dir ends up root-owned (e.g. because `docker exec <c> hermes profile create …` ran as root by default), the reconciler can't read SOUL.md and fails with `PermissionError`. Mitigation: `stage2-hook.sh` chowns `$HERMES_HOME/profiles` to hermes on **every** boot, idempotently. Don't remove that block.
+## Related Skills
 
-### Files written by `docker exec` are root-owned
-
-`docker exec` defaults to root. Either pass `--user hermes` or rely on the stage2 chown sweep next reboot. Don't write files under `$HERMES_HOME/profiles/<name>/` as root manually — the next reconcile pass will sweep them but in-flight operations may hit perm errors.
-
-### Service slot exists but s6-svstat says "s6-supervise not running"
-
-The service directory is on tmpfs and was wiped on container restart. Either the cont-init reconciler hasn't run yet (give it a moment after `docker restart`) or it failed. Check `docker logs <c> | grep '02-reconcile'`.
-
-### Gateway starts then immediately exits (`down (exitcode 1)` in svstat)
-
-Most likely the profile has no model or auth configured. The service slot is correct — the gateway itself is unconfigured. Run `hermes -p <profile> setup` first. The s6 supervisor will keep restarting it; that's the desired behavior (when you fix the config, the next attempt succeeds and stays up).
-
-### Reconciler skipped a profile
-
-The reconciler keys on the **presence of `SOUL.md`** as the "real profile" marker. `hermes profile create` always seeds it. If a profile dir is missing SOUL.md (stray directory, partial restore, backup-in-progress), the reconciler skips it intentionally. Add a `SOUL.md` (even empty) to opt back in.
-
-### "Help, the container exits 143!"
-
-Check whether something is invoking `s6-svscanctl -t` or `/run/s6/basedir/bin/halt` — both cause /init to begin stage 3 shutdown but return 143 (SIGTERM) rather than the desired exit code. This was the Phase 2 architecture pivot from A to B. For container shutdown with a real exit code, you must let the CMD (main-wrapper.sh) exit normally; do **not** try to control exit from a finish script.
-
-## Related skills
-
-- `hermes-agent-dev`: General hermes-agent codebase navigation
-- `hermes-tool-quirks`: Specific Hermes-tool workarounds (sed/grep/etc.) — load when debugging the s6 stack's interaction with hermes built-in tools.
+- `hermes-agent-dev`: Hermes codebase navigation
+- `hermes-tool-quirks`: Hermes-tool workarounds when debugging s6 interactions

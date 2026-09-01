@@ -12,55 +12,49 @@ metadata:
     related_skills: []
 ---
 
-# tldraw offline Skill
+# tldraw offline
 
-Work with the tldraw offline desktop app (offline.tldraw.com): read the open
-canvas, make edits, and write **document scripts** — JavaScript embedded in a
-`.tldraw` file that runs on load and gives the file durable behavior. The app
-runs a **local HTTP API** (default `localhost:7236`) that a coding agent drives
-with plain `curl` from its terminal — this is exactly how the app's own homepage
-demo (Codex editing a canvas live) works. The agent does NOT use computer-use /
-GUI clicking, and does NOT hand-edit the `.tldraw` file directly. Keep tldraw
-offline open while you work.
+role: tldraw offline canvas scripting operator
+do: confirm app/document/API; reread port/token each call; use `/exec` for live edits; edit script workspace for durable behavior; validate shapes/listeners; verify state and screenshots
+inputs: open tldraw document, canvas goal, optional durable script/interactive behavior, local `server.json`
+outputs: edited canvas, idempotent `script/main.js`, self-running `.tldraw`, shape/binding/screenshot evidence
+¬: GUI/computer-use drawing; direct `.tldraw` hand-edit; reuse exported token; log token; hardcode port; pass PNG reference to script; leak listeners/intervals; claim script applied without status
+
+Work with the tldraw offline desktop app (`offline.tldraw.com`). It exposes a local HTTP API (default `localhost:7236`) driven through the terminal. Use document scripts—JavaScript embedded in a `.tldraw` file—for durable behavior. Keep the app open. The agent does not use GUI clicking or hand-edit the archive directly.
 
 ## When to Use
 
-- The user has tldraw offline open and asks you to build or modify a canvas
-  (diagrams, wireframes, layouts).
-- You want to add durable behavior to a drawing (reactive shapes, interactive
-  buttons, animation, connection logic) via an embedded document script.
+- build/modify an open offline tldraw canvas: diagram, wireframe, layout
+- add reactive shapes, buttons, animation, or connection logic that survives reload
 
-Do NOT hand-place shapes to imitate a drawing — write the code that generates
-them. Agents are far better at scripting the canvas than at drawing on it.
+Do not hand-place shapes to imitate a drawing; script the canvas instead.
 
 ## Prerequisites
 
-- **tldraw offline installed and running**, with a document open. Releases:
-  https://github.com/tldraw/tldraw-offline/releases/latest (macOS DMG, Windows
-  x64/Arm64, Linux `x86_64`/`arm64` AppImage or amd64/arm64 `.deb`).
-- **Agent skills installed in the app**: `Develop → Install Agent Skills`. The
-  app writes its own tldraw skill into `~/.codex/skills/`, `~/.claude/skills/`,
-  `~/.cursor/skills/`, and `~/.gemini/skills/` — teaching that agent the `curl`
-  recipes below. (This Hermes skill mirrors that guidance for Hermes.)
-- **The local control API.** On launch the app writes `server.json` to its config
-  dir (Linux `~/.config/tldraw/`, macOS `~/Library/Application Support/tldraw/`,
-  Windows `%APPDATA%\tldraw\`) with `port` (default `7236`), a bearer `token`,
-  `pid`, and `startedAt`. Every request except `GET /` needs
-  `Authorization: Bearer <token>`. A clean quit removes `server.json`; if it's
-  present but the port doesn't answer, the app quit uncleanly — treat as not
-  running.
-- **Re-read port + token on EVERY shell call.** Each terminal call is a fresh
-  shell, so an `export`ed token does not persist — "export once and reuse" sends
-  an empty token and 401s. Read both inline at the top of each call:
-  `PORT=$(jq -r .port <server.json>); TOKEN=$(jq -r .token <server.json>)`.
-- No account or network needed for local editing.
+- tldraw offline installed/running with a document open: https://github.com/tldraw/tldraw-offline/releases/latest
+- app Agent Skills installed via `Develop → Install Agent Skills` if using its companion guidance
+- local API `server.json`: Linux `~/.config/tldraw/`, macOS `~/Library/Application Support/tldraw/`, Windows `%APPDATA%\tldraw\`; fields `port` (default `7236`), bearer `token`, `pid`, `startedAt`
+- every request except `GET /` needs `Authorization: Bearer ***` (redacted in this document)
+- clean quit removes `server.json`; present + dead port means unclean/not running
+- reread port and token at the top of **every** shell call; shell exports do not persist
+- no account/network needed for local editing
 
-## How to Run
+## Procedure
 
-Two distinct workflows. Pick by whether the change must survive a reload.
+### 1. Resolve API and document
 
-**A. One-off canvas edits (`/exec`)** — layout, generating shapes, cleanup. This
-is a live edit, not saved script:
+At each terminal call read `server.json` inline:
+
+```bash
+PORT=$(jq -r .port <server.json)
+TOKEN=$(jq -r .token <server.json>)
+```
+
+Use `api.getFocusedDoc()` or `api.getDocs()`; name the target explicitly if several docs are open.
+
+### 2. One-off edits via `/exec`
+
+Use for layout, generation, or cleanup; live edit, not durable script:
 
 ```bash
 BASE=http://localhost:7236
@@ -75,8 +69,9 @@ curl -s "$BASE/api/doc/$DOC/exec" -X POST -H 'content-type: application/json' \
   -d '{"code":"const {createShapeId,toRichText}=await import(\"tldraw\"); editor.createShape({id:createShapeId(),type:\"geo\",x:0,y:0,props:{geo:\"rectangle\",w:200,h:100,color:\"blue\",fill:\"solid\",richText:toRichText(\"hello\")}}); return editor.getCurrentPageShapes().length"}'
 ```
 
-**B. Durable behavior (`script/main.js`)** — reactive/interactive logic that must
-survive reload. Edit the file on disk; the app's watcher applies it:
+### 3. Durable behavior via script workspace
+
+Use for reload-surviving logic:
 
 ```bash
 # get the live script file path for the doc
@@ -87,12 +82,9 @@ curl -s "$BASE/api/doc/$DOC/script-workspace" -X POST \
 curl -s "$BASE/api/doc/$DOC/script-status" -H "Authorization: Bearer $TOKEN"
 ```
 
-The ready-to-adapt document script is `scripts/main.js`.
+Template: `scripts/main.js`.
 
-## Quick Reference
-
-The document-script contract (verified against the app's bundled
-`script-context.d.ts`):
+### 4. Script contract
 
 ```js
 import { createShapeId, toRichText } from 'tldraw'   // primitives: import, not globals
@@ -110,45 +102,14 @@ export default function ({ editor, helpers, signal }) {
 }
 ```
 
-- `ctx.editor` — the live `Editor` (`createShape`, `updateShape`, `deleteShapes`,
-  `getCurrentPageShapes`, `getShape`, `getBindingsFromShape`, `zoomToFit`,
-  `on('tick'|'event', fn)`, `run(fn, { history: 'ignore' })`).
-- `ctx.helpers` — `createShapeIfMissing`, `createShapesIfMissing`,
-  `createArrowBetweenShapes(from, to, { arrowheadEnd })`, `translateShapes`,
-  `onShapeTranslate(id, fn, { signal })`, `richTextToPlainText`, `boxShapes`,
-  `getLints`.
-- `ctx.signal` — `AbortSignal`; attach every listener/interval teardown to it.
-- `config.js` (separate file) registers custom shape/tool/component utils and
-  runs before mount; `main.js` runs against the mounted editor and reruns on save.
+- `ctx.editor`: `createShape`, `updateShape`, `deleteShapes`, `getCurrentPageShapes`, `getShape`, `getBindingsFromShape`, `zoomToFit`, `on('tick'|'event', fn)`, `run(fn, { history: 'ignore' })`
+- `ctx.helpers`: `createShapeIfMissing`, `createShapesIfMissing`, `createArrowBetweenShapes(from, to, { arrowheadEnd })`, `translateShapes`, `onShapeTranslate(id, fn, { signal })`, `richTextToPlainText`, `boxShapes`, `getLints`
+- `ctx.signal`: `AbortSignal`; teardown every listener/interval
+- `config.js` runs before mount for custom shape/tool/component utils; `main.js` runs mounted and reruns on save
 
-## Interactive UI (clickable buttons that drive state)
+### 5. Interactive buttons
 
-Drawn shapes can behave like a real app — the thing a static whiteboard can't do.
-Full example: `scripts/counter.js` (a number display + MINUS/RESET/PLUS buttons).
-
-Verification boundary — read this before claiming interaction works or doesn't.
-The app's OWN agent playbook says to verify a clickable-UI script with "one
-simulated click and one state read" via `/exec` (`editor.dispatch` a pointer
-event, await a tick, read the shape's state) — NOT by driving a real mouse. By
-that standard the counter is verified: dispatched clicks stepped it
-`0 → 1 → 2 → 1 → 0`. Two caveats worth writing down:
-- **The script only runs once the app's file-watcher applies it.** On Linux that
-  watcher uses inotify; a host with an exhausted `fs.inotify.max_user_instances`
-  logs `inotify_add_watch ... No space left on device`, `script-status` shows
-  `state: "not-watching"` / `hasEntry: false`, and the script never executes.
-  This is a host limit, not a script bug — a normal desktop is unaffected.
-- **Driving the canvas with computer-use needs FOREGROUND delivery, not
-  background.** cua-driver's default `background` delivery returns
-  `background_unavailable` against Electron's occluded renderer — but that is the
-  first rung, not a wall. cua-driver returns an `escalation: "foreground"` hint;
-  set `delivery_mode: "foreground"` (pair with `bring_to_front`) and its X11 XTest
-  path (`x11_xtest_fg`) clicks land — this dismisses the "Run Script" consent
-  dialog and clicks the canvas. Verified by the Cua team on this exact v1.11.0
-  AppImage (Linux/X11). Do NOT conclude "Electron rejects synthetic clicks" and
-  give up in background mode — climb to foreground. (The real product path is
-  still `/exec`, not clicks; this note is for computer-use-driven testing.)
-
-The pattern:
+Full sample: `scripts/counter.js` (MINUS/RESET/PLUS, state `0 → 1 → 2 → 1 → 0`). Verify with one `/exec` simulated click + state read, not a real mouse.
 
 ```js
 export default function ({ editor, helpers, signal }) {
@@ -173,58 +134,31 @@ export default function ({ editor, helpers, signal }) {
 }
 ```
 
-- Find buttons by `meta` (or visible label via `helpers.richTextToPlainText`),
-  not by hard-coded coordinates.
-- **One script owns both build and read.** If the shapes are created by one code
-  path (with `meta.action: 'inc'`) and the handler reads another convention
-  (`meta.action === 'PLUS'`), clicks silently do nothing. Ship the buttons built
-  by the same script that handles them, or ship an empty canvas so the script
-  builds them fresh — never pre-bake mismatched shapes into the file's db.
-- Keep app state in a shape's `meta` (e.g. `meta.count`) and render it as that
-  shape's `richText` label, so it survives save and is readable for verification.
-- **Detach the listener on `signal` abort.** Skipping this is not cosmetic: on
-  the next save the old `onEvent` stays attached alongside the new one, so every
-  click fires twice and a counter jumps by 2 instead of 1.
-- For continuous motion use `editor.on('tick', fn)`; for a moving anchor with
-  attached pieces use `helpers.onShapeTranslate(id, fn, { signal })`.
+Build buttons idempotently in the same script that handles them; give visible labels + `meta.action`; hit-test pointer-down in page coordinates; store state in shape `meta` and render it via `richText`; find by `meta`/label, not coordinates. Broad store listeners can feedback-loop; use `helpers.onShapeTranslate` for one anchor + attached shapes. Continuous motion uses `editor.on('tick', fn)`.
 
-### Shipping a self-running scripted `.tldraw`
+The file watcher must apply the script first. Linux inotify exhaustion (`inotify_add_watch ... No space left on device`) yields `script-status` `state: "not-watching"`/`hasEntry: false`; host limit, not script bug.
 
-A `.tldraw` is a zip of `metadata.json` + `session.json` + `db.sqlite` + `assets/`
-+ `script/` (only those entries are packable). For the script to auto-run without
-the "This document contains a script → Run Script" consent dialog:
+Computer-use testing is separate from the product path: background CUA may return `background_unavailable` for an occluded Electron renderer; if needed follow `escalation: "foreground"`, set `delivery_mode: "foreground"`, pair `bring_to_front`, and use X11 XTest (`x11_xtest_fg`) to dismiss consent/click. Do not conclude synthetic clicks are rejected; `/exec` remains the real product path.
 
-- `metadata.json` must carry a `script` manifest: `{ "sha256": "<digest>" }`, where
-  the digest is `sha256` over each sorted `script/` path as `` `${path}\0${sha256hex(bytes)}\n` ``.
-  A mismatch is rejected as tampered.
-- Pre-trust the digest by adding it to `~/.tldraw/script-trust.json`
-  (`{ "trusted": ["<digest>"] }`, or `$TLDRAW_SCRIPT_TRUST`). The app skips consent
-  when `isScriptTrusted(digest)` is true.
+### 6. Self-running `.tldraw`
 
-## Procedure
+A `.tldraw` archive contains `metadata.json`, `session.json`, `db.sqlite`, `assets/`, and `script/`.
 
-1. Read the current token/port from `server.json`. Find the target doc with
-   `api.getFocusedDoc()` (or `api.getDocs()`); name it explicitly if several are
-   open.
-2. For layout/generation, use `/exec`. For durable behavior, edit
-   `script/main.js` via `/script-workspace`.
-3. Make scripts idempotent: create durable shapes with `helpers.createShapeIfMissing`
-   and stable `createShapeId('name')` ids. Scripts rerun on every load.
-4. Keep script-owned writes out of the user's undo stack:
-   `editor.run(fn, { history: 'ignore' })` (or `helpers.translateShapes`, which
-   already does).
-5. For reactivity, `editor.store.listen(cb)` and tear it down on `signal` abort.
-   For interaction, `editor.on('event', h)` (hit-test `pointer_down` in page
-   coords); for animation, `editor.on('tick', h)`.
-6. For a single moving anchor + attached internals, prefer
-   `helpers.onShapeTranslate(anchorId, fn, { signal })` over a broad store
-   listener — a broad listener can turn your own writes into feedback loops.
+- `metadata.json` `script` manifest: `{ "sha256": "<digest>" }`; digest is SHA-256 over sorted script paths as `` `${path}\0${sha256hex(bytes)}\n` ``. Mismatch is rejected as tampered.
+- Trust digest in `~/.tldraw/script-trust.json`: `{ "trusted": ["<digest>"] }`, or use `$TLDRAW_SCRIPT_TRUST`; consent is skipped when `isScriptTrusted(digest)` is true.
 
-## Shape props (validated against tldraw SDK v5 schema)
+### 7. End-to-end edit loop
 
-`editor.createShape` / `createShapeIfMissing` accept partial props (shape utils
-fill defaults). When building **raw records** for a file snapshot, every prop
-below is required (run `scripts/validate_shapes.mjs`):
+1. Read current port/token every call; resolve focused doc.
+2. `/exec` for one-off layout; `/script-workspace` for durable behavior.
+3. Stable IDs + `helpers.createShapeIfMissing`; reruns must be idempotent.
+4. Keep script writes out of undo: `editor.run(fn, { history: 'ignore' })` or `helpers.translateShapes`.
+5. Use store/event/tick listeners with `signal` cleanup; pointer hit-test uses page coordinates.
+6. Prefer `helpers.onShapeTranslate(anchorId, fn, { signal })` for moving anchors.
+
+## Shape Props (tldraw SDK v5)
+
+`createShape`/`createShapeIfMissing` accept partial props; raw snapshot records require all fields below, validated by `scripts/validate_shapes.mjs`:
 
 | Shape | Required props |
 |-------|----------------|
@@ -233,46 +167,23 @@ below is required (run `scripts/validate_shapes.mjs`):
 | `frame` | `w`, `h`, `name`, `color` |
 | `geo`   | `geo`, `w`, `h`, `color`, `fill`, `richText` (+ dash/size/etc. defaulted) |
 
-`richText` must be `toRichText('...')` — a bare string is rejected. `color` enum:
-`black grey light-violet violet blue light-blue yellow orange green light-green
-light-red red white`. `font` enum: `draw sans serif mono`.
+`richText` must be `toRichText('...')`, not a bare string. `color`: `black grey light-violet violet blue light-blue yellow orange green light-green light-red red white`. `font`: `draw sans serif mono`.
 
 ## Pitfalls
 
-- **`store.listen` fires on the tick AFTER a commit, not synchronously.** If you
-  write a shape and immediately read state expecting the listener to have run, it
-  hasn't. Verified live: an in-turn read shows 0 fires; after one `setTimeout`
-  tick it shows 1. Same reason the app notes `editor.dispatch` is async — await a
-  tick before verifying.
-- **`ctx`, not globals.** The entry is `export default function ({ editor,
-  helpers, signal })`. There is no bare `editor` global in a document script.
-  `createShapeId` / `toRichText` / `Vec` come from `import ... from 'tldraw'`.
-- **`richText`, not `text`.** Text/note/geo labels use `richText: toRichText(s)`.
-- **Raw records need every prop; `createShape` does not.** In-app pass only the
-  props you care about; a hand-built `.tldraw` snapshot needs the full set (table).
-- **Scripts rerun on every load — be idempotent.** Use `createShapeIfMissing`
-  with stable ids or you duplicate content and clobber user edits.
-- **Clean up on `signal`.** `signal.addEventListener('abort', () => stop())` for
-  every `store.listen` / `editor.on` / `setInterval`; the signal fires before
-  rerun and on close.
-- **Keep script writes out of undo:** `editor.run(fn, { history: 'ignore' })`.
-- **`editor.on('tick')` pauses when the window is hidden** (it is a RAF loop);
-  `setInterval` keeps firing but Electron throttles it to ~1/s in the background.
-- **The API needs the bearer token** from `server.json`; the port can be non-default
-  (`server.listen(0)` picks one) — always read the file, don't hardcode `7236`.
-- **Only `tldraw` / `react` / `react-dom` import** — not a Node project.
+- `store.listen` fires on the tick after commit, not synchronously; await a tick before reading state. `editor.dispatch` is also async.
+- Entry receives `{ editor, helpers, signal }`; no global `editor`; import `createShapeId`/`toRichText`/`Vec` from `tldraw`.
+- Use `richText`, not `text`; raw records need full props while `createShape` can be partial.
+- Scripts rerun each load; stable IDs + `createShapeIfMissing` prevent duplicates/clobbering.
+- Abort every `store.listen`, `editor.on`, and `setInterval`; otherwise reruns double actions.
+- Use `editor.run(..., { history: 'ignore' })` for script-owned writes.
+- `editor.on('tick')` pauses when hidden (RAF); `setInterval` is Electron-throttled to ~1/s.
+- API requires bearer token; port can be non-default (`server.listen(0)`); never hardcode `7236`.
+- Only `tldraw`, `react`, `react-dom` imports; this is not a Node project.
 
 ## Verification
 
-- **Shape schema (offline, no app):** `node scripts/validate_shapes.mjs` — builds
-  the real tldraw schema and validates note/text/frame. Passing prints `3/3`.
-- **Live canvas edits:** after `/exec`, read back with `/api/search` →
-  `api.getShapes(docId)` (returns `{ page, viewport, shapes }`) and
-  `api.getBindings(docId)` (array). Confirm expected shapes/bindings exist. Grab
-  `api.getScreenshot(docId)` (returns `{ filePath, ... }`) and inspect the PNG/JPEG
-  with `vision_analyze`.
-- **Durable script applied:** `GET /api/doc/:id/script-status`. Success is
-  `state: "applied"` (`currentDiskDigest === lastAppliedDigest === manifestSha256`,
-  `pendingApply === false`, `lastApplyError === null`). If it stays `"pending"`
-  after a short retry, report that instead of claiming success; `"error"` means
-  the apply failed — read `errorLogPath`.
+- offline schema: `node scripts/validate_shapes.mjs`; expected `3/3`
+- live edits: `/api/search` → `api.getShapes(docId)` returns `{ page, viewport, shapes }`; `api.getBindings(docId)` returns array; inspect `api.getScreenshot(docId)` PNG/JPEG with `vision_analyze`
+- durable script: `GET /api/doc/:id/script-status`; success=`state: "applied"`, `currentDiskDigest === lastAppliedDigest === manifestSha256`, `pendingApply === false`, `lastApplyError === null`
+- pending after retry → report pending; error → read `errorLogPath`; never claim applied

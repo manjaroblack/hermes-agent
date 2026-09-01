@@ -13,73 +13,43 @@ metadata:
 
 # Grok Build CLI — Hermes Orchestration Guide
 
-Delegate coding tasks to [Grok Build](https://docs.x.ai/build/overview) (xAI's
-autonomous coding agent CLI, the `grok` command) via the Hermes terminal. Grok
-can read files, write code, run shell commands, spawn subagents, and manage git
-workflows. It runs three ways: an interactive TUI, **headless** (`-p`), and as
-an **ACP agent** over JSON-RPC.
+role: Grok Build delegation/operator
+do: install/authenticate; choose headless or PTY; set cwd; bound/approve runs; parse output; resume UUID sessions; review diffs; report results
+inputs: coding/review prompt, project cwd, model, session UUID, approval mode, output format
+outputs: plain/JSON/streaming-JSON result, changed workspace, review note, resumable session
+¬: assume Hermes xAI auth covers Grok; omit `--no-auto-update`; auto-approve read-only review; overlap worktrees; expose API keys; guess flags; leave tmux sessions
 
-This is the third sibling to `codex` and `claude-code`. The orchestration
-pattern is nearly identical — **prefer headless `-p` for one-shots**, use a PTY
-for interactive sessions.
+Delegate coding through the Hermes `terminal` tool to [Grok Build](https://docs.x.ai/build/overview), the xAI autonomous coding agent CLI (`grok`). It can read/write files, run shell commands, spawn subagents, and manage git. Modes: interactive TUI, headless `-p`, and ACP JSON-RPC. Prefer headless one-shots; use PTY for TUI.
 
-## When to use
+## When to Use
 
-- Building features
-- Refactoring
-- PR reviews
-- Batch issue fixing
-- Any task where you'd otherwise reach for Codex / Claude Code but want Grok
+- features, refactors, PR reviews, batch issue fixes
+- a Codex/Claude-like coding backend with Grok/xAI desired
+- read-only audit or multi-model/third-opinion work
 
 ## Prerequisites
 
-- **Install (preferred):** `npm install -g @xai-official/grok`
-  - The official installer `curl -fsSL https://x.ai/cli/install.sh | bash` also
-    works, but the `x.ai` host is Cloudflare-walled in some environments. The
-    npm path avoids that dependency entirely.
-- **Auth — SuperGrok / X Premium+ subscription (primary path):**
-  - Run `grok login` once → opens a browser for OAuth → token cached in
-    `~/.grok/auth.json`. This uses your **SuperGrok or X Premium+** subscription
-    (no per-token API billing).
-  - Check sign-in state by looking for `~/.grok/auth.json`, or run a cheap
-    headless smoke test: `grok --no-auto-update -p "Say ok."`
-  - In the TUI, `/logout` signs out and `/login` (or relaunching) signs back in.
-- **No git repo required** — unlike Codex, Grok runs fine outside a git
-  directory (good for scratch/throwaway tasks).
-- **Claude Code / AGENTS.md compatible with zero config** — Grok auto-reads
-  `CLAUDE.md`, `.claude/` (skills, agents, MCPs, hooks, rules), and the
-  `AGENTS.md` family. Existing project context just works.
+- preferred install: `npm install -g @xai-official/grok`
+- official fallback: `curl -fsSL https://x.ai/cli/install.sh | bash` (x.ai may be Cloudflare-walled)
+- subscription auth: `grok login` → browser OAuth → `~/.grok/auth.json`; requires SuperGrok or X Premium+ and no per-token API billing
+- check auth: `~/.grok/auth.json` or `grok --no-auto-update -p "Say ok."`
+- TUI logout/login: `/logout`, `/login`
+- no git repo required for ordinary runs; git recommended for PR/commit work
+- auto-reads `CLAUDE.md`, `.claude/` skills/agents/MCP/hooks/rules, and `AGENTS.md`
 
-> **API-key fallback (not the default for this user):** Grok also supports
-> setting the `XAI_API_KEY` environment variable for pay-as-you-go billing
-> via `api.x.ai`. Only use
-> this if `grok login` / SuperGrok auth is unavailable. The subscription path
-> (`grok login`) is the intended setup here.
+API-key fallback only when subscription login is unavailable: set `XAI_API_KEY` for pay-as-you-go via `api.x.ai`; subscription `grok login` is the intended path.
 
-## Two Orchestration Modes
+## Procedure
 
-### Mode 1: Headless (`-p`) — Non-Interactive (PREFERRED)
-
-Runs a one-shot task, prints the result, and exits. No PTY, no interactive
-dialogs to navigate. This is the cleanest integration path — the analog of
-`claude -p` and `codex exec`.
+### 1. Headless one-shot (preferred)
 
 ```
 terminal(command="grok --no-auto-update -p 'Add a dark mode toggle to settings'", workdir="/path/to/project", timeout=180)
 ```
 
-Always pass `--no-auto-update` in automation to skip background update checks.
+Always pass `--no-auto-update` in automation. Use headless for one-shot coding, CI/CD, scripts, structured parsing, and tasks without multi-turn conversation.
 
-**When to use headless:**
-- One-shot coding tasks (fix a bug, add a feature, refactor)
-- CI/CD automation and scripting
-- Structured output parsing with `--output-format json`
-- Any task that doesn't need multi-turn conversation
-
-### Mode 2: Interactive PTY — Multi-Turn TUI Sessions
-
-The TUI is a fullscreen, mouse-interactive app. Drive it with `pty=true`. For
-robust monitoring/input use tmux (same pattern as the `claude-code` skill).
+### 2. Interactive PTY/TUI
 
 ```
 # Launch in a tmux session for capture-pane monitoring
@@ -96,13 +66,9 @@ terminal(command="sleep 15 && tmux capture-pane -t grok-work -p -S -50")
 terminal(command="tmux send-keys -t grok-work '/quit' Enter && sleep 1 && tmux kill-session -t grok-work")
 ```
 
-**Tip for headless-but-inline output:** if you want TUI-style output without the
-fullscreen alt-screen takeover (e.g. for cleaner logs), add `--no-alt-screen`.
-For pure automation, headless `-p` is still cleaner than the TUI.
+Use `pty=true` for direct interactive launches. `--no-alt-screen` gives inline output without fullscreen takeover; headless remains cleaner.
 
-## Headless Deep Dive
-
-### Common Flags
+### 3. Headless flags/output
 
 | Flag | Effect |
 |------|--------|
@@ -119,11 +85,7 @@ For pure automation, headless `-p` is still cleaner than the TUI.
 | `--no-alt-screen` | Run inline, no fullscreen TUI takeover |
 | `--no-auto-update` | Skip background update checks (use in all automation; hidden from `--help` but still works) |
 
-### Output Formats
-
-- `plain` — human-readable text (default)
-- `json` — one JSON object at the end of the run (parse the result cleanly)
-- `streaming-json` — newline-delimited JSON events as they arrive
+Output modes: `plain` human text; `json` one final object; `streaming-json` newline-delimited events.
 
 ```
 # Structured result for parsing
@@ -133,7 +95,7 @@ terminal(command="grok --no-auto-update -p 'List all TODO comments in src/' --ou
 terminal(command="grok --no-auto-update --always-approve -p 'Refactor the database layer and run the tests'", workdir="/project", timeout=300)
 ```
 
-### Background Mode (Long Tasks)
+### 4. Background and continuation
 
 ```
 # Start headless in background
@@ -148,14 +110,11 @@ process(action="log", session_id="<id>")
 process(action="kill", session_id="<id>")
 ```
 
-For an interactive (TUI) background session, use `pty=true` + tmux and monitor
-with `tmux capture-pane`, exactly like the `claude-code` / `codex` skills.
+Sessions are UUID-keyed. `--session-id` starts a new UUID; `--resume` takes an existing UUID; `--continue` uses the latest in cwd.
 
-### Session Continuation
-
-Sessions are keyed by **UUID**, not by name. `--session-id` assigns a *new* UUID
-to a fresh run (it does **not** resume); `--resume` takes an existing session's
-UUID (or omit the value to resume the most recent).
+```bash
+SID=$(uuidgen)
+```
 
 ```
 # Start a session with a self-assigned UUID (must be a valid, unused UUID)
@@ -169,49 +128,33 @@ terminal(command="grok --no-auto-update -r $SID -p 'Now add connection pooling' 
 terminal(command="grok --no-auto-update -c -p 'What did you change last time?'", workdir="/project", timeout=60)
 ```
 
-## Read-Only Audit → Markdown Note Pattern
+### 5. Read-only audit → Markdown
 
-To have Grok review local artifacts and return a clean markdown note (for
-Obsidian or a repo) without mutating anything:
-
-1. Prepare stable input files first with Hermes tools (`read_file`,
-   `write_file`). Snapshot only the relevant context into a temp file rather
-   than dumping raw paths.
-2. Run Grok headless **without** `--always-approve` so it cannot auto-write, and
-   demand `markdown only, no preamble`.
-3. Save Grok's stdout straight into the destination note with `write_file()`.
+1. Prepare stable input with Hermes `read_file`/`write_file`; snapshot relevant context into temp files.
+2. Omit `--always-approve`; demand `markdown only, no preamble`.
+3. Save stdout with `write_file`.
 
 ```
 grok --no-auto-update -p "Read /tmp/current.md and /tmp/inventory.md. Produce markdown only, no preamble. Output a clean note titled 'Cleanup Review'." --output-format plain
 ```
 
-**Pitfall (same as Claude Code):** for document rewrites, a loose "rewrite this"
-prompt may return a change summary instead of the full file. Instead: pipe the
-file in, and demand `Return ONLY the full revised markdown document. No intro,
-no explanation, no code fences. Start immediately with '# Title'.` Verify the
-first lines with `read_file()` before overwriting the destination.
+For rewrites demand: `Return ONLY the full revised markdown document. No intro, no explanation, no code fences. Start immediately with '# Title'.` Verify first lines before overwrite.
 
-## PR Review Patterns
+### 6. PR review
 
-### Quick Review (Headless)
+Quick review:
 
 ```
 terminal(command="cd /path/to/repo && git diff main...feature-branch | grok --no-auto-update -p 'Review this diff for bugs, security issues, and style problems. Be thorough.'", timeout=120)
 ```
 
-### Clone-to-temp Review (safe, no repo mutation)
+Clone-to-temp, no active repo mutation:
 
 ```
 terminal(command="REVIEW=$(mktemp -d) && git clone https://github.com/user/repo.git $REVIEW && cd $REVIEW && gh pr checkout 42 && grok --no-auto-update -p 'Review the changes vs origin/main. Check bugs, security, race conditions, missing tests.'", pty=true, timeout=300)
 ```
 
-### Post the review
-
-```
-terminal(command="gh pr comment 42 --body '<review text>'", workdir="/path/to/repo")
-```
-
-## Parallel Issue Fixing with Worktrees
+### 7. Parallel issue fixing
 
 ```
 # Create worktrees
@@ -233,7 +176,7 @@ terminal(command="gh pr create --repo user/repo --head fix/issue-78 --title 'fix
 terminal(command="git worktree remove /tmp/issue-78", workdir="~/project")
 ```
 
-## Useful Subcommands & TUI Commands
+## Useful Commands
 
 | Command | Purpose |
 |---------|---------|
@@ -244,12 +187,11 @@ terminal(command="git worktree remove /tmp/issue-78", workdir="~/project")
 | `grok agent stdio` | Run as an ACP agent over JSON-RPC (for IDE/tool integration) |
 | `grok update` | Update the CLI (needs the `x.ai` host; skip in automation) |
 
-TUI slash commands (interactive only): `/model <name>`, `/always-approve`,
-`/plan`, `/context`, `/compact`, `/resume`, `/sessions`, `/fork`, `/usage`,
-`/quit`. `Shift+Tab` cycles session modes (including Plan mode, which blocks
-write tools except the session plan file).
+TUI-only commands: `/model <name>`, `/always-approve`, `/plan`, `/context`, `/compact`, `/resume`, `/sessions`, `/fork`, `/usage`, `/quit`; `Shift+Tab` cycles modes. Plan mode blocks writes except session plan file.
 
-## Config (`~/.grok/config.toml`)
+## Config
+
+`~/.grok/config.toml`:
 
 ```toml
 [cli]
@@ -262,47 +204,44 @@ permission_mode = "ask"      # or "always-approve" to skip tool prompts by defau
 default = "grok-build-0.1"
 ```
 
-Put global preferences in `~/.grok/config.toml` (not project-scoped
-`.grok/config.toml`). `permission_mode` supersedes the legacy `approval_mode` /
-`yolo = true` keys.
+Use global config, not project `.grok/config.toml`; `permission_mode` replaces legacy `approval_mode`/`yolo = true`.
 
-## Pitfalls & Gotchas
+## Pitfalls
 
-1. **Auth is subscription-gated.** `grok login` requires a SuperGrok or X
-   Premium+ subscription. If login fails or there's no `~/.grok/auth.json`,
-   confirm the subscription is active before falling back to `XAI_API_KEY`.
-2. **Don't conflate Hermes' xAI auth with the `grok` CLI's auth.** Hermes'
-   `x_search` runs on its own xAI OAuth; the standalone `grok` CLI has a
-   separate token in `~/.grok/auth.json`. A working `x_search` does NOT mean
-   `grok` is logged in.
-3. **Always pass `--no-auto-update` in automation** — otherwise Grok phones home
-   for update checks (and `x.ai`/`storage.googleapis.com` may be unreachable).
-4. **Prefer npm install over the curl installer** — `npm install -g
-   @xai-official/grok` avoids the Cloudflare-walled `x.ai` host.
-5. **`--always-approve` is the autonomous-build switch.** Without it, headless
-   runs may stall waiting on tool-approval prompts. Omit it deliberately for
-   read-only review/audit work so Grok can't mutate files.
-6. **Headless `-p` skips TUI dialogs**; the TUI needs `pty=true` (+ tmux for
-   monitoring), just like Claude Code.
-7. **Use `--no-alt-screen`** if you run the TUI inline and the fullscreen
-   alt-screen takeover garbles captured output.
-8. **No git repo needed**, but for PR/commit workflows you still want one — use
-   `mktemp -d && git init` for scratch commit tasks.
-9. **Clean up tmux sessions** with `tmux kill-session -t <name>` when done.
+- `grok login` requires SuperGrok/X Premium+; confirm subscription before `XAI_API_KEY` fallback.
+- Hermes `x_search` OAuth and Grok CLI `~/.grok/auth.json` are separate; one does not prove the other.
+- `--no-auto-update` avoids unreachable `x.ai`/`storage.googleapis.com` update checks.
+- npm install avoids Cloudflare-walled x.ai installer.
+- `--always-approve` can mutate; omit for read-only reviews/audits.
+- headless `-p` skips TUI dialogs; TUI needs `pty=true` and preferably tmux.
+- `--no-alt-screen` avoids garbled inline capture.
+- no repo is needed generally; use `mktemp -d && git init` for scratch commit tasks.
+- clean tmux with `tmux kill-session -t <name>`.
 
 ## Rules for Hermes Agents
 
-1. **Prefer headless `-p`** for single tasks — cleanest integration, structured
-   output via `--output-format json`.
-2. **Always set `workdir`** (or `--cwd`) so Grok targets the right project.
-3. **Pass `--no-auto-update`** in every automated invocation.
-4. **Use `--always-approve` only when Grok should write autonomously**; omit it
-   for read-only reviews and audits.
-5. **Background long tasks** with `background=true, notify_on_complete=true` and
-   monitor via the `process` tool.
-6. **Use tmux for multi-turn interactive work** and monitor with
-   `tmux capture-pane -t <session> -p -S -50`.
-7. **Verify auth before relying on it** — check `~/.grok/auth.json` or run a
-   cheap `grok -p "Say ok."` smoke test; don't assume Hermes' xAI auth carries
-   over.
-8. **Report results to the user** — summarize what Grok changed and what's left.
+1. prefer headless `-p`; use JSON output when parsing
+2. set `workdir` or `--cwd`
+3. pass `--no-auto-update` every automated invocation
+4. `--always-approve` only for intentional autonomous writes
+5. background long jobs with notification and monitor `process`
+6. tmux for multi-turn TUI
+7. verify Grok auth independently; do not assume Hermes xAI auth
+8. report Grok changes and remaining work
+
+## Verification
+
+- `grok --no-auto-update -p "Say ok."` returns successfully after auth
+- requested mode/format is used; JSON parses only JSON lines/objects as documented
+- output workspace diff, tests, or review note inspected
+- no read-only review had auto-approval
+- UUID resume/continue targets intended session
+- background/tmux processes are terminated after completion
+
+## Preserved Source Examples
+
+### Original example 1
+
+```
+terminal(command="gh pr comment 42 --body '<review text>'", workdir="/path/to/repo")
+```

@@ -13,31 +13,35 @@ metadata:
 
 # AgentMail — Agent-Owned Email Inboxes
 
-## Requirements
+role: AgentMail inbox operator
+do: obtain key; configure MCP; restart Hermes; create/list/read/send/reply/forward/update/download; poll threads; verify address/message
+inputs: AgentMail API key, username, inbox/thread/message IDs, recipients, subject/body, attachment
+outputs: dedicated `@agentmail.to` inbox, sent/replied email, thread state, downloaded attachment
+¬: use for user's personal mailbox; put key in git/logs; claim webhooks without public server; exceed free-tier limits silently; authenticate user or disclose verification codes without authorization
 
-- **AgentMail API key** (required) — sign up at https://console.agentmail.to (free tier: 3 inboxes, 3,000 emails/month; paid plans from $20/mo)
-- Node.js 18+ (for the MCP server)
+Give Hermes its own email identity and inbox through the AgentMail MCP server. This is not a personal Gmail/Himalaya reader; use those skills for the user's mailbox.
 
 ## When to Use
-Use this skill when you need to:
-- Give the agent its own dedicated email address
-- Send emails autonomously on behalf of the agent
-- Receive and read incoming emails
-- Manage email threads and conversations
-- Sign up for services or authenticate via email
-- Communicate with other agents or humans via email
 
-This is NOT for reading the user's personal email (use himalaya or Gmail for that).
-AgentMail gives the agent its own identity and inbox.
+- dedicated agent email address
+- autonomous send/receive/reply
+- service signup or email verification
+- agent-to-human/agent communication
+- thread/attachment management
 
-## Setup
+## Prerequisites
 
-### 1. Get an API Key
-- Go to https://console.agentmail.to
-- Create an account and generate an API key (starts with `am_`)
+- AgentMail API key from https://console.agentmail.to (`am_...`); free tier: 3 inboxes/3,000 emails/month; paid from $20/mo
+- Node.js 18+ for `npx -y agentmail-mcp`
+- Python `mcp` package: `pip install mcp`
 
-### 2. Configure MCP Server
-Add to `~/.hermes/config.yaml` (paste your actual key — MCP env vars are not expanded from .env):
+## Procedure
+
+### 1. Configure MCP
+
+1. Create account/key at https://console.agentmail.to.
+2. Add actual key to `~/.hermes/config.yaml`; MCP env vars are not expanded from `.env`:
+
 ```yaml
 mcp_servers:
   agentmail:
@@ -47,13 +51,32 @@ mcp_servers:
       AGENTMAIL_API_KEY: "am_your_key_here"
 ```
 
-### 3. Restart Hermes
+3. Restart Hermes:
+
 ```bash
 hermes
 ```
-All 11 AgentMail tools are now available automatically.
 
-## Available Tools (via MCP)
+All 11 AgentMail tools become available through MCP.
+
+### 2. Create, send, check
+
+```text
+create_inbox(username="hermes-agent")
+→ hermes-agent@agentmail.to
+send_message(inbox_id, to, subject, text)
+list_threads(inbox_id)
+get_thread(thread_id)
+```
+
+### 3. Reply/forward/update/attachment
+
+- `reply_to_message(message_id, text)` for an existing thread
+- `forward_message(...)` for authorized forwarding
+- `update_message(...)` for labels/status
+- `get_attachment(...)` to download a requested attachment
+
+## Tool Catalog
 
 | Tool | Description |
 |------|-------------|
@@ -69,30 +92,40 @@ All 11 AgentMail tools are now available automatically.
 | `update_message` | Update message labels/status |
 | `get_attachment` | Download an email attachment |
 
-## Procedure
+## Workflows
 
-### Create an inbox and send an email
-1. Create a dedicated inbox:
-   - Use `create_inbox` with a username (e.g. `hermes-agent`)
-   - The agent gets address: `hermes-agent@agentmail.to`
-2. Send an email:
-   - Use `send_message` with `inbox_id`, `to`, `subject`, `text`
-3. Check for replies:
-   - Use `list_threads` to see incoming conversations
-   - Use `get_thread` to read a specific thread
+**Service signup:** create `signup-bot` → register with address → poll `list_threads` → `get_thread` for verification email/code → act only with authorization.
 
-### Check incoming email
-1. Use `list_inboxes` to find your inbox ID
-2. Use `list_threads` with the inbox ID to see conversations
-3. Use `get_thread` to read a thread and its messages
+**Outreach:** create `hermes-outreach` → `send_message(to, subject, text)` → poll threads → reply after review/authorization.
 
-### Reply to an email
-1. Get the thread with `get_thread`
-2. Use `reply_to_message` with the message ID and your reply text
+For inbound real-time webhooks, a public server is required; personal use should poll `list_threads` from a cron job.
 
-## Example Workflows
+## Pitfalls
 
-**Sign up for a service:**
+- free tier limits 3 inboxes/3,000 emails/month; free mail uses `@agentmail.to`; custom domains need paid plan
+- Node 18+ and Python `mcp` are both required
+- MCP config does not expand AgentMail vars from `.env`; use secret-safe config handling
+- email verification codes are sensitive; do not disclose or use beyond authorized task
+
+## Verification
+
+```
+hermes --toolsets mcp -q "Create an AgentMail inbox called test-agent and tell me its email address"
+```
+
+Expected: new inbox address returned; then send a test only to an authorized recipient and confirm it appears in `list_threads`/`get_thread`.
+
+## References
+
+- docs: https://docs.agentmail.to/
+- console: https://console.agentmail.to
+- MCP repo: https://github.com/agentmail-to/agentmail-mcp
+- pricing: https://www.agentmail.to/pricing
+
+## Preserved Source Examples
+
+### Original example 1
+
 ```
 1. create_inbox (username: "signup-bot")
 2. Use the inbox address to register on the service
@@ -100,29 +133,10 @@ All 11 AgentMail tools are now available automatically.
 4. get_thread to read the verification code
 ```
 
-**Agent-to-human outreach:**
+### Original example 2
+
 ```
 1. create_inbox (username: "hermes-outreach")
 2. send_message (to: user@example.com, subject: "Hello", text: "...")
 3. list_threads to check for replies
 ```
-
-## Pitfalls
-- Free tier limited to 3 inboxes and 3,000 emails/month
-- Emails come from `@agentmail.to` domain on free tier (custom domains on paid plans)
-- Node.js (18+) is required for the MCP server (`npx -y agentmail-mcp`)
-- The `mcp` Python package must be installed: `pip install mcp`
-- Real-time inbound email (webhooks) requires a public server — use `list_threads` polling via cronjob instead for personal use
-
-## Verification
-After setup, test with:
-```
-hermes --toolsets mcp -q "Create an AgentMail inbox called test-agent and tell me its email address"
-```
-You should see the new inbox address returned.
-
-## References
-- AgentMail docs: https://docs.agentmail.to/
-- AgentMail console: https://console.agentmail.to
-- AgentMail MCP repo: https://github.com/agentmail-to/agentmail-mcp
-- Pricing: https://www.agentmail.to/pricing

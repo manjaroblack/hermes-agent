@@ -11,60 +11,51 @@ metadata:
     related_skills: [audiocraft-audio-generation, songwriting-and-ai-music]
 ---
 
-# HeartMuLa - Open-Source Music Generation
+# HeartMuLa — Open-Source Music Generation
 
-## Overview
-HeartMuLa is a family of open-source music foundation models (Apache-2.0) that generates music conditioned on lyrics and tags, with multilingual support. Generates full songs from lyrics + tags. Comparable to Suno for open-source. Includes:
-- **HeartMuLa** - Music language model (3B/7B) for generation from lyrics + tags
-- **HeartCodec** - 12.5Hz music codec for high-fidelity audio reconstruction
-- **HeartTranscriptor** - Whisper-based lyrics transcription
-- **HeartCLAP** - Audio-text alignment model
+role: HeartMuLa local music-generation operator
+do: install heartlib; create Python 3.10 env; patch compatibility; download checkpoints; format lyrics/tags; choose GPU/CPU; generate MP3; verify output
+inputs: lyrics file, comma-separated tags, model checkpoint, devices/dtypes, duration, output path
+outputs: 48kHz stereo 128kbps MP3 song, model/download status, diagnostics
+¬: use unpatched incompatible dependencies; use bf16 for HeartCodec; hide CPU slowness/RAM cost; expose API/credentials; claim GPU acceleration on unsupported hardware
+
+HeartMuLa is an Apache-2.0 open-source model family for full-song generation from lyrics + tags, with multilingual support. Components: **HeartMuLa** music LM (3B/7B), **HeartCodec** 12.5Hz codec, **HeartTranscriptor** Whisper lyrics transcription, **HeartCLAP** audio-text alignment.
 
 ## When to Use
-- User wants to generate music/songs from text descriptions
-- User wants an open-source Suno alternative
-- User wants local/offline music generation
-- User asks about HeartMuLa, heartlib, or AI music generation
 
-## Hardware Requirements
-- **Minimum**: 8GB VRAM with `--lazy_load true` (loads/unloads models sequentially)
-- **Recommended**: 16GB+ VRAM for comfortable single-GPU usage
-- **Multi-GPU**: Use `--mula_device cuda:0 --codec_device cuda:1` to split across GPUs
-- 3B model with lazy_load peaks at ~6.2GB VRAM
+- local/offline song generation from lyrics and tags
+- open-source Suno-like workflow
+- questions about HeartMuLa, heartlib, or AI music
 
-## Installation Steps
+## Prerequisites
 
-### 1. Clone Repository
+- NVIDIA GPU preferred: minimum 8GB VRAM with `--lazy_load true`; 16GB+ recommended; 3B lazy peak ~6.2GB
+- multi-GPU: `--mula_device cuda:0 --codec_device cuda:1`
+- CPU fallback: `--mula_device cpu --codec_device cpu`; ~12GB+ free RAM and 30-60+ min/song expected
+- Python 3.10 and `uv`
+
+## Procedure
+
+### 1. Clone and install
+
 ```bash
 cd ~/  # or desired directory
 git clone https://github.com/HeartMuLa/heartlib.git
 cd heartlib
 ```
 
-### 2. Create Virtual Environment (Python 3.10 required)
-```bash
-uv venv --python 3.10 .venv
-. .venv/bin/activate
-uv pip install -e .
-```
+### 2. Resolve dependency compatibility
 
-### 3. Fix Dependency Compatibility Issues
-
-**IMPORTANT**: As of Feb 2026, the pinned dependencies have conflicts with newer packages. Apply these fixes:
+As of Feb 2026, upgrade packages whose pins conflict with newer `pyarrow`/`huggingface-hub`:
 
 ```bash
-# Upgrade datasets (old version incompatible with current pyarrow)
 uv pip install --upgrade datasets
-
-# Upgrade transformers (needed for huggingface-hub 1.x compatibility)
 uv pip install --upgrade transformers
 ```
 
-### 4. Patch Source Code (Required for transformers 5.x)
+### 3. Apply required source patches
 
-**Patch 1 - RoPE cache fix** in `src/heartlib/heartmula/modeling_heartmula.py`:
-
-In the `setup_caches` method of the `HeartMuLa` class, add RoPE reinitialization after the `reset_caches` try/except block and before the `with device:` block:
+**Patch 1:** `src/heartlib/heartmula/modeling_heartmula.py`, `HeartMuLa.setup_caches`; after the `reset_caches` try/except and before `with device:` add:
 
 ```python
 # Re-initialize RoPE caches that were skipped during meta-device loading
@@ -75,15 +66,12 @@ for module in self.modules():
         module.to(device)
 ```
 
-**Why**: `from_pretrained` creates model on meta device first; `Llama3ScaledRoPE.rope_init()` skips cache building on meta tensors, then never rebuilds after weights are loaded to real device.
+Reason: `from_pretrained` constructs on meta device; `Llama3ScaledRoPE.rope_init()` skips cache construction there and otherwise never rebuilds after weights reach the real device.
 
-**Patch 2 - HeartCodec loading fix** in `src/heartlib/pipelines/music_generation.py`:
+**Patch 2:** `src/heartlib/pipelines/music_generation.py`; add `ignore_mismatched_sizes=True` to both `HeartCodec.from_pretrained()` calls (eager `__init__` and lazy `codec` property). Checkpoint `initted` is `[1]` while model buffer is `[]`; same data, scalar vs 0-D tensor.
 
-Add `ignore_mismatched_sizes=True` to ALL `HeartCodec.from_pretrained()` calls (there are 2: the eager load in `__init__` and the lazy load in the `codec` property).
+### 4. Download checkpoints
 
-**Why**: VQ codebook `initted` buffers have shape `[1]` in checkpoint vs `[]` in model. Same data, just scalar vs 0-d tensor. Safe to ignore.
-
-### 5. Download Model Checkpoints
 ```bash
 cd heartlib  # project root
 hf download --local-dir './ckpt' 'HeartMuLa/HeartMuLaGen'
@@ -91,44 +79,36 @@ hf download --local-dir './ckpt/HeartMuLa-oss-3B' 'HeartMuLa/HeartMuLa-oss-3B-ha
 hf download --local-dir './ckpt/HeartCodec-oss' 'HeartMuLa/HeartCodec-oss-20260123'
 ```
 
-All 3 can be downloaded in parallel. Total size is several GB.
+The three downloads can run in parallel; total size is several GB.
 
-## GPU / CUDA
+### 5. Check CUDA/CPU
 
-HeartMuLa uses CUDA by default (`--mula_device cuda --codec_device cuda`). No extra setup needed if the user has an NVIDIA GPU with PyTorch CUDA support installed.
+CUDA defaults: `--mula_device cuda --codec_device cuda`. Installed `torch==2.4.1` includes CUDA 12.1; `torchtune` may display `0.4.0+cpu` metadata while still using PyTorch CUDA. Look for `CUDA memory` lines such as `CUDA memory before unloading: 6.20 GB`.
 
-- The installed `torch==2.4.1` includes CUDA 12.1 support out of the box
-- `torchtune` may report version `0.4.0+cpu` — this is just package metadata, it still uses CUDA via PyTorch
-- To verify GPU is being used, look for "CUDA memory" lines in the output (e.g. "CUDA memory before unloading: 6.20 GB")
-- **No GPU?** You can run on CPU with `--mula_device cpu --codec_device cpu`, but expect generation to be **extremely slow** (potentially 30-60+ minutes for a single song vs ~4 minutes on GPU). CPU mode also requires significant RAM (~12GB+ free). If the user has no NVIDIA GPU, recommend using a cloud GPU service (Google Colab free tier with T4, Lambda Labs, etc.) or the online demo at https://heartmula.github.io/ instead.
+Without NVIDIA GPU, use CPU flags only with explicit user expectation of extreme slowness; recommend Google Colab T4, Lambda Labs, or https://heartmula.github.io/ instead when appropriate.
 
-## Usage
+### 6. Generate
 
-### Basic Generation
 ```bash
 cd heartlib
 . .venv/bin/activate
 python ./examples/run_music_generation.py \
   --model_path=./ckpt \
   --version="3B" \
-  --lyrics="./assets/lyrics.txt" \
-  --tags="./assets/tags.txt" \
-  --save_path="./assets/output.mp3" \
+  --lyrics="$ASSETS_DIR/lyrics.txt" \
+  --tags="$ASSETS_DIR/tags.txt" \
+  --save_path="$ASSETS_DIR/output.mp3" \
   --lazy_load true
 ```
 
-### Input Formatting
+Tags are comma-separated without spaces:
 
-**Tags** (comma-separated, no spaces):
 ```
 piano,happy,wedding,synthesizer,romantic
 ```
-or
-```
-rock,energetic,guitar,drums,male-vocal
-```
 
-**Lyrics** (use bracketed structural tags):
+Lyrics use bracketed sections:
+
 ```
 [Intro]
 
@@ -144,7 +124,8 @@ Bridge lyrics...
 [Outro]
 ```
 
-### Key Parameters
+## Quick Reference
+
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--max_audio_length_ms` | 240000 | Max length in ms (240s = 4 min) |
@@ -155,18 +136,28 @@ Bridge lyrics...
 | `--mula_dtype` | bfloat16 | Dtype for HeartMuLa (bf16 recommended) |
 | `--codec_dtype` | float32 | Dtype for HeartCodec (fp32 recommended for quality) |
 
-### Performance
-- RTF (Real-Time Factor) ≈ 1.0 — a 4-minute song takes ~4 minutes to generate
-- Output: MP3, 48kHz stereo, 128kbps
+Performance: RTF≈1.0; 4-minute song≈4 minutes on expected GPU path; output MP3, 48kHz stereo, 128kbps.
 
 ## Pitfalls
-1. **Do NOT use bf16 for HeartCodec** — degrades audio quality. Use fp32 (default).
-2. **Tags may be ignored** — known issue (#90). Lyrics tend to dominate; experiment with tag ordering.
-3. **Triton not available on macOS** — Linux/CUDA only for GPU acceleration.
-4. **RTX 5080 incompatibility** reported in upstream issues.
-5. The dependency pin conflicts require the manual upgrades and patches described above.
+
+- Do **not** use bf16 for HeartCodec; it degrades audio. Keep fp32.
+- Tags can be ignored (known issue #90); lyrics dominate; experiment with tag order.
+- Triton is unavailable on macOS; GPU acceleration is Linux/CUDA-only.
+- RTX 5080 incompatibility is reported upstream.
+- Manual dependency upgrades and both source patches are required for the described newer-package setup.
+- CPU generation is extremely slow and RAM-heavy; suggest cloud GPU/online demo rather than hiding the trade-off.
+
+## Verification
+
+- `python --version` reports 3.10 environment
+- all three checkpoints exist under `ckpt/`
+- patched setup reaches a real device and codec loads without shape error
+- generation writes non-empty `$ASSETS_DIR/output.mp3`
+- output is 48kHz stereo 128kbps where the pipeline reports defaults
+- CUDA log shows expected memory on GPU; CPU mode is explicitly labeled slow
 
 ## Links
+
 - Repo: https://github.com/HeartMuLa/heartlib
 - Models: https://huggingface.co/HeartMuLa
 - Paper: https://arxiv.org/abs/2601.10547

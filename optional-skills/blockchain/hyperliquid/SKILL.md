@@ -13,54 +13,90 @@ metadata:
 
 # Hyperliquid Skill
 
-Query Hyperliquid market and account data through the public `/info` endpoint.
-Read-only — no API key, no signing, no order placement.
+role: read-only Hyperliquid market/account analyst
+do: select info command; query public endpoint; normalize/export data; review fills with context; state heuristic limits
+inputs: perp/spot query, coin, optional address, time window, DEX, output path; optional `HYPERLIQUID_*` defaults
+outputs: market/order-book/account data, trade review, normalized JSON dataset
+¬: sign, place, cancel, or modify orders; imply complete history; treat heuristic review as intent/slippage reconstruction; leak user address
 
-12 commands: `dexs`, `markets`, `spots`, `candles`, `funding`, `l2`, `state`,
-`spot-balances`, `fills`, `orders`, `review`, `export`. Stdlib only
-(`urllib`, `json`, `argparse`).
-
----
+Query Hyperliquid's public `/info` endpoint. No API key, signing, or order placement. Twelve commands: `dexs`, `markets`, `spots`, `candles`, `funding`, `l2`, `state`, `spot-balances`, `fills`, `orders`, `review`, `export`; stdlib only (`urllib`, `json`, `argparse`).
 
 ## When to Use
 
-- User asks for Hyperliquid perp or spot market data, candles, funding, or L2 book
-- User wants to inspect a wallet's perp positions, spot balances, fills, or orders
-- User wants a post-trade review combining recent fills with market context
-- User wants to inspect builder-deployed perp dexs or HIP-3 markets
-- User wants a normalized JSON export of candles + funding for backtesting prep
-
----
+- perp/spot markets, candles, funding, L2 book, HIP-3 or builder-deployed DEXs
+- wallet positions, spot balances, fills, or orders
+- post-trade review combining fills and market context
+- normalized candle+funding JSON for backtesting preparation
 
 ## Prerequisites
 
-Stdlib only — no external packages, no API key.
+- Python standard library; no package/API key
+- optional `${HERMES_HOME:-~/.hermes}/.env` values:
+  - `HYPERLIQUID_API_URL` → `https://api.hyperliquid.xyz`; testnet=`https://api.hyperliquid-testnet.xyz`
+  - `HYPERLIQUID_USER_ADDRESS` → default for `state`, `spot-balances`, `fills`, `orders`, `review`
+- project `.env` is a development fallback
+- helper: `~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py`
 
-The script reads `${HERMES_HOME:-~/.hermes}/.env` for two optional defaults:
+## Procedure
 
-- `HYPERLIQUID_API_URL` — defaults to `https://api.hyperliquid.xyz`. Set to
-  `https://api.hyperliquid-testnet.xyz` for testnet.
-- `HYPERLIQUID_USER_ADDRESS` — default address for `state`, `spot-balances`,
-  `fills`, `orders`, and `review`. If unset, pass the address as the first
-  positional argument.
-
-A project `.env` in the current working directory is honored as a dev fallback.
-
-Helper script: `~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py`
-
----
-
-## How to Run
-
-Invoke through the `terminal` tool:
+Run through `terminal`:
 
 ```bash
 python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py <command> [args]
 ```
 
-Add `--json` to any command for machine-readable output.
+Add `--json` to any command.
 
----
+### Discovery
+
+```bash
+python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py dexs
+
+python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
+  markets --limit 15 --sort volume
+
+python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
+  spots --limit 15
+```
+
+`--dex` applies to perp endpoints; spot aliases can be `PURR/USDC` or `@107`; HIP-3 coins look like `mydex:BTC`.
+
+### Market history and book
+
+```bash
+python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
+  candles BTC --interval 1h --hours 72 --limit 48
+
+python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
+  funding BTC --hours 168 --limit 30
+```
+
+Time-range endpoints paginate; repeat with later `startTime` or use `export` for larger windows. `l2` is a point-in-time depth snapshot.
+
+### Account and trade review
+
+```bash
+python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py state 0xabc...
+python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py spot-balances
+python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py fills 0xabc... --hours 72 --limit 25
+python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py orders --limit 25
+python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py review 0xabc... --hours 72 --fills 50
+python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py review --coin BTC --hours 168
+```
+
+`state` returns perp positions; `spot-balances` spot inventory. `review` reports realized PnL, fees, wins/losses, coin breakdown, market trend, average funding, and heuristics (fee drag, concentration, counter-trend losses). For deeper analysis: `review` → identify problem coin/window → `fills`/`orders` → `candles`/`funding` → judge decisions separately from outcomes.
+
+### Dataset export
+
+```bash
+python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
+  state 0xabc...
+
+python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
+  spot-balances
+```
+
+Output: schema version, source metadata, exact time window, normalized candle/funding rows, summary stats. Use `--end-time-ms` for reproducibility.
 
 ## Quick Reference
 
@@ -79,67 +115,29 @@ hyperliquid_client.py review [address] [--coin COIN] [--hours N] [--fills N]
 hyperliquid_client.py export <coin> [--interval 1h] [--hours N] [--output PATH]
 ```
 
-For `state`, `spot-balances`, `fills`, `orders`, and `review`, the address is
-optional when `HYPERLIQUID_USER_ADDRESS` is set in `${HERMES_HOME:-~/.hermes}/.env`.
+Addresses are optional for account commands when `HYPERLIQUID_USER_ADDRESS` is set.
 
----
+## Pitfalls
 
-## Procedure
+- Public info endpoints are rate-limited and may cap historical windows; paginate.
+- `fills --hours` uses `userFillsByTime`, a recent rolling window, not a full archive.
+- `historicalOrders` is recent only.
+- `review` is heuristic; fills cannot reveal intent, placement quality, or true slippage.
+- `export` is a normalized dataset, not a backtest engine; add a slippage/fill model.
+- `@107` and similar spot aliases are valid identifiers.
 
-### 1. Discover DEXs and Markets
-
-```bash
-python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py dexs
-
-python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
-  markets --limit 15 --sort volume
-
-python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
-  spots --limit 15
-```
-
-- `--dex` only applies to perp endpoints; omit for the first perp dex.
-- Spot pairs may show as `PURR/USDC` or aliases like `@107`.
-- HIP-3 markets prefix the coin with the dex, e.g. `mydex:BTC`.
-
-### 2. Pull Historical Market Data
-
-```bash
-python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
-  candles BTC --interval 1h --hours 72 --limit 48
-
-python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
-  funding BTC --hours 168 --limit 30
-```
-
-Time-range endpoints paginate. For larger windows, repeat with a later
-`startTime` or use `export` (below).
-
-### 3. Inspect Live Order Book
+## Verification
 
 ```bash
 python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
   l2 BTC --levels 10
 ```
 
-Use when asked about book depth, near-term liquidity, or potential market
-impact of a large order.
+Expected: top Hyperliquid perp markets by 24h notional volume.
 
-### 4. Review an Account
+## Preserved Source Examples
 
-```bash
-python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
-  state 0xabc...
-
-python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
-  spot-balances
-```
-
-`state` returns perp positions; `spot-balances` returns spot inventory.
-Use these for "how are my positions?", "what am I holding?", "how much is
-withdrawable?".
-
-### 5. Review Fills and Orders
+### Original example 1
 
 ```bash
 python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
@@ -149,7 +147,7 @@ python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
   orders --limit 25
 ```
 
-### 6. Generate a Trade Review
+### Original example 2
 
 ```bash
 python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
@@ -159,16 +157,7 @@ python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
   review --coin BTC --hours 168
 ```
 
-Reports realized PnL, fees, win/loss counts, coin breakdowns, market trend
-and average funding for each traded perp, plus heuristics (fee drag,
-concentration, counter-trend losses).
-
-For deeper post-trade analysis: start with `review` to find problem coins
-or windows → pull `fills` and `orders` for that period → pull `candles`
-and `funding` for each traded coin → judge decision quality separately
-from outcome quality.
-
-### 7. Export a Reusable Dataset
+### Original example 3
 
 ```bash
 python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
@@ -178,34 +167,9 @@ python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
   export BTC --interval 15m --hours 72 --end-time-ms 1760000000000
 ```
 
-Output JSON contains: schema version, source metadata, exact time window,
-normalized candle rows, normalized funding rows, summary stats. Use
-`--end-time-ms` for reproducible windows.
-
----
-
-## Pitfalls
-
-- Public info endpoints are rate-limited. Large historical queries may
-  return capped windows; iterate with later `startTime` values.
-- `fills --hours ...` uses `userFillsByTime`, which only exposes a
-  recent rolling window — not full archive history.
-- `historicalOrders` returns recent orders only; not a full export.
-- The `review` command is heuristic. It cannot reconstruct intent,
-  order placement quality, or true slippage from fills alone.
-- The `export` command writes a normalized dataset, not a backtest
-  engine. You still need your own slippage/fill model.
-- Spot aliases like `@107` are valid identifiers even when the UI shows
-  a friendlier name.
-- `l2` is a point-in-time snapshot, not a time series.
-
----
-
-## Verification
+### Original example 4
 
 ```bash
 python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
   markets --limit 5
 ```
-
-Should print the top Hyperliquid perp markets by 24h notional volume.

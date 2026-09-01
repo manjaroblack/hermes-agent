@@ -13,32 +13,44 @@ metadata:
 
 # Blackbox CLI
 
-Delegate coding tasks to [Blackbox AI](https://www.blackbox.ai/) via the Hermes terminal. Blackbox is a multi-model coding agent CLI that dispatches tasks to multiple LLMs (Claude, Codex, Gemini, Blackbox Pro) and uses a judge to select the best implementation.
+role: Blackbox delegation operator
+do: verify install/auth; choose one-shot or PTY; set workdir; run, monitor, resume, review; report changed files/results
+inputs: coding prompt, project workdir, optional checkpoint/session, model set, output target
+outputs: Blackbox result, monitored process state, checkpoint continuation, review note or changed workspace
+¬: invoke without PTY; omit workdir; kill slow work without diagnosis; expose API keys; assume multi-model mode is free; mutate user worktree for isolated reviews
 
-The CLI (npm `@blackbox_ai/blackbox-cli`, binary `blackbox`) is a TypeScript coding agent (forked from Gemini CLI) and supports interactive sessions, non-interactive one-shots, checkpointing, MCP, and vision model switching.
+Delegate coding tasks to [Blackbox AI](https://www.blackbox.ai/) through the Hermes `terminal` tool. The npm package is `@blackbox_ai/blackbox-cli`, binary `blackbox`; it is a TypeScript coding agent that can dispatch Claude, Codex, Gemini, or Blackbox Pro and use a judge to select an implementation. Interactive sessions, headless one-shots, checkpointing, MCP, and vision-model switching are supported.
+
+## When to Use
+
+- user asks for Blackbox specifically
+- multi-model implementation or judge workflow is useful
+- interactive coding, one-shot coding, checkpoint resume, MCP, or vision switching
+- isolated PR review or independent parallel issue work
 
 ## Prerequisites
 
-- Node.js 20+ installed
-- Blackbox CLI installed: `npm install -g @blackbox_ai/blackbox-cli` (binary: `blackbox`)
+- Node.js 20+
+- install: `npm install -g @blackbox_ai/blackbox-cli` (binary `blackbox`)
 - API key from [app.blackbox.ai/dashboard](https://app.blackbox.ai/dashboard)
-- Configured: run `blackbox configure` and enter your API key
-- Use `pty=true` in terminal calls — Blackbox CLI is an interactive terminal app
+- configure once: `blackbox configure`, then enter the key
+- `pty=true` for every invocation; Blackbox is an interactive terminal app
 
-## One-Shot Tasks
+## Procedure
+
+### 1. One-shot task
 
 ```
 terminal(command="blackbox --prompt 'Add JWT authentication with refresh tokens to the Express API'", workdir="/path/to/project", pty=true)
 ```
 
-For quick scratch work:
+Scratch workspace:
+
 ```
 terminal(command="cd $(mktemp -d) && git init && blackbox --prompt 'Build a REST API for todos with SQLite'", pty=true)
 ```
 
-## Background Mode (Long Tasks)
-
-For tasks that take minutes, use background mode so you can monitor progress:
+### 2. Background long task
 
 ```
 # Start in background with PTY
@@ -56,9 +68,11 @@ process(action="submit", session_id="<id>", data="yes")
 process(action="kill", session_id="<id>")
 ```
 
-## Checkpoints & Resume
+Use `poll`/`log` before deciding a slow run is stuck. Report what changed after completion.
 
-Blackbox CLI has built-in checkpoint support for pausing and resuming tasks:
+### 3. Checkpoint resume
+
+After completion Blackbox prints a checkpoint tag. Resume it with a follow-up prompt:
 
 ```
 # After a task completes, Blackbox shows a checkpoint tag
@@ -66,28 +80,17 @@ Blackbox CLI has built-in checkpoint support for pausing and resuming tasks:
 terminal(command="blackbox --resume-checkpoint 'task-abc123-2026-03-06' --prompt 'Now add rate limiting to the endpoints'", workdir="~/project", pty=true)
 ```
 
-## Session Commands
+### 4. PR review in a temporary clone
 
-During an interactive session, use these commands:
-
-| Command | Effect |
-|---------|--------|
-| `/compress` | Shrink conversation history to save tokens |
-| `/clear` | Wipe history and start fresh |
-| `/stats` | View current token usage |
-| `Ctrl+C` | Cancel current operation |
-
-## PR Reviews
-
-Clone to a temp directory to avoid modifying the working tree:
+Do not mutate the active worktree:
 
 ```
 terminal(command="REVIEW=$(mktemp -d) && git clone https://github.com/user/repo.git $REVIEW && cd $REVIEW && gh pr checkout 42 && blackbox --prompt 'Review this PR against main. Check for bugs, security issues, and code quality.'", pty=true)
 ```
 
-## Parallel Work
+### 5. Parallel work
 
-Spawn multiple Blackbox instances for independent tasks:
+Use one workdir per independent task:
 
 ```
 terminal(command="blackbox --prompt 'Fix the login bug'", workdir="/tmp/issue-1", background=true, pty=true)
@@ -97,11 +100,34 @@ terminal(command="blackbox --prompt 'Add unit tests for auth'", workdir="/tmp/is
 process(action="list")
 ```
 
-## Multi-Model Mode
+### 6. Multi-model and vision
 
-Blackbox's unique feature is running the same task through multiple models and judging the results. Configure which models to use via `blackbox configure` — select multiple providers to enable the Chairman/judge workflow where the CLI evaluates outputs from different models and picks the best one.
+Run `blackbox configure`, select multiple providers, and enable the Chairman/judge workflow when comparing outputs. For image input, Blackbox can switch VLMs:
 
-## Key Flags
+- `"once"` — switch for current query
+- `"session"` — switch for session
+- `"persist"` — stay on current model
+
+### 7. Token limit
+
+Set the session limit in `.blackboxcli/settings.json`:
+
+```json
+{
+  "sessionTokenLimit": 32000
+}
+```
+
+## Session Commands
+
+| Command | Effect |
+|---------|--------|
+| `/compress` | Shrink conversation history to save tokens |
+| `/clear` | Wipe history and start fresh |
+| `/stats` | View current token usage |
+| `Ctrl+C` | Cancel current operation |
+
+## Quick Reference
 
 | Flag | Effect |
 |------|--------|
@@ -116,28 +142,21 @@ Blackbox's unique feature is running the same task through multiple models and j
 | `blackbox extensions` | Manage CLI extensions |
 | `blackbox voice <action>` / `blackbox shortcut` | Configure voice input / the `b` shortcut |
 
-## Vision Support
+## Pitfalls
 
-Blackbox automatically detects images in input and can switch to multimodal analysis. VLM modes:
-- `"once"` — Switch model for current query only
-- `"session"` — Switch for entire session
-- `"persist"` — Stay on current model (no switch)
+- `pty=true` is mandatory; without it the CLI can hang.
+- Use `workdir` so the agent edits the intended project.
+- Background long runs; monitor with `process`; do not kill only because progress is slow.
+- Multi-model mode consumes credits faster; Blackbox is credit-based.
+- Verify `blackbox` is installed and configured before delegation.
+- Review in a temporary clone; never let a review command alter the active worktree.
 
-## Token Limits
+## Verification
 
-Control token usage via `.blackboxcli/settings.json`:
-```json
-{
-  "sessionTokenLimit": 32000
-}
+```python
+terminal(command="blackbox --version", pty=true)
+terminal(command="blackbox configure", pty=true)
+terminal(command="blackbox --prompt 'Print BLACKBOX_OK and exit'", workdir="/tmp", pty=true)
 ```
 
-## Rules
-
-1. **Always use `pty=true`** — Blackbox CLI is an interactive terminal app and will hang without a PTY
-2. **Use `workdir`** — keep the agent focused on the right directory
-3. **Background for long tasks** — use `background=true` and monitor with `process` tool
-4. **Don't interfere** — monitor with `poll`/`log`, don't kill sessions because they're slow
-5. **Report results** — after completion, check what changed and summarize for the user
-6. **Credits cost money** — Blackbox uses a credit-based system; multi-model mode consumes credits faster
-7. **Check prerequisites** — verify `blackbox` CLI is installed before attempting delegation
+Confirm the version/configuration command succeeds, the one-shot returns, and the output contains `BLACKBOX_OK`. For long work, inspect the final workspace diff and report the result/checkpoint.

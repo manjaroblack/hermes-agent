@@ -13,40 +13,40 @@ metadata:
 
 # Antigravity CLI (`agy`)
 
-Operator guide for the Antigravity CLI, invoked as `agy`. Run all `agy`
-commands through the Hermes `terminal` tool; inspect its config and logs with
-`read_file`. This skill is reference + procedure — it does not wrap a network
-API, so there is nothing to authenticate from Hermes itself.
+role: Antigravity CLI/operator backend
+do: install/version/help; separate wrapper vs TUI slash surface; run one-shot/PTY/background/resume/worktree; inspect auth/sandbox/plugins/logs; bound plain-text runs; report
+inputs: coding/review prompt, project cwd, model, approval/sandbox mode, conversation ID, plugin/settings path
+outputs: plain-text `agy` result, changed workspace, plugin/auth state, logs/diagnostics
+¬: authenticate through Hermes; confuse shell wrapper with TUI; expect JSON/max-turns; skip `--print-timeout`; expose credentials; put agy on Kanban as coordinator; leave PTY/tmux/processes
+
+Run all `agy` commands through Hermes `terminal`; inspect Antigravity files/logs with `read_file`. This skill is procedure/reference, not a Hermes network wrapper; Antigravity owns OS-keyring/browser auth.
 
 ## When to Use
 
-- Installing, updating, or smoke-testing the `agy` binary
-- Driving non-interactive `agy --print` / `agy -p` one-shots
-- Debugging Antigravity auth, sandbox, permissions, or plugin state
-- Reading Antigravity settings, keybindings, conversations, or logs
+- install/update/smoke-test `agy`
+- non-interactive `agy --print`/`-p` work
+- auth, sandbox, permissions, plugin state
+- settings, keybindings, conversations, logs
+- coding work or Gemini-family third-opinion review
 
-## Mental model
+## Mental Model
 
-Antigravity has two layers — keep them distinct or the guidance will be wrong:
+Two distinct surfaces:
 
-1. **Shell wrapper commands** — `agy help`, `agy install`, `agy plugin`,
-   `agy update`, `agy changelog`. Run these through the `terminal` tool.
-2. **Interactive in-session slash commands** — `/config`, `/permissions`,
-   `/skills`, `/agents`, etc. These only exist inside a running `agy` TUI
-   session, not on the shell wrapper.
+1. **Shell wrapper:** `agy help`, `agy install`, `agy plugin`, `agy update`, `agy changelog`.
+2. **Interactive TUI slash commands:** `/config`, `/permissions`, `/skills`, `/agents`, etc.; only inside running `agy` session.
 
-`agy help` shows the shell wrapper surface, NOT the in-session slash commands.
+`agy help` lists wrapper commands, not slash commands.
 
 ## Prerequisites
 
-- The `agy` binary on PATH. Verify through the `terminal` tool:
-  `command -v agy && agy --version`.
-- No env vars or API keys required by this skill — Antigravity manages its own
-  auth via the OS keyring / browser sign-in (see Authentication below).
+- binary on PATH: `command -v agy && agy --version`
+- no Hermes env/API key; Antigravity auth uses OS keyring/browser sign-in
+- `pty=true` for interactive TUI; tmux for capture/monitoring
 
-## How to Run
+## Procedure
 
-Invoke every `agy` command through the `terminal` tool. Examples:
+### 1. Install/check
 
 ```
 terminal(command="agy --version")
@@ -55,187 +55,124 @@ terminal(command="agy plugin list")
 terminal(command="agy --print 'Summarize the repo in 3 bullets'", workdir="/path/to/project")
 ```
 
-For an interactive multi-turn TUI session, launch `agy` with `pty=true` (and
-tmux for capture/monitoring), the same pattern the `codex` / `claude-code`
-skills use. For one-shot smoke tests and scripted prompts, prefer
-`agy --print` (non-interactive).
-
-To inspect Antigravity's own files, use `read_file` on the paths under Core
-paths below — do not `cat` them through the terminal.
-
-## Delegation patterns
-
-`agy` is a coding-agent backend in the same family as `codex` / `claude-code`,
-so the same delegation shapes apply. Use these when handing real work (features,
-fixes, reviews, second opinions) to Antigravity rather than just smoke-testing.
-
-### One-shot (preferred for scripted prompts and second opinions)
+### 2. One-shot (preferred)
 
 ```
 terminal(command="agy -p 'Review this diff for bugs and security issues' --model 'Gemini 3.1 Pro (High)'", workdir="/path/to/repo", timeout=300)
 ```
 
-`-p` is non-interactive: it runs the prompt and exits. Pick the engine with
-`--model` (run `agy models` for the exact display strings, e.g.
-`'Gemini 3.1 Pro (High)'`, `'Claude Opus 4.6 (Thinking)'`). Add extra context
-roots with repeatable `--add-dir`.
+`-p` runs non-interactively and exits. Use `agy models` for exact display names such as `Gemini 3.1 Pro (High)` and `Claude Opus 4.6 (Thinking)`. Repeat `--add-dir` for extra context roots.
 
-### Long / bounded runs (tests, builds, multi-file changes)
-
-Background it and get notified on completion, the same as the `codex` skill:
+### 3. Long/background run
 
 ```
 terminal(command="agy -p 'Implement the change described in TASK.md and run the tests' --dangerously-skip-permissions", workdir="/path/to/repo", background=true, notify_on_complete=true)
 # then: process(action="poll"/"log"/"wait", session_id=<id>)
 ```
 
-### Interactive multi-turn (PTY + tmux)
+Bound the outer `terminal` timeout; permission bypass is intentional autonomous write authority, not default.
 
-For a conversational session, launch `agy -i` (or bare `agy`) under `pty=true`
-with tmux for `capture-pane` / `send-keys`, exactly the pattern documented in
-the `codex` / `claude-code` skills. Resume later with `--continue` / `-c` or a
-specific `--conversation <id>`.
+### 4. Interactive PTY + tmux
 
-### Parallel instances (batch sub-issue / worktree fan-out)
+```python
+terminal(command="tmux new-session -d -s agy-work -x 140 -y 40")
+terminal(command="tmux send-keys -t agy-work 'cd /path/to/project && agy -i' Enter")
+terminal(command="sleep 5 && tmux capture-pane -t agy-work -p -S -50")
+terminal(command="tmux send-keys -t agy-work '/quit' Enter && sleep 1 && tmux kill-session -t agy-work")
+```
 
-Create one git worktree per task and launch an independent `agy -p` in each
-(background), then collect results — same worktree fan-out the `codex` skill
-uses for batch issue fixing. Bound concurrency to what the machine and your
-review capacity can absorb.
+Resume with `--continue`/`-c` or `--conversation <id>`.
 
-### Output + bounding caveat (differs from Claude Code)
+### 5. Parallel worktrees
 
-- `agy -p` returns **plain text** — there is **no `--output-format json`** and
-  no result envelope with `session_id` / cost / turn count. Parse stdout
-  directly; don't expect a JSON object.
-- There is **no `--max-turns`**. A print run is bounded by **`--print-timeout`**
-  (default `5m`). Raise it for long tasks: `--print-timeout 20m`. Pair with the
-  `terminal` `timeout=` so the outer call doesn't cut the run short.
+Create one git worktree per independent sub-issue, run one background `agy -p` per worktree, then collect/review. Bound concurrency to machine/review capacity; do not overlap writes to one worktree.
 
-### Orchestration boundary
+```bash
+git worktree add -b fix/issue-78 /tmp/issue-78 main
+git worktree add -b fix/issue-99 /tmp/issue-99 main
+```
 
-Antigravity is a **worker execution backend or third-opinion reviewer** — an
-execution detail owned by the agent/profile running a task, NOT a first-class
-orchestration primitive. Do not put `agy` on a kanban board as its own card or
-treat it as a coordination layer; route work through the normal task graph and
-let the assigned worker choose `agy` (vs. codex/claude-code/direct tools) as its
-method. Reach for it explicitly only when the user asks, when a worker is
-configured to wrap it, or when you want a Gemini-family cross-check against
-another agent's plan or diff.
+### 6. Output/bounds
 
-## Core paths
+- `agy -p` is plain text only; no `--output-format json`, session/cost/turn envelope
+- parse stdout directly
+- no `--max-turns`; bound with `--print-timeout` (default `5m`, e.g. `20m`) plus outer `terminal timeout=`
 
-- Binary / entrypoint: `agy`
-- App data dir: `~/.gemini/antigravity-cli/`
-- Settings file: `~/.gemini/antigravity-cli/settings.json`
-- Keybindings file: `~/.gemini/antigravity-cli/keybindings.json`
-- Logs: `~/.gemini/antigravity-cli/log/cli-*.log`
-- Conversations: `~/.gemini/antigravity-cli/conversations/`
-- Brain artifacts: `~/.gemini/antigravity-cli/brain/`
-- History: `~/.gemini/antigravity-cli/history.jsonl`
-- Plugin staging: `~/.gemini/antigravity-cli/plugins/<plugin_name>/`
+### 7. Orchestration boundary
+
+Antigravity is an execution backend/third-opinion reviewer, not a first-class coordinator. Do not create a Kanban card for `agy` or treat it as a coordination layer; the assigned worker chooses it versus Codex/Claude/direct tools. Use explicitly when requested, configured, or for a cross-check.
+
+## Core Paths
+
+| Item | Path |
+|---|---|
+| binary | `agy` |
+| app data | `~/.gemini/antigravity-cli/` |
+| settings | `~/.gemini/antigravity-cli/settings.json` |
+| keybindings | `~/.gemini/antigravity-cli/keybindings.json` |
+| logs | `~/.gemini/antigravity-cli/log/cli-*.log` |
+| conversations | `~/.gemini/antigravity-cli/conversations/` |
+| brain | `~/.gemini/antigravity-cli/brain/` |
+| history | `~/.gemini/antigravity-cli/history.jsonl` |
+| plugin staging | `~/.gemini/antigravity-cli/plugins/<plugin_name>/` |
+
+Use `read_file` for these paths.
 
 ## Quick Reference
 
-### Wrapper commands
-- `agy changelog`
-- `agy help`
-- `agy install`
-- `agy plugin` / `agy plugins`
-- `agy update`
+### Wrapper
 
-### Useful flags
-- `--add-dir`
-- `--continue` / `-c`
-- `--conversation`
-- `--dangerously-skip-permissions`
-- `--print` / `-p`
-- `--print-timeout`
-- `--prompt`
-- `--prompt-interactive` / `-i`
-- `--sandbox`
-- `--log-file`
-- `--version`
+`agy changelog`; `agy help`; `agy install`; `agy plugin`/`agy plugins`; `agy update`.
 
-### Plugin subcommands (`agy plugin --help`)
-- `list`, `import [source]`, `install <target>`, `uninstall <name>`,
-  `enable <name>`, `disable <name>`, `validate [path]`, `link <mp> <target>`,
-  `help`
+### Flags
 
-### Install flags (`agy install --help`)
-- `--dir`, `--skip-aliases`, `--skip-path`
+`--add-dir`; `--continue`/`-c`; `--conversation`; `--dangerously-skip-permissions`; `--print`/`-p`; `--print-timeout`; `--prompt`; `--prompt-interactive`/`-i`; `--sandbox`; `--log-file`; `--version`.
 
-### In-session slash commands
-- **Conversation control:** `/resume` (`/switch`), `/rewind` (`/undo`),
-  `/rename <name>`, `/clear`, `/fork`, `/reset`, `/new`
-- **Settings & tools:** `/config`, `/settings`, `/permissions`, `/model`,
-  `/keybindings`, `/statusline`, `/tasks`, `/skills`, `/mcp`, `/open <path>`,
-  `/usage`, `/logout`, `/agents`
-- **Prompt helpers:** `@` path autocomplete, `esc esc` clears the prompt (when
-  not streaming), `!` runs a terminal command directly, `?` opens help
+### Plugin
 
-## Settings and permissions
+`agy plugin --help`: `list`, `import [source]`, `install <target>`, `uninstall <name>`, `enable <name>`, `disable <name>`, `validate [path]`, `link <mp> <target>`, `help`.
 
-### Common settings keys (`settings.json`)
-- `allowNonWorkspaceAccess`
-- `colorScheme`
-- `permissions.allow`
-- `trustedWorkspaces`
+Install flags: `--dir`, `--skip-aliases`, `--skip-path`.
 
-### Permission modes
-`request-review`, `always-proceed`, `strict`, `proceed-in-sandbox`.
+### TUI slash commands
 
-### Sandbox behavior
-- `enableTerminalSandbox` is a boolean in `settings.json`; default `false`.
-- Launch-time overrides (`--sandbox`, `--dangerously-skip-permissions`) can
-  supersede persistent settings for the current session.
+Conversation: `/resume` (`/switch`), `/rewind` (`/undo`), `/rename <name>`, `/clear`, `/fork`, `/reset`, `/new`.
 
-## Authentication behavior
+Settings/tools: `/config`, `/settings`, `/permissions`, `/model`, `/keybindings`, `/statusline`, `/tasks`, `/skills`, `/mcp`, `/open <path>`, `/usage`, `/logout`, `/agents`.
 
-- The CLI tries the OS secure keyring first.
-- With no saved session, it falls back to browser-based Google sign-in.
-- Locally it opens the default browser; over SSH it prints an authorization URL
-  and expects the auth code pasted back.
-- `/logout` removes saved credentials.
+Helpers: `@` path autocomplete; `esc esc` clears prompt when not streaming; `!` runs terminal command; `?` help.
 
-## Plugins
+## Settings/Auth/Plugins
 
-- Plugins stage under `~/.gemini/antigravity-cli/plugins/<plugin_name>/`.
-- They can bundle skills, agents, rules, MCP servers, and hooks.
-- `agy plugin list` returning no imported plugins is a valid empty state.
+Common settings: `allowNonWorkspaceAccess`, `colorScheme`, `permissions.allow`, `trustedWorkspaces`. Permission modes: `request-review`, `always-proceed`, `strict`, `proceed-in-sandbox`. `enableTerminalSandbox` defaults `false`; launch `--sandbox`/`--dangerously-skip-permissions` can override current session.
+
+Auth: OS keyring first; no session→browser Google sign-in; SSH prints URL and expects auth code; `/logout` removes saved credentials. On WSL token storage is file-based. Plugins stage under `~/.gemini/antigravity-cli/plugins/<plugin_name>/` and can bundle skills/agents/rules/MCP/hooks; empty `agy plugin list` is valid.
 
 ## Pitfalls
 
-- `agy help` shows wrapper commands, not interactive slash commands.
-- `agy --version` is the safe non-interactive version check; `agy version` is
-  interactive and can fail without a real TTY.
-- First place to look for failures: `~/.gemini/antigravity-cli/log/cli-*.log`
-  (read with `read_file`).
-- Don't confuse persistent JSON settings with launch-time overrides.
-- `~/.gemini/antigravity-cli/bin/agentapi` is a thin wrapper to `agy agentapi`.
-- On WSL, token storage is file-based, so auth issues are usually local-file /
-  session-state problems, not browser-only problems.
-- Workspace identity can depend on launch directory and the `.antigravitycli`
-  project marker.
-- `agy -p` prints plain text only — no `--output-format json`, no result
-  envelope. Don't try to parse a JSON object out of it (unlike `claude-code`).
-- Bound print runs with `--print-timeout` (default `5m`), not `--max-turns`
-  (which does not exist on `agy`).
+- `agy --version` is safe non-interactive; `agy version` is interactive and can fail without TTY
+- first failure location: `~/.gemini/antigravity-cli/log/cli-*.log`
+- persistent JSON settings differ from launch-time overrides
+- `~/.gemini/antigravity-cli/bin/agentapi` wraps `agy agentapi`
+- workspace identity may depend on launch directory and `.antigravitycli` marker
+- no JSON output/result envelope; do not parse a JSON object unlike Claude Code
+- use `--print-timeout`, not nonexistent `--max-turns`
+- plain output can be long; set outer timeout and monitor background process
 
 ## Verification
 
-Confirm the install is real and usable, all through the `terminal` tool (read
-files with `read_file`):
+Through `terminal` (and `read_file` for files):
 
-1. `terminal(command="command -v agy")`
-2. `terminal(command="agy --version")`
-3. `terminal(command="agy help")`
-4. `terminal(command="agy plugin list")`
-5. `read_file` on `~/.gemini/antigravity-cli/settings.json`
-6. `read_file` on the latest `~/.gemini/antigravity-cli/log/cli-*.log`
-7. If needed, `read_file` on `~/.gemini/antigravity-cli/keybindings.json`
+1. `command -v agy`
+2. `agy --version`
+3. `agy help`
+4. `agy plugin list`
+5. read `settings.json`
+6. read latest `cli-*.log`
+7. read `keybindings.json` if relevant
 
-## Support files
+A smoke prompt returns plain text; requested project diff/tests/logs are inspected; any PTY/tmux/background process is stopped.
 
-- `references/cli-docs.md` — condensed notes from the getting-started, usage,
-  and features docs.
+## Support
+
+- `references/cli-docs.md` — condensed getting-started, usage, and feature notes

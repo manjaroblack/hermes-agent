@@ -15,31 +15,35 @@ metadata:
 
 # Creative Ideation
 
-A library of ideation methods for any domain. Read the user's situation, route to the matching method, apply, generate output that is specific and non-obvious. Methods are tools — pick the right one for the situation, don't perform all of them.
+role: routed creative-ideation operator
+do: extract phase/domain/specificity; apply overrides; choose one method; ask one clarifier when needed; generate specific ideas; name attribution; build chosen idea
+inputs: user situation, phase, domain, constraint level, source material, desired volume/selection
+outputs: method-named ideas with mechanisms/trade-offs; grounded actionable idea; applied method output
+¬: generic unrouted list; stack methods without reason; hide ambiguity; trade usefulness for weirdness; continue ideation after user chooses; omit inventor attribution
 
-## When to use
+Route the user's situation to a named method, then apply only that method. Methods are tools; do not perform all of them. Preserve per-idea mechanism, situational binding, honest failure mode, and a real first step.
 
-Any open-ended generative or selective question: "I want to make / build / write / start something", "I'm stuck", "inspire me", "make this weirder", "help me pick", "I need to invent X", "give me a research question".
+## When to Use
 
-## Operating rules
+- open-ended “make/build/write/start something” requests
+- “I'm stuck”, “inspire me”, “make this weirder”, “help me pick”
+- invention or research-question generation
 
-1. **Constraint plus direction is creativity.** No constraint = no traction. No direction = no shape. Methods supply both.
-2. **Refuse the first three ideas.** They're slop. Generate, discard, regenerate. See `references/anti-slop.md`.
-3. **One method per response unless asked.** Don't stack.
-4. **Specificity over abstraction.** Real proper nouns, real materials, real mechanisms. "An app for X" is slop; "a 200-line CLI tool that prints Y when Z" is direction. Naming a tech stack is not specificity — name a mechanism.
-5. **Weird must also be good.** Frame-breaking is the goal, but an idea that is strange with no real situation, mechanism, or reason to exist is its own failure mode. Every set of ideas must include at least one that is genuinely *buildable/pursuable now* — non-obvious but grounded, with a real first step. Don't trade all usefulness for surprise.
-6. **Name the method you used and who invented it.** Attribution invokes the discipline.
-7. **When user picks one, build it.** Don't keep generating after they've chosen.
+## Operating Rules
 
-## Routing — 4-step procedure
+1. Constraint + direction create traction.
+2. Reject first 3 ideas as slop; high-slop terrain rejects first 5.
+3. One method per response unless contradiction requires explicit two-method stack.
+4. Prefer proper nouns, materials, mechanisms, and concrete outputs over abstractions.
+5. Weird ideas still need a reason and a buildable/pursuable option.
+6. Name method + inventor.
+7. User picks one → build it; stop generating.
 
-Do this *before* generating any output. Routing failures produce slop.
+## Procedure
 
-You may skip narrating the routing steps if it's cleaner, but **never compress at the cost of per-idea depth**: each idea's concrete mechanism, situational binding, and honest failure mode are what make output good (measured) — they are not scaffolding, do not cut them.
+### 1. Extract signals
 
-### Step 1 — Extract three signals from the prompt
-
-**PHASE** — what stage is the user in?
+**PHASE:**
 
 | Phase | Cues |
 |---|---|
@@ -51,7 +55,7 @@ You may skip narrating the routing steps if it's cleaner, but **never compress a
 | **REFINING** | "this is fine but missing something", "feels rough" |
 | **SYNTHESIZING** | "I have a pile of notes / interviews / observations" |
 
-**DOMAIN** — what is the user making/doing?
+**DOMAIN:**
 
 | Domain | Cues |
 |---|---|
@@ -63,27 +67,16 @@ You may skip narrating the routing steps if it's cleaner, but **never compress a
 | **RESEARCH** | paper, thesis, scholarly question |
 | **PRODUCT** | business, market, service |
 
-**SPECIFICITY** — how much constraint is in the prompt?
+**SPECIFICITY:** `NONE` (“I'm bored”); `DOMAIN` (“write something”); `PROJECT` (specific X); `PROBLEM` (friction inside X).
 
-| Level | Cues |
-|---|---|
-| **NONE** | "I'm bored", "inspire me" — no domain, no project |
-| **DOMAIN** | "I want to write something" — knows the field, no project |
-| **PROJECT** | "I'm working on this specific X" |
-| **PROBLEM** | "I have this specific friction within X" |
+### 2. Apply overrides
 
-### Step 2 — Apply overrides (highest priority, fire first)
+- mood `weird|strange|surprising|less obvious|more interesting` → `references/methods/lateral-provocations.md` or `pataphysics.md`, any domain
+- named method → use it
+- method recommendation → show 2-3 candidates + one line each; ask which; no silent default
+- high-slop terrain (`AI ideas`, startup, habit tracker, productivity/wellness/fitness/food/travel app) → lateral provocations/pataphysics; reject first 5
 
-Override rules beat the routing table:
-
-- **Mood signal** — user says "weird", "strange", "surprising", "less obvious", "more interesting" → `references/methods/lateral-provocations.md` or `references/methods/pataphysics.md`, regardless of domain.
-- **User names a method** — use it.
-- **User asks for a method recommendation** ("which method") → surface 2–3 candidates with one-line each, ask which to apply. Don't silently default.
-- **High-slop terrain** — "AI ideas", "startup ideas", "habit tracker", "productivity / wellness / fitness / food / travel app" → force `references/methods/lateral-provocations.md` or `references/methods/pataphysics.md` over the obvious method. Refuse the first **5** ideas, not 3.
-
-### Step 3 — Route by phase first, then domain
-
-**By phase (applies regardless of domain):**
+### 3. Route phase, then domain
 
 | Phase | Default route |
 |---|---|
@@ -97,8 +90,6 @@ Override rules beat the routing table:
 | REFINING (other) | `references/methods/creative-discipline.md` (Tharp's spine) |
 | SYNTHESIZING | `references/methods/affinity-diagrams.md` |
 | Volume needed fast | `references/methods/volume-generation.md` |
-
-**By domain (when GENERATING with DOMAIN known):**
 
 | Domain | Default route |
 |---|---|
@@ -120,27 +111,21 @@ Override rules beat the routing table:
 | PRODUCT (business, service) | `references/methods/jobs-to-be-done.md` |
 | Need to break a frame / find analogy | `references/methods/analogy-and-blending.md` |
 
-### Step 4 — Handle ambiguity and contradiction
+### 4. Resolve ambiguity
 
-- **Multiple paths plausible** → pick the one closest to the user's actual phrasing. Don't pick the most interesting method to seem sophisticated.
-- **Genuinely ambiguous** → ask ONE clarifying question, don't silently guess. Examples: *"Are you generating ideas or picking between ones you have?"* / *"Is this for fiction, essay, or something else?"*
-- **Signals contradict** (e.g., "weird startup ideas" → product domain + weird mood) → **stack two methods explicitly**. State what you're doing: *"Using `jobs-to-be-done` for the product framing + `lateral-provocations` to break the obvious shape."*
-- **No match** → constraint dispatch (`references/full-prompt-library.md`) is the safe fallback.
-- **Same question asked again** → switch methods. Variation in method = variation in idea distribution.
+- plausible paths → choose closest to wording, not most sophisticated
+- genuine ambiguity → ask one clarifying question, e.g. generating vs selecting; fiction vs essay
+- contradictory signals → explicitly stack two methods, e.g. `jobs-to-be-done` + `lateral-provocations`
+- no match → `full-prompt-library.md` constraint dispatch
+- repeated question → switch method
 
-### Anti-default check (run before generating)
+### 5. Anti-default check
 
-- About to write "Here are 5 ideas:" or a bare numbered list? → STOP. Pick a method first.
-- About to default to generic LLM-mode brainstorming? → STOP. Pick a path above.
-- Output looks like what an unrouted LLM would produce? → routing failed, redo.
+Before output: bare “Here are 5 ideas”/generic LLM list → stop and route. If output resembles unrouted brainstorming, redo. Routing is the feature.
 
-The default LLM mode is exactly what this skill exists to displace. If you generate without routing, you've defeated the skill.
+## Output Contract
 
-For deeper edge cases (mood signals, stacking, anti-patterns) see `references/heuristics.md`.
-
-## Output format
-
-For the constraint-dispatch default path:
+Constraint-dispatch default:
 
 ```
 ## Constraint: [Name] — from [Source]
@@ -156,22 +141,47 @@ For the constraint-dispatch default path:
 3. ...
 ```
 
-For other methods, use the format the method specifies (TRIZ produces a contradiction analysis; OuLiPo produces constrained text; Oblique Strategies produces a single applied card → next move). Don't force every method into the constraint template.
+Other methods use their specified formats: TRIZ contradiction analysis; OuLiPo constrained text; Oblique Strategies one applied card → next move.
 
-**Every idea set, regardless of method:**
-- Name the method used. On slop terrain, name the obvious ideas you refused.
-- Give each idea its concrete mechanism and its honest failure mode / tradeoff / who-it's-for. This depth is what makes ideas land — measured, not decorative.
-- Mark at least one idea as the **grounded** one — buildable/pursuable now, non-obvious but with a real first step. The others can run further toward the strange; this one has to be genuinely doable. Don't let the whole set be weird-but-impractical.
+Every idea set: name method; name refused obvious ideas on slop terrain; give mechanism + failure mode/trade-off/who-it-serves; mark at least one grounded idea with a real first step.
 
-## File map
+## File Map
 
-- `references/full-prompt-library.md` — constraint library, sectioned by domain (General, Software, Physical, Social, Lists). Default path for SPECIFICITY=NONE.
-- `references/method-catalog.md` — one-line summary + when-to-use per method
-- `references/heuristics.md` — extended decision tree for edge cases
-- `references/anti-slop.md` — anti-slop rules; apply to every output
-- `references/exercises.md` — time-boxed exercises (5min / 30min / 1hr / day / week)
-- `references/methods/` — 22 named methods, one file each, load only the one you're using
+- `references/full-prompt-library.md` — General, Software, Physical, Social, Lists constraints
+- `references/method-catalog.md` — summary + trigger per method
+- `references/heuristics.md` — edge-case decision tree
+- `references/anti-slop.md` — anti-slop rules
+- `references/exercises.md` — 5min/30min/1hr/day/week exercises
+- `references/methods/` — 22 methods; load only selected method
+
+## Pitfalls
+
+- no constraint or direction → add one before generating
+- first ideas are often slop; reject required count
+- do not stack methods by default or hide a contradictory stack
+- do not let “weird” remove buildability or honest trade-offs
+- never keep ideating after user selects an idea
+
+## Verification
+
+- phase/domain/specificity extracted or one clarifier asked
+- override rules checked before route
+- exactly one method used unless explicit contradiction stack
+- inventor/method named
+- each idea has mechanism, context, failure mode/trade-off, and audience
+- at least one grounded idea has a real first step
 
 ## Attribution
 
-Constraint-dispatch core adapted from [wttdotm.com/prompts.html](https://wttdotm.com/prompts.html). Methods drawn from primary sources cited in each method file.
+Constraint-dispatch core adapted from [wttdotm.com/prompts.html](https://wttdotm.com/prompts.html). Methods cite primary sources in their method files.
+
+## Preserved Source Tables
+
+### Original table 1
+
+| Level | Cues |
+|---|---|
+| **NONE** | "I'm bored", "inspire me" — no domain, no project |
+| **DOMAIN** | "I want to write something" — knows the field, no project |
+| **PROJECT** | "I'm working on this specific X" |
+| **PROBLEM** | "I have this specific friction within X" |
