@@ -69,6 +69,9 @@ python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
 
 python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
   funding BTC --hours 168 --limit 30
+
+python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
+  l2 BTC --levels 10
 ```
 
 Time-range endpoints paginate; repeat with later `startTime` or use `export` for larger windows. `l2` is a point-in-time depth snapshot.
@@ -76,24 +79,41 @@ Time-range endpoints paginate; repeat with later `startTime` or use `export` for
 ### Account and trade review
 
 ```bash
-python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py state 0xabc...
-python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py spot-balances
-python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py fills 0xabc... --hours 72 --limit 25
-python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py orders --limit 25
-python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py review 0xabc... --hours 72 --fills 50
-python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py review --coin BTC --hours 168
-```
-
-`state` returns perp positions; `spot-balances` spot inventory. `review` reports realized PnL, fees, wins/losses, coin breakdown, market trend, average funding, and heuristics (fee drag, concentration, counter-trend losses). For deeper analysis: `review` → identify problem coin/window → `fills`/`orders` → `candles`/`funding` → judge decisions separately from outcomes.
-
-### Dataset export
-
-```bash
 python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
   state 0xabc...
 
 python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
   spot-balances
+```
+
+`state` returns perp positions; `spot-balances` spot inventory.
+
+```bash
+python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
+  fills 0xabc... --hours 72 --limit 25
+
+python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
+  orders --limit 25
+```
+
+```bash
+python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
+  review 0xabc... --hours 72 --fills 50
+
+python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
+  review --coin BTC --hours 168
+```
+
+`review` reports realized PnL, fees, wins/losses, coin breakdown, market trend, average funding, and heuristics (fee drag, concentration, counter-trend losses). For deeper analysis: `review` → identify problem coin/window → `fills`/`orders` → `candles`/`funding` → judge decisions separately from outcomes.
+
+### Dataset export
+
+```bash
+python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
+  export BTC --interval 1h --hours 168 --output ./btc-1h-7d.json
+
+python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
+  export BTC --interval 15m --hours 72 --end-time-ms 1760000000000
 ```
 
 Output: schema version, source metadata, exact time window, normalized candle/funding rows, summary stats. Use `--end-time-ms` for reproducibility.
@@ -130,46 +150,7 @@ Addresses are optional for account commands when `HYPERLIQUID_USER_ADDRESS` is s
 
 ```bash
 python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
-  l2 BTC --levels 10
+  markets --limit 5
 ```
 
 Expected: top Hyperliquid perp markets by 24h notional volume.
-
-## Preserved Source Examples
-
-### Original example 1
-
-```bash
-python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
-  fills 0xabc... --hours 72 --limit 25
-
-python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
-  orders --limit 25
-```
-
-### Original example 2
-
-```bash
-python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
-  review 0xabc... --hours 72 --fills 50
-
-python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
-  review --coin BTC --hours 168
-```
-
-### Original example 3
-
-```bash
-python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
-  export BTC --interval 1h --hours 168 --output ./btc-1h-7d.json
-
-python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
-  export BTC --interval 15m --hours 72 --end-time-ms 1760000000000
-```
-
-### Original example 4
-
-```bash
-python ~/.hermes/skills/blockchain/hyperliquid/scripts/hyperliquid_client.py \
-  markets --limit 5
-```

@@ -103,6 +103,14 @@ python $SCRIPT wallet 0xd8dA... --chain bsc --no-prices   # faster
 
 `wallet` returns native balance + known ERC-20 tokens sorted by USD; `multichain` scans all 8 chains in parallel and adds a grand USD total.
 
+```bash
+python $SCRIPT multichain 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045
+```
+
+```bash
+python $SCRIPT compare
+```
+
 ### 2. Tokens, transactions, and ENS
 
 ```bash
@@ -112,6 +120,11 @@ python $SCRIPT decode 0x5c504ed...   # Shows human-readable function signature
 
 Token output includes metadata/market cap; decode maps selectors such as `0xa9059cbb` to `transfer(address,uint256)`; ENS returns address/profile or reverse name.
 
+```bash
+python $SCRIPT ens vitalik.eth          # -> 0xd8dA... + avatar + social links
+python $SCRIPT ens 0xd8dA...96045       # -> vitalik.eth
+```
+
 ### 3. Security, contracts, whales, gas
 
 ```bash
@@ -120,6 +133,20 @@ python $SCRIPT contract 0xdAC17F958D2ee523a2206206994597C13D831ec7   # USDT (ERC
 ```
 
 `allowance` flags unlimited approvals to known DEX/bridge contracts as HIGH risk. `contract` detects EIP-1967/EIP-1167 proxies, ERC-20/721/165, bytecode size, and implementation address. `gas` shows gwei + USD estimates for transfer, ERC-20 transfer, approve, swap, NFT mint, and NFT transfer. `whale` defaults to last 20 blocks and >$10k.
+
+```bash
+python $SCRIPT allowance 0xYourWallet
+```
+
+```bash
+python $SCRIPT whale                                    # ETH, last 20 blocks, >$10k
+python $SCRIPT whale --blocks 50 --min-usd 50000 --chain bsc
+```
+
+```bash
+python $SCRIPT gas
+python $SCRIPT gas --chain polygon
+```
 
 ## Supported Chains
 
@@ -157,44 +184,3 @@ python ~/.hermes/skills/blockchain/evm/scripts/evm_client.py ens vitalik.eth
 ```
 
 Expected: current block/gas/ETH price, then a resolution of `vitalik.eth` to `0xd8dA...`.
-
-## Preserved Source Examples
-
-### Original example 1
-
-```bash
-python $SCRIPT multichain 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045
-```
-
-### Original example 2
-
-```bash
-python $SCRIPT compare
-```
-
-### Original example 3
-
-```bash
-python $SCRIPT ens vitalik.eth          # -> 0xd8dA... + avatar + social links
-python $SCRIPT ens 0xd8dA...96045       # -> vitalik.eth
-```
-
-### Original example 4
-
-```bash
-python $SCRIPT allowance 0xYourWallet
-```
-
-### Original example 5
-
-```bash
-python $SCRIPT whale                                    # ETH, last 20 blocks, >$10k
-python $SCRIPT whale --blocks 50 --min-usd 50000 --chain bsc
-```
-
-### Original example 6
-
-```bash
-python $SCRIPT gas
-python $SCRIPT gas --chain polygon
-```

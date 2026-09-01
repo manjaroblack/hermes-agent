@@ -94,9 +94,26 @@ get_thread(thread_id)
 
 ## Workflows
 
-**Service signup:** create `signup-bot` → register with address → poll `list_threads` → `get_thread` for verification email/code → act only with authorization.
+### Service signup
 
-**Outreach:** create `hermes-outreach` → `send_message(to, subject, text)` → poll threads → reply after review/authorization.
+```
+1. create_inbox (username: "signup-bot")
+2. Use the inbox address to register on the service
+3. list_threads to check for verification email
+4. get_thread to read the verification code
+```
+
+Use verification codes only within the authorized signup task.
+
+### Outreach
+
+```
+1. create_inbox (username: "hermes-outreach")
+2. send_message (to: user@example.com, subject: "Hello", text: "...")
+3. list_threads to check for replies
+```
+
+Review recipients/content before sending; reply only after review/authorization.
 
 For inbound real-time webhooks, a public server is required; personal use should poll `list_threads` from a cron job.
 
@@ -121,22 +138,3 @@ Expected: new inbox address returned; then send a test only to an authorized rec
 - console: https://console.agentmail.to
 - MCP repo: https://github.com/agentmail-to/agentmail-mcp
 - pricing: https://www.agentmail.to/pricing
-
-## Preserved Source Examples
-
-### Original example 1
-
-```
-1. create_inbox (username: "signup-bot")
-2. Use the inbox address to register on the service
-3. list_threads to check for verification email
-4. get_thread to read the verification code
-```
-
-### Original example 2
-
-```
-1. create_inbox (username: "hermes-outreach")
-2. send_message (to: user@example.com, subject: "Hello", text: "...")
-3. list_threads to check for replies
-```

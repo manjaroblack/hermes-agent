@@ -33,7 +33,12 @@ Prefer `architecture-diagram` for dark tech architecture, `excalidraw` for hand-
 
 ## Prerequisites
 
-- load `templates/template.html` with `skill_view(name="concept-diagrams", file_path="templates/template.html")`
+- load `templates/template.html`:
+
+  ```
+  skill_view(name="concept-diagrams", file_path="templates/template.html")
+  ```
+
 - optional type-specific reference: `references/physical-shape-cookbook.md`, `infrastructure-patterns.md`, or `dashboard-patterns.md`
 - SVG/HTML output path
 
@@ -141,7 +146,11 @@ Two-line node:
 </g>
 ```
 
-Connector: `<line x1="200" y1="76" x2="200" y2="120" class="arr" marker-end="url(#arrow)"/>`.
+Connector:
+
+```xml
+<line x1="200" y1="76" x2="200" y2="120" class="arr" marker-end="url(#arrow)"/>
+```
 
 Container:
 
@@ -198,7 +207,14 @@ html = template.replace(
 write_file("./sn2-mechanism.html", html)
 ```
 
-Open: `open ./sn2-mechanism.html` on macOS or `xdg-open ./sn2-mechanism.html` on Linux. No server/dependencies.
+Open without a server/dependency:
+
+```
+# macOS
+open ./sn2-mechanism.html
+# Linux
+xdg-open ./sn2-mechanism.html
+```
 
 Optional multi-diagram gallery only when requested:
 
@@ -220,7 +236,31 @@ Use loopback only, OS-selected free port, and report chosen URL. Fixed port stil
 
 ## Examples and Routing
 
-Examples in `examples/` include hospital/film/password-reset/LLM flows, UML, aircraft, turbine, smartphone, floor plan, banana journey, CPU, SN2, smart city, grid, and grouped bar chart. Load with `skill_view(name="concept-diagrams", file_path="examples/<filename>")`.
+Examples in `examples/` include hospital/film/password-reset/LLM flows, UML, aircraft, turbine, smartphone, floor plan, banana journey, CPU, SN2, smart city, grid, and grouped bar chart. Load with:
+
+```
+skill_view(name="concept-diagrams", file_path="examples/<filename>")
+```
+
+Reference inventory:
+
+| File | Type | Demonstrates |
+|------|------|--------------|
+| `hospital-emergency-department-flow.md` | Flowchart | Priority routing with semantic colors |
+| `feature-film-production-pipeline.md` | Flowchart | Phased workflow, horizontal sub-flows |
+| `automated-password-reset-flow.md` | Flowchart | Auth flow with error branches |
+| `autonomous-llm-research-agent-flow.md` | Flowchart | Loop-back arrows, decision branches |
+| `place-order-uml-sequence.md` | Sequence | UML sequence diagram style |
+| `commercial-aircraft-structure.md` | Physical | Paths, polygons, ellipses for realistic shapes |
+| `wind-turbine-structure.md` | Physical cross-section | Underground/above-ground separation, color coding |
+| `smartphone-layer-anatomy.md` | Exploded view | Alternating left/right labels, layered components |
+| `apartment-floor-plan-conversion.md` | Floor plan | Walls, doors, proposed changes in dotted red |
+| `banana-journey-tree-to-smoothie.md` | Narrative journey | Winding path, progressive state changes |
+| `cpu-ooo-microarchitecture.md` | Hardware pipeline | Fan-out, memory hierarchy sidebar |
+| `sn2-reaction-mechanism.md` | Chemistry | Molecules, curved arrows, energy profile |
+| `smart-city-infrastructure.md` | Hub-spoke | Semantic line styles per system |
+| `electricity-grid-flow.md` | Multi-stage flow | Voltage hierarchy, flow markers |
+| `ml-benchmark-grouped-bar-chart.md` | Chart | Grouped bars, dual axis |
 
 | User says | Diagram type | Suggested colors |
 |-----------|--------------|------------------|
@@ -256,54 +296,3 @@ Examples in `examples/` include hospital/film/password-reset/LLM flows, UML, air
 - checklist 1-6 passes; no overflow/crossed arrows
 - standalone file exists and is non-empty
 - optional gallery binds loopback + ephemeral/fixed approved port and is stoppable
-
-## Preserved Source Tables
-
-### Original table 1
-
-| File | Type | Demonstrates |
-|------|------|--------------|
-| `hospital-emergency-department-flow.md` | Flowchart | Priority routing with semantic colors |
-| `feature-film-production-pipeline.md` | Flowchart | Phased workflow, horizontal sub-flows |
-| `automated-password-reset-flow.md` | Flowchart | Auth flow with error branches |
-| `autonomous-llm-research-agent-flow.md` | Flowchart | Loop-back arrows, decision branches |
-| `place-order-uml-sequence.md` | Sequence | UML sequence diagram style |
-| `commercial-aircraft-structure.md` | Physical | Paths, polygons, ellipses for realistic shapes |
-| `wind-turbine-structure.md` | Physical cross-section | Underground/above-ground separation, color coding |
-| `smartphone-layer-anatomy.md` | Exploded view | Alternating left/right labels, layered components |
-| `apartment-floor-plan-conversion.md` | Floor plan | Walls, doors, proposed changes in dotted red |
-| `banana-journey-tree-to-smoothie.md` | Narrative journey | Winding path, progressive state changes |
-| `cpu-ooo-microarchitecture.md` | Hardware pipeline | Fan-out, memory hierarchy sidebar |
-| `sn2-reaction-mechanism.md` | Chemistry | Molecules, curved arrows, energy profile |
-| `smart-city-infrastructure.md` | Hub-spoke | Semantic line styles per system |
-| `electricity-grid-flow.md` | Multi-stage flow | Voltage hierarchy, flow markers |
-| `ml-benchmark-grouped-bar-chart.md` | Chart | Grouped bars, dual axis |
-
-## Preserved Source Examples
-
-### Original example 1
-
-```
-skill_view(name="concept-diagrams", file_path="templates/template.html")
-```
-
-### Original example 2
-
-```xml
-<line x1="200" y1="76" x2="200" y2="120" class="arr" marker-end="url(#arrow)"/>
-```
-
-### Original example 3
-
-```
-# macOS
-open ./sn2-mechanism.html
-# Linux
-xdg-open ./sn2-mechanism.html
-```
-
-### Original example 4
-
-```
-skill_view(name="concept-diagrams", file_path="examples/<filename>")
-```

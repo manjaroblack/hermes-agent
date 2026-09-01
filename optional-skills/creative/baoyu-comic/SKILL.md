@@ -134,7 +134,11 @@ Comic Progress:
 - [ ] Step 8: Completion report
 ```
 
-Flow: `Input → Analyze → [Check Existing?] → [Confirm: Style + Reviews] → Storyboard → [Review?] → Prompts → [Review?] → Images → Complete`.
+Flow:
+
+```
+Input → Analyze → [Check Existing?] → [Confirm: Style + Reviews] → Storyboard → [Review?] → Prompts → [Review?] → Images → Complete
+```
 
 | Step | Action | Key Output |
 |------|--------|------------|
@@ -168,7 +172,14 @@ Honor requested outline/prompt review gates. Before any `image_generate`, save e
 ### 7. Generate images
 
 1. Use `image_generate` with only `prompt` and `aspect_ratio`.
-2. Map storyboard ratio: `3:4`, `9:16`, `2:3`→`portrait`; `4:3`, `16:9`, `3:2`→`landscape`; `1:1`→`square`.
+2. Map storyboard ratio:
+
+   | Storyboard ratio | `image_generate` format |
+   |------------------|-------------------------|
+   | `3:4`, `9:16`, `2:3` | `portrait` |
+   | `4:3`, `16:9`, `3:2` | `landscape` |
+   | `1:1` | `square` |
+
 3. Read returned URL; download bytes with an **absolute** path, e.g. `curl -fsSL "<url>" -o /abs/path/to/comic/<slug>/NN-page-<slug>.png`.
 4. Verify exact path exists and is non-empty before the next page.
 5. Retry generation once on failure.
@@ -220,21 +231,3 @@ Detailed analysis/storyboard/review/regeneration workflow: `references/workflow.
 - aspect ratio mapping is valid; references are recorded with usage/traits
 - rendered character/page consistency is checked from text descriptions
 - backup suffix used before regeneration; completion report includes generated pages and paths
-
-## Preserved Source Tables
-
-### Original table 1
-
-| Storyboard ratio | `image_generate` format |
-|------------------|-------------------------|
-| `3:4`, `9:16`, `2:3` | `portrait` |
-| `4:3`, `16:9`, `3:2` | `landscape` |
-| `1:1` | `square` |
-
-## Preserved Source Examples
-
-### Original example 1
-
-```
-Input → Analyze → [Check Existing?] → [Confirm: Style + Reviews] → Storyboard → [Review?] → Prompts → [Review?] → Images → Complete
-```

@@ -23,9 +23,15 @@ Roleplay the worst-case user—technology-averse, impatient, and ready to return
 
 ## When to Use
 
-- `Run an adversarial UX test on [URL]`
-- “Be a grumpy [persona] and test [app]”
-- hostile user test on staging/deployed product
+Trigger examples:
+
+```
+"Run an adversarial UX test on [URL]"
+"Be a grumpy [persona type] and test [app name]"
+"Do an asshole user test on my staging site"
+```
+
+Route hostile/grumpy/adversarial user testing on a staging or deployed product here.
 
 ## Prerequisites
 
@@ -141,13 +147,3 @@ Only RED/GREEN: actionable title, verbatim quote, objective UX issue, suggested 
 - all complaints classified; mandatory filter completed
 - ticket count <=10; only RED/GREEN individually ticketed, YELLOW grouped, WHITE report-only
 - report includes links/evidence and known-issue comparison
-
-## Preserved Source Examples
-
-### Original example 1
-
-```
-"Run an adversarial UX test on [URL]"
-"Be a grumpy [persona type] and test [app name]"
-"Do an asshole user test on my staging site"
-```

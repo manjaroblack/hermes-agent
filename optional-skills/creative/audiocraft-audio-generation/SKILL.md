@@ -19,7 +19,7 @@ role: local AudioCraft generation operator
 do: select MusicGen/AudioGen/EnCodec path; install pinned environment; load model; generate/save audio; optimize VRAM; verify output
 inputs: text prompt, optional melody/style/audio, model variant, duration/quality controls, output path
 outputs: WAV/MP3 audio, compressed/reconstructed audio, batch results, optional Gradio demo
-¬: ignore VRAM/CPU limits; use bf16 for HeartCodec; generate before saving reproducibility inputs; claim tags/style always control output; expose secrets
+¬: ignore model VRAM/sample-rate limits; generate before saving reproducibility inputs; claim style conditioning always controls output; expose secrets
 
 Use Meta AudioCraft for text-to-music and text-to-sound generation with MusicGen, AudioGen, and EnCodec. Model sizes range from 300M to 3.3B; stereo and style conditioning are available.
 
@@ -37,9 +37,8 @@ Use alternatives when better matched: Stable Audio for longer commercial music, 
 ## Prerequisites
 
 - Python environment with `audiocraft`, `torch`, `torchaudio`, and required Transformers version
-- GPU preferred; minimum ~8GB VRAM with `--lazy_load true`, recommended 16GB+; 3B lazy-load peak ~6.2GB
-- CPU works with `--mula_device cpu --codec_device cpu` but can take 30-60+ minutes/song and ~12GB+ free RAM
-- GPU split: `--mula_device cuda:0 --codec_device cuda:1`
+- GPU preferred; size against the MusicGen GPU table below: small ~4GB FP32/~2GB FP16, medium ~8GB/~4GB, large ~16GB/~8GB
+- CPU fallback works without CUDA but generation is substantially slower; prefer `musicgen-small` and short durations
 
 ## Procedure
 
@@ -557,7 +556,6 @@ for desc in descriptions:
 
 ## Pitfalls
 
-- Do not use bf16 for HeartCodec-equivalent codec work; AudioCraft EnCodec quality needs fp32 where the model expects it.
 - Large models and long durations consume substantial VRAM; use smaller model, shorter duration, `torch.cuda.empty_cache()`, or batch inputs.
 - `torchaudio` sample rates differ: MusicGen examples save at 32000Hz; AudioGen at 16000Hz; preserve the model's expected rate.
 - Generated output can contain artifacts or weak prompt adherence; adjust temperature/CFG and regenerate.

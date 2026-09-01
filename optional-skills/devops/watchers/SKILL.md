@@ -34,7 +34,7 @@ Poll RSS/Atom, JSON APIs, or GitHub on an interval and react only to new items. 
 
 `fetch → compare with watermark → atomically save → print new items or nothing`.
 
-Scripts live at `$HERMES_HOME/skills/devops/watchers/scripts/`; state defaults to `$HERMES_HOME/watcher-state/`, keyed by `--name`.
+Scripts live at `$HERMES_HOME/skills/devops/watchers/scripts/`; each reads `WATCHER_STATE_DIR`, defaulting to `$HERMES_HOME/watcher-state/`, for state keyed by `--name`.
 
 | Script | What it watches | Dedup key |
 |---|---|---|
@@ -86,6 +86,7 @@ State file: `$HERMES_HOME/watcher-state/<name>.json`.
 
 ```bash
 cat $HERMES_HOME/watcher-state/hn.json
+rm $HERMES_HOME/watcher-state/hn.json
 ```
 
 Delete to make next run a first poll. Custom scripts should import `scripts/_watermark.py` for atomic writes, bounded IDs, and first-run baseline.
@@ -93,7 +94,7 @@ Delete to make next run a first poll. Custom scripts should import `scripts/_wat
 ## Pitfalls
 
 - empty delta must produce empty stdout; “no new items” spam breaks callers
-- first run intentionally emits nothing; delete state after baseline for an initial digest
+- first run intentionally emits nothing; delete state after baseline for an initial digest, or add `--prime-with-latest N` to a custom script
 - shared watermark caps at 500; tune custom implementation for churn/filesystem
 - `$HERMES_HOME/watcher-state/` is writable; Docker/Modal backends may not see arbitrary host paths
 
@@ -105,11 +106,3 @@ Delete to make next run a first poll. Custom scripts should import `scripts/_wat
 - repeat item is deduplicated
 - fetch failure exits non-zero
 - cron prompt remains silent on no-change
-
-## Preserved Source Examples
-
-### Original example 1
-
-```bash
-rm $HERMES_HOME/watcher-state/hn.json
-```

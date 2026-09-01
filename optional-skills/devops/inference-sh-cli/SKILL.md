@@ -129,6 +129,19 @@ infsh app run tavily/tavily-search --input '{"query": "latest AI news"}' --json
 infsh app run exa/exa-search --input '{"query": "machine learning papers"}' --json
 ```
 
+Discover other catalogs before choosing an app ID:
+
+```bash
+# 3D generation
+infsh app list --search 3d
+
+# Audio / TTS
+infsh app list --search tts
+
+# Twitter/X automation
+infsh app list --search twitter
+```
+
 ## Pitfalls
 
 - IDs change; run `infsh app list --search <term>` first.
@@ -151,18 +164,3 @@ infsh app run exa/exa-search --input '{"query": "machine learning papers"}' --js
 - `references/app-discovery.md` — catalog search
 - `references/running-apps.md` — inputs/output handling
 - `references/cli-reference.md` — full CLI
-
-## Preserved Source Examples
-
-### Original example 1
-
-```bash
-# 3D generation
-infsh app list --search 3d
-
-# Audio / TTS
-infsh app list --search tts
-
-# Twitter/X automation
-infsh app list --search twitter
-```

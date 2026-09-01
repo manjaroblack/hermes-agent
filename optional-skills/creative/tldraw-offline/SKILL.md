@@ -39,6 +39,19 @@ Do not hand-place shapes to imitate a drawing; script the canvas instead.
 - reread port and token at the top of **every** shell call; shell exports do not persist
 - no account/network needed for local editing
 
+## How to Run
+
+Choose by persistence: use `/exec` for one-off live edits; use the document's `/script-workspace` for behavior that must survive reload. Keep the app and target document open, then reread `server.json`, resolve the document, execute one path, and verify live state.
+
+## Quick Reference
+
+| Goal | Path | Completion evidence |
+|---|---|---|
+| One-off layout/edit | `POST /api/doc/:id/exec` | queried shapes/bindings + screenshot |
+| Durable behavior | `POST /api/doc/:id/script-workspace` | `script-status` applied + matching digests |
+| Discover document | `/api/search` with `api.getFocusedDoc()`/`api.getDocs()` | explicit target document ID |
+| Validate snapshot props | `node scripts/validate_shapes.mjs` | `3/3` |
+
 ## Procedure
 
 ### 1. Resolve API and document

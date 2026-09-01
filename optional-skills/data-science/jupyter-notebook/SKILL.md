@@ -27,6 +27,12 @@ Use the hamelnb live-kernel script for a **stateful Python REPL**: variables, im
 - “try this and check” workflows
 - complex code built incrementally in a live notebook
 
+| Tool | Use When |
+|------|----------|
+| **This skill** | Iterative exploration, state across steps, data science, ML, "let me try this and check" |
+| `execute_code` | One-shot scripts needing hermes tool access (web_search, file ops). Stateless. |
+| `terminal` | Shell commands, builds, installs, git, process management |
+
 ## Prerequisites
 
 - `uv`: `which uv`
@@ -39,9 +45,25 @@ SCRIPT="$HOME/.agent-skills/hamelnb/skills/jupyter-live-kernel/scripts/jupyter_l
 
 Clone only when absent. The script path is the default shown above.
 
+```
+git clone https://github.com/hamelsmu/hamelnb.git ~/.agent-skills/hamelnb
+```
+
 ## Procedure
 
 ### 1. Start/discover server
+
+Prepare the notebook directory and discover existing servers:
+
+```
+mkdir -p ~/notebooks
+```
+
+```
+uv run "$SCRIPT" servers
+```
+
+If no suitable loopback server exists, start one:
 
 ```
 jupyter-lab --no-browser --port=8888 --notebook-dir=$HOME/notebooks \
@@ -64,6 +86,10 @@ curl -s -X POST http://127.0.0.1:8888/api/sessions \
 ### 3. Discover and execute
 
 All commands return JSON; always use `--compact`:
+
+```
+uv run "$SCRIPT" execute --path <notebook.ipynb> --code '<python code>' --compact
+```
 
 ```
 uv run "$SCRIPT" execute --path scratch.ipynb --code $'import os\nfiles = os.listdir(".")\nprint(f"Found {len(files)} files")' --compact
@@ -89,11 +115,22 @@ uv run "$SCRIPT" edit --path <notebook.ipynb> replace-source \
 uv run "$SCRIPT" edit --path <notebook.ipynb> delete --cell-id <id> --compact
 ```
 
+Inspect live variables without dumping full objects:
+
+```
+uv run "$SCRIPT" variables --path <notebook.ipynb> list --compact
+uv run "$SCRIPT" variables --path <notebook.ipynb> preview --name <varname> --compact
+```
+
 Flags such as `--path` precede the sub-subcommand: `variables --path nb.ipynb list`.
 
 ### 5. Clean verification
 
 Only when requested or needed to prove top-to-bottom execution:
+
+```
+uv run "$SCRIPT" restart-run-all --path <notebook.ipynb> --save-outputs --compact
+```
 
 ```
 uv run "$SCRIPT" servers --compact
@@ -123,52 +160,3 @@ uv run "$SCRIPT" notebooks --compact
 - variables/contents reflect real kernel/notebook state
 - JSON errors are read, not mistaken for success
 - requested restart/run-all has saved outputs and top-to-bottom success
-
-## Preserved Source Tables
-
-### Original table 1
-
-| Tool | Use When |
-|------|----------|
-| **This skill** | Iterative exploration, state across steps, data science, ML, "let me try this and check" |
-| `execute_code` | One-shot scripts needing hermes tool access (web_search, file ops). Stateless. |
-| `terminal` | Shell commands, builds, installs, git, process management |
-
-## Preserved Source Examples
-
-### Original example 1
-
-```
-git clone https://github.com/hamelsmu/hamelnb.git ~/.agent-skills/hamelnb
-```
-
-### Original example 2
-
-```
-uv run "$SCRIPT" servers
-```
-
-### Original example 3
-
-```
-mkdir -p ~/notebooks
-```
-
-### Original example 4
-
-```
-uv run "$SCRIPT" execute --path <notebook.ipynb> --code '<python code>' --compact
-```
-
-### Original example 5
-
-```
-uv run "$SCRIPT" variables --path <notebook.ipynb> list --compact
-uv run "$SCRIPT" variables --path <notebook.ipynb> preview --name <varname> --compact
-```
-
-### Original example 6
-
-```
-uv run "$SCRIPT" restart-run-all --path <notebook.ipynb> --save-outputs --compact
-```

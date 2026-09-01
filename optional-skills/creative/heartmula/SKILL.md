@@ -44,12 +44,23 @@ git clone https://github.com/HeartMuLa/heartlib.git
 cd heartlib
 ```
 
+Create and install the required Python 3.10 environment:
+
+```bash
+uv venv --python 3.10 .venv
+. .venv/bin/activate
+uv pip install -e .
+```
+
 ### 2. Resolve dependency compatibility
 
 As of Feb 2026, upgrade packages whose pins conflict with newer `pyarrow`/`huggingface-hub`:
 
 ```bash
+# Upgrade datasets (old version incompatible with current pyarrow)
 uv pip install --upgrade datasets
+
+# Upgrade transformers (needed for huggingface-hub 1.x compatibility)
 uv pip install --upgrade transformers
 ```
 
@@ -92,6 +103,7 @@ Without NVIDIA GPU, use CPU flags only with explicit user expectation of extreme
 ```bash
 cd heartlib
 . .venv/bin/activate
+ASSETS_DIR=./assets
 python ./examples/run_music_generation.py \
   --model_path=./ckpt \
   --version="3B" \
@@ -105,6 +117,12 @@ Tags are comma-separated without spaces:
 
 ```
 piano,happy,wedding,synthesizer,romantic
+```
+
+or:
+
+```
+rock,energetic,guitar,drums,male-vocal
 ```
 
 Lyrics use bracketed sections:

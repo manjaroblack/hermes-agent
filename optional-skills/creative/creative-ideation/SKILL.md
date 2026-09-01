@@ -67,7 +67,14 @@ Route the user's situation to a named method, then apply only that method. Metho
 | **RESEARCH** | paper, thesis, scholarly question |
 | **PRODUCT** | business, market, service |
 
-**SPECIFICITY:** `NONE` (“I'm bored”); `DOMAIN` (“write something”); `PROJECT` (specific X); `PROBLEM` (friction inside X).
+**SPECIFICITY:**
+
+| Level | Cues |
+|---|---|
+| **NONE** | "I'm bored", "inspire me" — no domain, no project |
+| **DOMAIN** | "I want to write something" — knows the field, no project |
+| **PROJECT** | "I'm working on this specific X" |
+| **PROBLEM** | "I have this specific friction within X" |
 
 ### 2. Apply overrides
 
@@ -174,14 +181,3 @@ Every idea set: name method; name refused obvious ideas on slop terrain; give me
 ## Attribution
 
 Constraint-dispatch core adapted from [wttdotm.com/prompts.html](https://wttdotm.com/prompts.html). Methods cite primary sources in their method files.
-
-## Preserved Source Tables
-
-### Original table 1
-
-| Level | Cues |
-|---|---|
-| **NONE** | "I'm bored", "inspire me" — no domain, no project |
-| **DOMAIN** | "I want to write something" — knows the field, no project |
-| **PROJECT** | "I'm working on this specific X" |
-| **PROBLEM** | "I have this specific friction within X" |

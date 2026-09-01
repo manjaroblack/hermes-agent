@@ -32,6 +32,7 @@ Query Solana on-chain data enriched with USD pricing via CoinGecko. Eight comman
 
 - Python standard library only
 - default RPC `https://api.mainnet-beta.solana.com`; optional `SOLANA_RPC_URL` private endpoint
+- private endpoint example: `export SOLANA_RPC_URL=https://your-private-rpc.com`
 - CoinGecko free API, ~10-30 requests/min; `--no-prices` skips it
 - helper: `~/.hermes/skills/blockchain/solana/scripts/solana_client.py`
 

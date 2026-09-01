@@ -91,14 +91,14 @@ docker run -d --memory=512m --cpus=1.5 --restart=unless-stopped --name app my-ap
 Flags: `-d` detached; `-it` interactive+TTY; `--rm` auto-remove; `-p` host:container port; `-e` env; `-v` volume; `--name`; `--restart`.
 
 ```bash
-docker ps
-docker ps -a
-docker stop NAME
-docker start NAME
-docker restart NAME
-docker rm NAME
-docker rm -f NAME
-docker container prune
+docker ps                        # running containers
+docker ps -a                     # all (including stopped)
+docker stop NAME                 # graceful stop
+docker start NAME                # start stopped container
+docker restart NAME              # stop + start
+docker rm NAME                   # remove stopped container
+docker rm -f NAME                # force remove running container
+docker container prune           # remove ALL stopped containers
 ```
 
 Interact:
@@ -220,23 +220,21 @@ docker network prune                   # remove unused networks
 
 ### 6. Diagnose/clean disk
 
-Diagnose first:
-
 ```bash
-docker system df
-docker system df -v
-docker container prune
-docker image prune
-docker volume prune
-docker network prune
-```
+# Check what's using space
+docker system df                       # summary
+docker system df -v                    # detailed breakdown
 
-Confirm with the user before:
+# Targeted cleanup (safe)
+docker container prune                 # stopped containers
+docker image prune                     # dangling images
+docker volume prune                    # unused volumes
+docker network prune                   # unused networks
 
-```bash
-docker system prune
-docker system prune -a
-docker system prune -a --volumes
+# Aggressive cleanup (confirm with user first!)
+docker system prune                    # containers + images + networks
+docker system prune -a                 # also unused images
+docker system prune -a --volumes       # EVERYTHING — named volumes too
 ```
 
 The last command removes named volumes and potentially important data; never run without confirmation.
@@ -276,37 +274,3 @@ Use the troubleshooting matrix below after inspection; confirm destructive clean
 5. pin base versions (`node:20-alpine`, not `node:latest`)
 6. run non-root with `USER`
 7. use slim/alpine bases (`python:3.12-slim`, not `python:3.12`)
-
-## Preserved Source Examples
-
-### Original example 1
-
-```bash
-docker ps                        # running containers
-docker ps -a                     # all (including stopped)
-docker stop NAME                 # graceful stop
-docker start NAME                # start stopped container
-docker restart NAME              # stop + start
-docker rm NAME                   # remove stopped container
-docker rm -f NAME                # force remove running container
-docker container prune           # remove ALL stopped containers
-```
-
-### Original example 2
-
-```bash
-# Check what's using space
-docker system df                       # summary
-docker system df -v                    # detailed breakdown
-
-# Targeted cleanup (safe)
-docker container prune                 # stopped containers
-docker image prune                     # dangling images
-docker volume prune                    # unused volumes
-docker network prune                   # unused networks
-
-# Aggressive cleanup (confirm with user first!)
-docker system prune                    # containers + images + networks
-docker system prune -a                 # also unused images
-docker system prune -a --volumes       # EVERYTHING — named volumes too
-```

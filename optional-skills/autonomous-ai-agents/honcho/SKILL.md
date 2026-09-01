@@ -58,7 +58,7 @@ Integration guide: https://docs.honcho.dev/v3/guides/integrations/hermes#running
 ### Verify
 
 ```bash
-hermes honcho status
+hermes honcho status    # shows resolved config, connection test, peer info
 ```
 
 Status should show resolved config, connection test, and peer info.
@@ -203,7 +203,7 @@ hermes profile create coder --clone
 Backfill:
 
 ```bash
-hermes honcho sync
+hermes honcho sync    # creates host blocks for all profiles that don't have one yet
 ```
 
 Example host override:
@@ -393,17 +393,3 @@ Use the troubleshooting matrix below when a verification check fails.
 - context budget trims summary before representation and preserves card
 - `honcho_conclude` receives exactly one create/delete input; PII deletion is explicit
 - cadence/depth/level settings match requested cost/quality trade-off
-
-## Preserved Source Examples
-
-### Original example 1
-
-```bash
-hermes honcho status    # shows resolved config, connection test, peer info
-```
-
-### Original example 2
-
-```bash
-hermes honcho sync    # creates host blocks for all profiles that don't have one yet
-```

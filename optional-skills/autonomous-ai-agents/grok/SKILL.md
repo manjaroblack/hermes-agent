@@ -154,6 +154,12 @@ Clone-to-temp, no active repo mutation:
 terminal(command="REVIEW=$(mktemp -d) && git clone https://github.com/user/repo.git $REVIEW && cd $REVIEW && gh pr checkout 42 && grok --no-auto-update -p 'Review the changes vs origin/main. Check bugs, security, race conditions, missing tests.'", pty=true, timeout=300)
 ```
 
+After inspecting and approving review text, post it explicitly:
+
+```
+terminal(command="gh pr comment 42 --body '<review text>'", workdir="/path/to/repo")
+```
+
 ### 7. Parallel issue fixing
 
 ```
@@ -237,11 +243,3 @@ Use global config, not project `.grok/config.toml`; `permission_mode` replaces l
 - no read-only review had auto-approval
 - UUID resume/continue targets intended session
 - background/tmux processes are terminated after completion
-
-## Preserved Source Examples
-
-### Original example 1
-
-```
-terminal(command="gh pr comment 42 --body '<review text>'", workdir="/path/to/repo")
-```
