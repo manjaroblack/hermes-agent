@@ -135,7 +135,8 @@ CLI writes `0600`; stdout contains only redacted brand/last4/expiry and
 
 ### 7. Use credential
 
-- web checkout: hand path to user or browser tool; never expose card file through a file tool
+- all commands run through the `terminal` tool; web checkout: hand path to user or
+  browser tool; never use `read_file` to load the card file into agent context
 - MPP:
 
   ```

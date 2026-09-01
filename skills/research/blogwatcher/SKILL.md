@@ -23,7 +23,8 @@ outputs: tracked blogs, scan results, unread/all article lists, read-state updat
 
 Track feed updates with automatic discovery, HTML scraping fallback, OPML import,
 and read/unread management. Database defaults to
-`~/.blogwatcher-cli/blogwatcher-cli.db`.
+`~/.blogwatcher-cli/blogwatcher-cli.db`; override with `--db` or
+`BLOGWATCHER_DB`.
 
 ## When to Use
 

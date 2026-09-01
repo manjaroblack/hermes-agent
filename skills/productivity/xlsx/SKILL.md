@@ -117,6 +117,8 @@ Author specs with `write_file`; inspect JSON with `read_file`/stdout.
 ## Convert
 
 ```bash
+# Legacy .xls conversion shorthand
+soffice --headless --convert-to xlsx old.xls
 soffice --headless --convert-to pdf report.xlsx --outdir out/
 soffice --headless --convert-to csv report.xlsx --outdir out/  # 1st sheet only
 ```
@@ -126,7 +128,8 @@ No `soffice` → install LibreOffice or deliver unconverted.
 
 ## Pitfalls
 
-- formula results need Excel/LibreOffice save; `data_only=True` otherwise `None`
+- formula results need Excel/LibreOffice save; `load_workbook(path, data_only=True)`
+  otherwise returns cached `None`
 - `xlsx_edit.py` insert/delete does not shift refs; restructure does, but
   cannot move chart anchors/images/conditional-format RULE formulas; inspect
   JSON `not_shifted` + `references/restructuring.md`

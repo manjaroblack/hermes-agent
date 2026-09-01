@@ -36,7 +36,10 @@ inputs: owner/repo; actors/time window/IOCs; GitHub/API/Wayback/BigQuery access;
 outputs: evidence registry; `iocs.md`; cross-source discrepancies; validated/inconclusive/rejected hypotheses; forensic report; mitigations
 ¬: uncited claims; mix specialist sources; fabricate evidence IDs; run target-repo code; trust one source for SHA/URL; expose secrets; investigate without defensive/authorized purpose
 
-Seven-phase, multi-agent investigation framework for open-source supply-chain attacks, covering GitHub Archive, Wayback, GitHub API, local Git, IOC extraction, evidence-backed hypotheses, and final reporting.
+Adapted from RAPTOR's forensics system. Seven-phase, multi-agent investigation
+framework for open-source supply-chain attacks, covering GitHub Archive, Wayback,
+GitHub API, local Git, IOC extraction, evidence-backed hypotheses, and final
+reporting.
 
 ## When to Use
 

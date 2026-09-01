@@ -147,6 +147,8 @@ threshold first; inspect `info: stats:` before choosing one.
 - evidence quotes must come from extracted page text, not snippets
 - `[unverified]` is not an escape hatch for avoidable retrieval
 - `render --replace-in` avoids stale/duplicated Sources blocks
+- Preserve source notation when quoting extracted text, e.g. `_[ERAP1](https://…)_`,
+  rather than silently converting it to an uncited claim.
 
 ## Verification
 

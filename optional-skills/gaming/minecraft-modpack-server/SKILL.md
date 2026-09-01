@@ -212,6 +212,7 @@ Hourly cron:
 ```bash
 pgrep -fa neoforge
 pgrep -fa minecraft
+tail -f ~/minecraft-server/server/logs/latest.log
 ```
 
 Confirm a running process, logs containing `Done (Xs)!`, and a successful

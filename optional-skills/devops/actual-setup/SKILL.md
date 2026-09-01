@@ -95,7 +95,7 @@ Set up [actual.inc](https://actual.inc) as Hermes' `actual` provider. Actual exp
 
 ## Pitfalls
 
-- Actual accepts reasoning `none/low/medium/high/max`; built-in clamps `xhigh→high`, `ultra→max`; old Hermes fallback: `agent.reasoning_overrides.<model>: high`.
+- Actual accepts `reasoning_effort` values `none/low/medium/high/max`; built-in clamps `xhigh→high`, `ultra→max`; old Hermes fallback: `agent.reasoning_overrides.<model>: high`.
 - Default Hermes schemas ~26k tokens + system prompt ~9k; 32k context can overflow before turn and yield bare `data: [DONE]` / `Provider returned an empty stream with no finish_reason`. Use `-t file,web`, larger `n_ctx`, or >=64k context. Tracking #51448; related #65631 and #56516.
 - download ID (`repo/QUANT`) differs from installed `models list` name; missing quantization yields 409 `ambiguous_model_download`.
 - reasoning variants can put all output in `reasoning`; use generous `max_tokens`.

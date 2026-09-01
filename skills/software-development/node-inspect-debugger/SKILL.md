@@ -189,6 +189,11 @@ node --inspect-brk dist/entry.js
 node inspect -p <node pid>
 ```
 
+For the live dev path, `npm run dev` uses `tsx --watch`; run the underlying
+`tsx` command directly when adding `--inspect-brk`. For source-map-aware CDP
+clients, launch Node with `--enable-source-maps`; the `node inspect` CLI itself
+does not follow TypeScript source maps.
+
 Then:
 
 ```

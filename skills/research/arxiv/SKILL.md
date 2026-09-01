@@ -284,6 +284,7 @@ curl -s "https://api.semanticscholar.org/graph/v1/author/search?query=Yann+LeCun
 - API rates: arXiv ~1 request / 3 seconds; Semantic Scholar 1 request / second; no key (100/sec with Semantic Scholar API key)
 - paper snapshots can be stale; a withdrawn result may have incomplete metadata
 - `/abs/1706.03762` resolves latest; `/abs/1706.03762v1` resolves immutable version; cite the version actually read
+- The API `<id>` field returns the versioned URL (e.g., `http://arxiv.org/abs/1706.03762v7`)
 - always inspect `<summary>` for “withdrawn” or “retracted” before treating a result as valid
 
 ## Verification

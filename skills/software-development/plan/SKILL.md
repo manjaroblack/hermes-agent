@@ -63,6 +63,8 @@ Use:
 Resolve relative to active working directory/backend workspace; this keeps plans
 with local, Docker, SSH, Modal, and Daytona workspaces. Use a runtime-provided
 exact target when given; otherwise create a sensible timestamped filename.
+Write the plan with `write_file`; do not use the plan as a reason to mutate
+project files.
 
 ## Procedure
 
@@ -71,7 +73,8 @@ exact target when given; otherwise create a sensible timestamped filename.
 3. Decide architecture, file organization, dependencies, and test strategy.
 4. Write sequential bite-sized tasks to the save path.
 5. Review plan for exactness/completeness; save and report path.
-6. If execution follows, offer `subagent-driven-development` handoff.
+6. If execution follows, offer `subagent-driven-development` handoff; use a
+   fresh `delegate_task` per task when delegation is available.
 
 ## Writing the Plan Well
 

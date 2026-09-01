@@ -74,7 +74,7 @@ python scripts/pdf_meta.py doc.pdf --list-attachments | --extract-attachments di
 | Lint form layout / overlay image | pure python + PIL | `pdf_form_layout.py formspec.json [--render-overlay o.png]` |
 | Per-page text | pdfplumber | `pdf_read.py f.pdf --text` |
 | Tables → JSON/CSV | pdfplumber | `pdf_read.py f.pdf --tables` |
-| Metadata / sizes / encrypted / scanned | pypdf + pdfplumber | `pdf_read.py f.pdf --meta` |
+| Metadata / page_count / sizes / encrypted / scanned | pypdf + pdfplumber | `pdf_read.py f.pdf --meta` |
 | Merge (+ outline) | pypdf | `pdf_merge.py a.pdf b.pdf -o m.pdf` |
 | Split / extract / rotate | pypdf | `pdf_split.py f.pdf --pages 2-5 --rotate 90` |
 | List / fill / flatten form | pypdf | `pdf_read.py --fields`, `pdf_fill_form.py` |

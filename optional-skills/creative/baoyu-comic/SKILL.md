@@ -184,7 +184,11 @@ Honor requested outline/prompt review gates. Before any `image_generate`, save e
 4. Verify exact path exists and is non-empty before the next page.
 5. Retry generation once on failure.
 
-Never rely on shell CWD persistence: `curl -o relative/path.png` can silently land in the wrong directory after session/CWD drift.
+Never rely on shell CWD persistence: session expiry, `TERMINAL_LIFETIME_SECONDS`,
+a failed `cd`, or a stale batch can make `curl -o relative/path.png` silently land
+in the wrong directory. Incident: pages 06-09 of a 10-page comic landed at the
+repo root instead of `comic/<slug>/`. Use a fully qualified absolute `-o` path or
+`workdir=<abs path>`.
 
 #### 7.1 Character sheet
 

@@ -40,6 +40,8 @@ email-only users.
 ## Procedure
 
 1. Load relevant references; choose minimal service set + host/auth topology.
+   For complex Gmail queries, load
+   `skill_view("google-workspace", file_path="references/gmail-search-syntax.md")`.
 2. Run First-Time Setup only when `--check` is not fully authenticated.
 3. Prefer `gws`; otherwise use bundled wrapper and its JSON contract.
 4. Preview recipients/IDs/content/timezone + confirm consequential writes.

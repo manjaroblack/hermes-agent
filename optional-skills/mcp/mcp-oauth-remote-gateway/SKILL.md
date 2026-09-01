@@ -51,7 +51,9 @@ Do not use this for:
 `tools/mcp_oauth.py` picks free port `P`, registers
 `http://127.0.0.1:P/callback`, starts the listener inside Hermes, and waits for
 the code. A remote browser follows the redirect to its own laptop; the callback
-never arrives, the flow times out, and `/reload-mcp` may say "No MCP tools
+never arrives. After authorization, the browser returns to
+`http://127.0.0.1:P/callback?code=...`, which resolves on the user's laptop,
+not the gateway. The flow times out, and `/reload-mcp` may say "No MCP tools
 available" without detail. Recognize `[xdg-open] <defunct>`, empty/missing
 `$HERMES_HOME/mcp-tokens/`, and reload output without an "Added/Reconnected: X"
 line in `change_detail`.
@@ -208,8 +210,8 @@ address bar (it will contain ?code=...&state=...) and paste it back here.
 
 ### 8. Write exact Hermes token schema
 
-`tools/mcp_oauth.py::HermesTokenStorage` expects `$HERMES_HOME/mcp-tokens/`;
-create directory `0o700`, files `0o600`.
+`tools/mcp_oauth.py::HermesTokenStorage.get_tokens()` expects
+`$HERMES_HOME/mcp-tokens/`; create directory `0o700`, files `0o600`.
 
 `<server_name>.json` (`OAuthToken`):
 
