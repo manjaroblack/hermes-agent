@@ -14,11 +14,20 @@ metadata:
 
 # GitHub
 
-Work GitHub end to end with the `gh` CLI (REST fallback where noted): auth,
-issues, the PR lifecycle, issue-to-PR delivery, code review, and repo
-management. This skill consolidates six former skills; each workflow lives
-complete in its reference file — ALWAYS read the matching reference before
-starting that workflow, the body below only routes.
+role: GitHub CLI workflow router
+do: preflight auth; route matching reference; use `gh` first; verify remote state
+inputs: auth, issue, PR, review, repo, release, or CI task
+outputs: verified GitHub operation; reference-backed workflow; fresh remote-state evidence
+¬: answer detail without matching reference; report CI/merge/release state from memory; create duplicates; prefer raw REST when `gh` supports it
+
+Work GitHub end to end with `gh` (REST fallback where noted): auth, issues, PRs,
+issue-to-PR delivery, reviews, and repo management. Six former skills are
+consolidated; ALWAYS read the matching reference before starting. This body routes.
+
+## When to Use
+
+- GitHub auth, issues, PR lifecycle, issue-to-PR delivery, code review, or repo management
+- any claim about CI, merge, release, issue state requiring fresh `gh` evidence
 
 ## Routing
 

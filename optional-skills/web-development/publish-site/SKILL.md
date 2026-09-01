@@ -13,36 +13,45 @@ metadata:
 
 # Publish Site
 
-Take a website, dashboard, or web app the user built (or you built for them) and put it online on infrastructure the user owns — GitHub Pages by default, Cloudflare Pages or Netlify when they need more. The discipline: preview locally for sign-off, version every deploy with a git tag, deploy through a provider ladder, verify the live URL with a real HTTP check, and keep rollback one command away.
+role: versioned static-site deployment operator
+do: build; preview for sign-off; commit/tag; deploy via provider ladder; curl-verify live URL; preserve rollback
+inputs: site repo/output directory; authenticated provider CLI; deploy target/domain; rollback tag
+outputs: signed-off deployment; version tag; verified URL; rollback command/tag
+¬: deploy uncommitted files or source instead of build output; skip live HTTP verification; commit secrets; treat server-side runtime as static Pages work
 
-This skill covers static sites and SPA build output (plain HTML/CSS/JS, or the `dist/`/`build/` folder from Vite/Next-export/Astro/etc.). It does not cover server-side runtimes — for throwaway serverless deploys with zero account setup, use the `cloudflare-temporary-deploy` optional skill instead.
+Publish a user-built website, dashboard, or web app to user-owned infrastructure:
+GitHub Pages by default; Cloudflare Pages or Netlify when needed. Preview,
+version every deploy with a git tag, verify live HTTP, and keep rollback one command away.
+
+Scope: static sites and SPA build output (plain HTML/CSS/JS or Vite/
+Next-export/Astro `dist/`/`build/`). Server-side runtimes are out of scope;
+use `cloudflare-temporary-deploy` for throwaway serverless deploys with zero account setup.
 
 ## When to Use
 
-Load this skill when the user asks to:
+Load for:
 
-- **Put a site online** — "publish this", "host this somewhere", "give me a link I can share"
-- **Deploy a dashboard, report, portfolio, docs site, or prototype** you just generated
-- **Update an already-published site** with new content (redeploy = new version)
-- **Roll back** a bad deploy to the previous version
-- **Pick a host** — they don't care where, they just want a URL
+- **put a site online** — "publish this", "host this somewhere", "give me a link I can share"
+- **deploy generated output** — dashboard, report, portfolio, docs site, prototype
+- **update** a published site (redeploy = new version)
+- **roll back** a bad deploy to the previous version
+- **pick a host** when the user only needs a URL
 
 ## Prerequisites
 
-At least ONE authenticated provider CLI (check in this order):
+At least ONE authenticated provider CLI, checked in this order:
 
 - **GitHub Pages (default):** `gh auth status` succeeds. Needs `git` too.
 - **Cloudflare Pages:** `wrangler whoami` succeeds (or `CLOUDFLARE_API_TOKEN` is set). Install: `npm i -g wrangler` or use `npx wrangler@latest`.
 - **Netlify (fallback):** `netlify status` succeeds. Install: `npm i -g netlify-cli`.
 
-Plus:
-
-- A directory of static output to publish (site root or a `dist/`/`build/` folder). If the project needs a build step, run it first and publish the output directory, never the source.
-- For local preview sharing: `cloudflared` (optional — `python3 -m http.server` covers local-only preview).
+Plus: static output directory (site root or `dist/`/`build/`); build first when
+needed and publish output, never source. For shared preview, optional
+`cloudflared`; `python3 -m http.server` covers local-only preview.
 
 ## How to Run
 
-All commands below run via the `terminal` tool from the site's project directory. The pipeline is always the same five moves:
+Run commands with `terminal` from the site project directory. Five moves always apply:
 
 1. Build → 2. Preview for sign-off → 3. Commit + tag (version-before-deploy) → 4. Deploy via the provider ladder → 5. Verify the live URL with `curl` and report it.
 
@@ -64,23 +73,23 @@ All commands below run via the `terminal` tool from the site's project directory
 
 ### 1. Build and preview locally
 
-Build if needed (`npm run build`, etc.) and identify the output directory. Serve it:
+Build if needed (`npm run build`, etc.); identify output; serve it:
 
 ```bash
 python3 -m http.server 8080 --directory dist
 ```
 
-For a shareable preview link (user on another machine, or you want their sign-off before going live), open a quick tunnel in a background `terminal` session:
+For another-machine sign-off, open a quick tunnel in a background `terminal` session:
 
 ```bash
 cloudflared tunnel --url http://localhost:8080
 ```
 
-Give the user the `https://*.trycloudflare.com` URL and get sign-off before deploying. Kill the tunnel afterwards.
+Give the user the `https://*.trycloudflare.com` URL; get sign-off before deploy; kill the tunnel afterwards.
 
 ### 2. Version before deploy — no exceptions
 
-Every deploy must come from a git commit, so every deploy is reproducible and rollback is trivial.
+Every deploy must come from a git commit: reproducible and rollback-ready.
 
 ```bash
 git init 2>/dev/null; git add -A
@@ -88,11 +97,11 @@ git commit -m "deploy: <short description>"
 git tag "deploy-$(date +%Y%m%d-%H%M)"
 ```
 
-If the project already has a repo, just commit + tag. Never deploy uncommitted files.
+Existing repo → commit + tag. Never deploy uncommitted files.
 
 ### 3. Deploy — provider ladder
 
-**Rung 1 — GitHub Pages (default: free, zero extra accounts if `gh` is authed):**
+**Rung 1 — GitHub Pages** (default; free, no extra account if `gh` is authed):
 
 ```bash
 gh repo create <name> --public --source . --push   # skip if repo exists
@@ -103,32 +112,32 @@ gh api "repos/{owner}/<name>/pages" -X POST \
 
 Site appears at `https://<owner>.github.io/<name>/`. If the site is the repo root (no build dir), push `main` and set Pages source to `main` instead of using subtree. For build-step projects that will redeploy often, prefer the official `actions/deploy-pages` workflow so pushes auto-publish.
 
-**Rung 2 — Cloudflare Pages (when the user wants a custom domain, redirects/headers, or Functions):**
+**Rung 2 — Cloudflare Pages** (custom domain, redirects/headers, or Functions):
 
 ```bash
 npx wrangler@latest pages deploy dist --project-name <name>
 ```
 
-First run creates the project and prints the `https://<name>.pages.dev` URL. Custom domains attach via the Cloudflare dashboard (Pages → project → Custom domains).
+First run creates the project and prints `https://<name>.pages.dev`. Attach custom domains in the Cloudflare dashboard (Pages → project → Custom domains).
 
-**Rung 3 — Netlify (fallback, or when the user already lives there):**
+**Rung 3 — Netlify** (fallback or existing user host):
 
 ```bash
 netlify deploy --prod --dir dist
 ```
 
-`netlify deploy --dir dist` (no `--prod`) gives a draft URL — useful as a second preview stage.
+`netlify deploy --dir dist` (without `--prod`) gives a draft URL for a second preview.
 
 ### 4. Rollback
 
-Rollback = redeploy a previous tag. Never hand-edit live output.
+Rollback = redeploy a previous tag; never hand-edit live output.
 
 ```bash
 git checkout deploy-<previous> -- .   # or: git checkout deploy-<previous>; rebuild
 # then rerun the same deploy command from step 3
 ```
 
-Cloudflare Pages and Netlify also keep per-deploy history in their dashboards ("Rollback to this deploy"), which is faster when the CLI isn't handy.
+Cloudflare Pages and Netlify retain deploy history with "Rollback to this deploy" when the CLI is unavailable.
 
 ### 5. Secrets and environment variables
 

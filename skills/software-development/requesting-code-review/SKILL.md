@@ -13,22 +13,28 @@ metadata:
 
 # Pre-Commit Code Verification
 
-Automated verification pipeline before code lands. Static scans, baseline-aware
-quality gates, an independent reviewer subagent, and an auto-fix loop.
+role: pre-commit verification orchestrator
+do: inspect diff; scan added lines; compare baseline tests/lint; dispatch independent reviewer; fix reported issues only; reverify; commit
+inputs: staged/unstaged diff; project test/lint/typecheck commands; baseline failures
+outputs: security/logic verdict; regression and lint ledger; verified commit or actionable failure
+¬: verify own work alone; skip baseline comparison; commit before independent pass; auto-fix unrelated issues; exceed two fix/reverify cycles
 
-**Core principle:** No agent should verify its own work. Fresh context finds what you miss.
+Automated pre-commit pipeline: static scans, baseline-aware gates, independent
+reviewer, and bounded auto-fix loop.
+
+**Core principle:** no agent verifies its own work; fresh context finds omissions.
 
 ## When to Use
 
-- After implementing a feature or bug fix, before `git commit` or `git push`
-- When user says "commit", "push", "ship", "done", "verify", or "review before merge"
-- After completing a task with 2+ file edits in a git repo
-- After each task in subagent-driven-development (the two-stage review)
+- after a feature/bug fix, before `git commit` or `git push`
+- user says "commit", "push", "ship", "done", "verify", or "review before merge"
+- task has 2+ file edits in a git repo
+- after each `subagent-driven-development` task (two-stage review)
 
-**Skip for:** documentation-only changes, pure config tweaks, or when user says "skip verification".
+**Skip:** documentation-only changes, pure config tweaks, or explicit "skip verification".
 
-**This skill vs github:** This skill verifies YOUR changes before committing.
-`github` reviews OTHER people's PRs on GitHub with inline comments.
+**vs `github`:** this skill verifies YOUR changes before commit; `github` reviews
+OTHER people's GitHub PRs with inline comments.
 
 ## Step 1 — Get the diff
 
@@ -41,7 +47,7 @@ If empty, try `git diff` then `git diff HEAD~1 HEAD`.
 If `git diff --cached` is empty but `git diff` shows changes, tell the user to
 `git add <files>` first. If still empty, run `git status` — nothing to verify.
 
-If the diff exceeds 15,000 characters, split by file:
+Diff >15,000 characters → split by file:
 ```bash
 git diff --name-only
 git diff HEAD -- specific_file.py
@@ -49,7 +55,7 @@ git diff HEAD -- specific_file.py
 
 ## Step 2 — Static security scan
 
-Scan added lines only. Any match is a security concern fed into Step 5.
+Scan added lines only. Feed every match as a security concern into Step 5.
 
 ```bash
 # Hardcoded secrets
@@ -70,9 +76,8 @@ git diff --cached | grep "^+" | grep -E "execute\(f\"|\.format\(.*SELECT|\.forma
 
 ## Step 3 — Baseline tests and linting
 
-Detect the project language and run the appropriate tools. Capture the failure
-count BEFORE your changes as **baseline_failures** (stash changes, run, pop).
-Only NEW failures introduced by your changes block the commit.
+Detect project language; capture **baseline_failures** BEFORE changes (stash, run,
+pop). Only NEW failures introduced by changes block commit.
 
 **Test frameworks** (auto-detect by project files):
 ```bash
@@ -106,12 +111,12 @@ cargo clippy -- -D warnings 2>&1 | tail -10
 which go && go vet ./... 2>&1 | tail -10
 ```
 
-**Baseline comparison:** If baseline was clean and your changes introduce failures,
-that's a regression. If baseline already had failures, only count NEW ones.
+**Baseline comparison:** clean baseline + new failure = regression; dirty baseline
+counts only NEW failures.
 
 ## Step 4 — Self-review checklist
 
-Quick scan before dispatching the reviewer:
+Quick scan before dispatch:
 
 - [ ] No hardcoded secrets, API keys, or credentials
 - [ ] Input validation on user-provided data
@@ -124,10 +129,10 @@ Quick scan before dispatching the reviewer:
 
 ## Step 5 — Independent reviewer subagent
 
-Call `delegate_task` directly — it is NOT available inside execute_code or scripts.
+Call `delegate_task` directly; it is NOT available inside `execute_code` or scripts.
 
-The reviewer gets ONLY the diff and static scan results. No shared context with
-the implementer. Fail-closed: unparseable response = fail.
+Reviewer gets ONLY diff + static scan results; no implementer context. Fail-closed:
+unparseable response = fail.
 
 ```python
 delegate_task(
@@ -175,11 +180,11 @@ Return ONLY this JSON:
 
 ## Step 6 — Evaluate results
 
-Combine results from Steps 2, 3, and 5.
+Combine Steps 2, 3, and 5.
 
-**All passed:** Proceed to Step 8 (commit).
+**All passed:** Step 8 (commit).
 
-**Any failures:** Report what failed, then proceed to Step 7 (auto-fix).
+**Any failure:** report it, then Step 7 (auto-fix).
 
 ```
 VERIFICATION FAILED
@@ -193,10 +198,9 @@ Suggestions (non-blocking): [list]
 
 ## Step 7 — Auto-fix loop
 
-**Maximum 2 fix-and-reverify cycles.**
+**Maximum: 2 fix/reverify cycles.**
 
-Spawn a THIRD agent context — not you (the implementer), not the reviewer.
-It fixes ONLY the reported issues:
+Spawn a THIRD context — neither implementer nor reviewer. Fix ONLY reported issues:
 
 ```python
 delegate_task(
@@ -219,21 +223,20 @@ Fix each issue precisely. Describe what you changed and why.""",
 )
 ```
 
-After the fix agent completes, re-run Steps 1-6 (full verification cycle).
-- Passed: proceed to Step 8
-- Failed and attempts < 2: repeat Step 7
-- Failed after 2 attempts: escalate to user with the remaining issues and
-  suggest `git stash` or `git reset` to undo
+After the fix agent completes, rerun Steps 1-6 (full cycle).
+- passed → Step 8
+- failed with attempts < 2 → repeat Step 7
+- failed after 2 attempts → escalate remaining issues; suggest `git stash` or `git reset` to undo
 
 ## Step 8 — Commit
 
-If verification passed:
+If verification passes:
 
 ```bash
 git add -A && git commit -m "[verified] <description>"
 ```
 
-The `[verified]` prefix indicates an independent reviewer approved this change.
+`[verified]` means an independent reviewer approved the change.
 
 ## Reference: Common Patterns to Flag
 
@@ -260,21 +263,20 @@ element.textContent = userInput;
 
 ## Integration with Other Skills
 
-**subagent-driven-development:** Run this after EACH task as the quality gate.
-The two-stage review (spec compliance + code quality) uses this pipeline.
+**subagent-driven-development:** run after EACH task as quality gate; its
+two-stage review (spec compliance + code quality) uses this pipeline.
 
-**test-driven-development:** This pipeline verifies TDD discipline was followed —
-tests exist, tests pass, no regressions.
+**test-driven-development:** verifies TDD discipline: tests exist, pass, no regressions.
 
-**plan:** Validates implementation matches the plan requirements.
+**plan:** validates implementation against plan requirements.
 
 ## Pitfalls
 
-- **Empty diff** — check `git status`, tell user nothing to verify
+- **Empty diff** — check `git status`; nothing to verify
 - **Not a git repo** — skip and tell user
-- **Large diff (>15k chars)** — split by file, review each separately
-- **delegate_task returns non-JSON** — retry once with stricter prompt, then treat as FAIL
-- **False positives** — if reviewer flags something intentional, note it in fix prompt
-- **No test framework found** — skip regression check, reviewer verdict still runs
-- **Lint tools not installed** — skip that check silently, don't fail
-- **Auto-fix introduces new issues** — counts as a new failure, cycle continues
+- **Large diff (>15k chars)** — split/review by file
+- **`delegate_task` non-JSON** — retry once with stricter prompt; then FAIL
+- **False positive** — record intentionality in fix prompt
+- **No test framework** — skip regression check; reviewer still runs
+- **Lint tool absent** — skip silently
+- **Auto-fix adds issues** — new failure; cycle continues

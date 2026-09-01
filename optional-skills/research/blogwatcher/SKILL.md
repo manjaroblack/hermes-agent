@@ -15,20 +15,42 @@ prerequisites:
 
 # Blogwatcher
 
-Track blog and RSS/Atom feed updates with the `blogwatcher-cli` tool. Supports automatic feed discovery, HTML scraping fallback, OPML import, and read/unread article management.
+role: blog/RSS feed monitor and article triage operator
+do: install/configure `blogwatcher-cli`; add/scan/filter feeds; manage read state; automate changed-output digests
+inputs: blog/feed URLs; OPML; categories; database path; cron delivery target
+outputs: tracked feeds; unread/all article lists; changed-output digest; article URL for `web_extract`
+¬: use bare schedule for recurring watch; re-scrape articles by hand; use this for one-off page-change monitoring; expose database secrets
+
+Track blog and RSS/Atom updates with `blogwatcher-cli`: automatic feed discovery,
+HTML scraping fallback, OPML import, and read/unread management.
+
+## When to Use
+
+- recurring blog/RSS/Atom monitoring with `blogwatcher-cli`
+- feed discovery, OPML import, article filtering, or read-state management
+- article reading after retrieval from `blogwatcher-cli articles`
+- one-off page changes → use cronjob `monitor` with an http(s) URL instead
+- analysis/citations → prefer `competitor-news-monitor`
 
 ## Working with Hermes tools (read this first)
 
-`blogwatcher-cli` is the feed database; Hermes tools do the automation around it:
+`blogwatcher-cli` owns the feed database; Hermes tools automate it:
 
-- **Recurring watch — use the cronjob tool's `monitor` field, not a bare schedule.** `monitor` runs a script each tick and only wakes the agent when output changes: set it to a script that runs `blogwatcher-cli scan >/dev/null 2>&1 && blogwatcher-cli articles` (deterministic output; new articles = changed output = agent wakes with the diff injected). Unchanged ticks cost zero LLM calls. Set `deliver` to route digests to a chat/channel; add `continuity: true` so consecutive digests can dedupe.
-- **Reading an article the user asks about**: `web_extract([url])` on the article URL from `blogwatcher-cli articles` — do not re-scrape by hand.
-- **One-off "watch this page for changes" without feed semantics**: skip this skill; the cronjob tool's `monitor` field accepts an http(s) URL directly.
-- **Company/competitor tracking with analysis and citations**: prefer the `competitor-news-monitor` skill; blogwatcher is the lighter raw-feed layer it can sit on.
+- recurring watch → cronjob `monitor`, not bare schedule; run
+  `blogwatcher-cli scan >/dev/null 2>&1 && blogwatcher-cli articles` each tick;
+  deterministic changed output wakes the agent with the diff, unchanged ticks
+  cost zero LLM calls; set `deliver` for chat/channel digests and
+  `continuity: true` for deduplication
+- requested article → `web_extract([url])` on the URL from
+  `blogwatcher-cli articles`; do not re-scrape
+- one-off page change without feed semantics → cronjob `monitor` accepts an
+  http(s) URL directly; skip this skill
+- company/competitor analysis + citations → prefer `competitor-news-monitor`;
+  blogwatcher is the lighter raw-feed layer
 
 ## Installation
 
-Pick one method:
+Choose one method:
 
 - **Go:** `go install github.com/JulienTant/blogwatcher-cli/cmd/blogwatcher-cli@latest`
 - **Docker:** `docker run --rm -v blogwatcher-cli:/data ghcr.io/julientant/blogwatcher-cli`
@@ -41,7 +63,8 @@ All releases: https://github.com/JulienTant/blogwatcher-cli/releases
 
 ### Docker with persistent storage
 
-By default the database lives at `~/.blogwatcher-cli/blogwatcher-cli.db`. In Docker this is lost on container restart. Use `BLOGWATCHER_DB` or a volume mount to persist it:
+Default database: `~/.blogwatcher-cli/blogwatcher-cli.db`; Docker loses it on
+restart. Persist with `BLOGWATCHER_DB` or a volume mount:
 
 ```bash
 # Named volume (simplest)
@@ -59,7 +82,7 @@ If upgrading from `Hyaxia/blogwatcher`, move your database:
 mv ~/.blogwatcher/blogwatcher.db ~/.blogwatcher-cli/blogwatcher-cli.db
 ```
 
-The binary name changed from `blogwatcher` to `blogwatcher-cli`.
+Binary name: `blogwatcher-cli` (formerly `blogwatcher`).
 
 ## Common Commands
 
@@ -87,7 +110,7 @@ The binary name changed from `blogwatcher` to `blogwatcher-cli`.
 
 ## Environment Variables
 
-All flags can be set via environment variables with the `BLOGWATCHER_` prefix:
+All flags accept the `BLOGWATCHER_` environment prefix:
 
 | Variable | Description |
 |---|---|
@@ -138,9 +161,9 @@ Unread articles (2):
 
 ## Notes
 
-- Auto-discovers RSS/Atom feeds from blog homepages when no `--feed-url` is provided.
-- Falls back to HTML scraping if RSS fails and `--scrape-selector` is configured.
-- Categories from RSS/Atom feeds are stored and can be used to filter articles.
-- Import blogs in bulk from OPML files exported by Feedly, Inoreader, NewsBlur, etc.
-- Database stored at `~/.blogwatcher-cli/blogwatcher-cli.db` by default (override with `--db` or `BLOGWATCHER_DB`).
-- Use `blogwatcher-cli <command> --help` to discover all flags and options.
+- auto-discovers RSS/Atom feeds from homepages without `--feed-url`
+- falls back to HTML scraping when RSS fails and `--scrape-selector` is set
+- stores RSS/Atom categories for filtering
+- imports OPML from Feedly, Inoreader, NewsBlur, etc.
+- stores database at `~/.blogwatcher-cli/blogwatcher-cli.db` by default; override with `--db` or `BLOGWATCHER_DB`
+- use `blogwatcher-cli <command> --help` for all flags/options

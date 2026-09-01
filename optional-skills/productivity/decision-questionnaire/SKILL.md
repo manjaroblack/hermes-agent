@@ -13,10 +13,14 @@ metadata:
 
 # Decision Questionnaire
 
-Turns something the user can't answer alone into a **questionnaire**: a
-Markdown document they hand to one person to fill in async, or fill out
-together in a meeting. The recipient holds knowledge the user lacks; the
-questionnaire pulls it out of them.
+role: decision-gap interviewer + questionnaire author
+do: inspect discoverable facts; ask only recipient/outcome questions; draft prioritized questionnaire; write/verify file
+inputs: decision topic; recipient role/expertise; needed decisions/facts
+outputs: `decision-questionnaire-<slug>.md`; answer stubs; covered outcomes
+¬: ask subject-matter questions the user cannot answer; use when answer is discoverable; write compound questions; invent recipient facts
+
+Turns an unanswerable decision into a Markdown questionnaire for async response
+or a meeting. Recipient knowledge fills the user's information gap.
 
 Ported from mattpocock/skills' MIT-licensed `to-questionnaire` skill.
 
@@ -28,35 +32,29 @@ Ported from mattpocock/skills' MIT-licensed `to-questionnaire` skill.
   pending someone else's input
 - Preparing for a meeting where specific answers must come back
 
-Do NOT use when the answer is discoverable from the environment (codebase,
-docs, web) — find it yourself first.
+Do NOT use when the answer is discoverable in the environment (codebase, docs,
+web); find it first.
 
 ## Core Principle: Interview the Send, Not the Subject
 
-The user cannot answer the subject-matter questions (that's the point), but
-they can ALWAYS answer questions about the send. Interview them only about
-that, in two short exchanges:
+The user cannot answer subject-matter questions; they can ALWAYS answer about
+the send. Ask only two short exchanges:
 
-1. **Who is it going to?** Role, expertise, relationship to the user. This
-   fixes the questionnaire's tone and how much context it must carry. Done
-   when you know who the recipient is and what they know that the user
-   doesn't.
-2. **What do you need back?** The specific decisions or facts the user
-   can't resolve alone. Done when you have a concrete list of what the user
-   must walk away able to do or decide.
+1. **Who is it going to?** Role, expertise, relationship. This fixes tone and
+   required context; done when recipient knowledge absent from the user is known.
+2. **What do you need back?** Decisions/facts the user cannot resolve alone;
+   done when the user's required outcomes are concrete.
 
-Then **write the questionnaire**: draft questions aimed at the gap between
-what the recipient knows and what the user needs, following the structure
-below. Write it to `decision-questionnaire-<slug>.md` in the current
-directory (slug from the topic) and report the absolute path. Done when the
-file exists and every item from step 2 is covered by a question.
+Then **write the questionnaire**: target the recipient/user knowledge gap and
+follow the structure below. Write `decision-questionnaire-<slug>.md` in the
+current directory (slug from topic), report its absolute path, and ensure every
+step-2 item has a question.
 
 ## Document Structure
 
-Frame it as a **discovery questionnaire**: the user lacks context, the
-recipient holds it. Order questions most-important-first (async means you
-may only get one pass). Group under `##` headings by theme once there are
-more than a handful.
+Frame a **discovery questionnaire**: user lacks context; recipient holds it.
+Order most-important-first (async may allow one pass). Group more than a handful
+under `##` theme headings.
 
 Template:
 
@@ -92,19 +90,16 @@ invite a throwaway answer>._
 A closing catch-all: anything we didn't ask that we should know?
 ```
 
-Every question gets an answer stub (`>`) directly beneath it.
+Put an answer stub (`>`) directly beneath every question.
 
 ## Pitfalls
 
-1. **Grilling the user about the subject.** They can't answer it — that's
-   why the document exists. Only interview the send.
-2. **Compound questions.** One idea per question; split "and/or" questions.
-3. **Burying the critical question.** Most-important-first; async
-   recipients fade.
-4. **Context dump.** One orienting paragraph, not the whole history.
-5. **Skipping the "why this matters" line on ambiguous questions.** It's
-   what turns a throwaway answer into a useful one — but don't add it to
-   questions that are already unambiguous.
+1. **Grilling the user about the subject.** User cannot answer; interview the send.
+2. **Compound questions.** One idea each; split "and/or" questions.
+3. **Burying the critical question.** Most-important-first; async recipients fade.
+4. **Context dump.** One orienting paragraph, not the full history.
+5. **Missing "why this matters" on ambiguity.** Add it to prevent throwaway
+   answers; omit it when the question is unambiguous.
 
 ## Verification
 

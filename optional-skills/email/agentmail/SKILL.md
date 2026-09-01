@@ -21,12 +21,17 @@ required_environment_variables:
 
 # AgentMail Skill
 
-AgentMail gives an agent its own email inbox for sending mail, receiving
-replies, completing email OTP flows, and running inbound email loops. Use it for
-agent-owned inboxes, not a user's existing IMAP/SMTP mailbox.
+role: AgentMail CLI inbox operator
+do: install/authenticate CLI; create/use agent-owned inboxes; send/read/reply; handle OTP, labels, attachments, inbound events
+inputs: API key or signup path; inbox/message/thread/label/attachment request; event delivery mode
+outputs: JSON IDs; sent/received/replied messages; labels/attachments; webhook/WebSocket loop
+¬: use a user's IMAP/SMTP mailbox; expose `AGENTMAIL_API_KEY`; use MCP when CLI suffices; retry creates without stable `client_id`
 
-Use the `agentmail` CLI first. Use MCP only when the harness expects MCP tools;
-use REST only when the CLI is missing a required operation.
+AgentMail gives an agent its own inbox for sending, receiving replies, email OTP,
+and inbound loops. Use agent-owned inboxes, not a user's IMAP/SMTP mailbox.
+
+Use `agentmail` CLI first; use MCP only when the harness expects MCP tools; use
+REST only for a CLI-missing operation.
 
 ## When to Use
 
@@ -36,24 +41,24 @@ use REST only when the CLI is missing a required operation.
 
 ## Prerequisites
 
-- Run commands through the `terminal` tool.
-- Install the CLI:
+- run commands through `terminal`
+- install CLI:
 
 ```bash
 npm install -g agentmail-cli@latest
 ```
 
-- Export an API key:
+- export API key:
 
 ```bash
 export AGENTMAIL_API_KEY="am_..."
 ```
 
-No API key yet? Use [signup.md](references/signup.md).
+No API key → [signup.md](references/signup.md).
 
 ## How to Run
 
-Use `--format json` whenever another command or script needs IDs.
+Use `--format json` whenever another command/script needs IDs.
 
 ```bash
 agentmail inboxes list --format json
@@ -73,12 +78,12 @@ agentmail inboxes list --format json
 
 ## Procedure
 
-1. Install `agentmail-cli@latest` and verify `agentmail inboxes list --format json`.
-2. If no API key is available, complete [signup.md](references/signup.md).
+1. Install `agentmail-cli@latest`; verify `agentmail inboxes list --format json`.
+2. Without an API key, complete [signup.md](references/signup.md).
 3. Use [core.md](references/core.md) for inbox, send, read, reply, forward,
    label, thread, and attachment flows.
 4. Add [webhooks.md](references/webhooks.md) or
-   [websockets.md](references/websockets.md) only when polling is not enough.
+   [websockets.md](references/websockets.md) only when polling is insufficient.
 
 ## Pitfalls
 

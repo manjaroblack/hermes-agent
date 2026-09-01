@@ -16,32 +16,47 @@ metadata:
 
 # Simple English: Write Like an Aerospace Manual
 
-Write technical text with the rules of ASD-STE100 Simplified Technical English. STE is the controlled language that aerospace and defense manufacturers use for maintenance documentation. The rules exist so that a tired reader who is not a native English speaker cannot misread an instruction. They remove the usual signs of AI-generated text as a side effect: long sentences, synonym rotation, hedges, filler, and decorative clauses.
+role: ASD-STE100 technical-writing editor
+do: classify passages; select pragmatic|strict mode; apply rule catalog; preserve untouchables; self-check before delivery
+inputs: technical text; rewrite|check request; source file or inline text; mode
+outputs: compliant rewrite or numbered violations; preserved code/identifiers/errors; audit notes
+¬: edit code, identifiers, commands, quoted errors; apply both `humanizer` and this skill to one text; invent rule numbers; skip self-check
 
-Write for that tired reader. Each sentence must survive one read.
+Write for a tired non-native reader. Each sentence must survive one read.
+The rules also remove AI-text signals: long sentences, synonym rotation, hedges,
+filler, and decorative clauses.
+
+## When to Use
+
+- technical docs, runbooks, error messages, maintenance instructions
+- STE/ASD-STE100 rewrite or compliance check
+- check mode: report rule number + offending text + compliant rewrite
+- use `humanizer` for blogs, essays, personal writing, or natural voice; do not apply both skills to one text
 
 ## How to use it in Hermes
 
 The text usually arrives one of three ways:
 
-1. **Inline.** The user pastes the text into the message. Rewrite it in place and reply with the result.
-2. **File.** The user points at a file (README, runbook, docs page). Use `read_file` to load it, then `patch` for targeted section rewrites or `write_file` for a full rewrite. Never touch code blocks, identifiers, or quoted errors (see Untouchables).
-3. **Check mode.** The user asks you to audit text for STE compliance instead of rewriting it. Report each violation as rule number + offending text + compliant rewrite, using `references/checklist.md`.
+1. **Inline.** Rewrite pasted text in place and reply with the result.
+2. **File.** For a README, runbook, or docs page, load with `read_file`; use
+   `patch` for targeted sections or `write_file` for a full rewrite. Keep code
+   blocks, identifiers, and quoted errors unchanged (see Untouchables).
+3. **Check mode.** Audit instead of rewriting; report each violation as rule number + offending text + compliant rewrite, using `references/checklist.md`.
 
-This skill differs from `humanizer`: humanizer restores natural human voice; simple-english enforces a controlled language for technical instructions. For docs, runbooks, and error messages use this skill. For blog posts, essays, and personal writing use humanizer. Do not apply both to the same text.
+`humanizer` restores natural voice; this skill enforces controlled technical language. Use this skill for docs, runbooks, and errors; `humanizer` for blog posts, essays, and personal writing.
 
 ## Your Task
 
-When asked to write or rewrite technical text:
+For technical writing/rewriting: select pragmatic|strict; classify every passage
+as procedural|descriptive; choose vocabulary before drafting; apply the catalog;
+self-check; keep code, identifiers, commands, and quoted errors untouched.
+Strict mode uses `make sure that` for check/verify/confirm/ensure; pragmatic mode
+chooses one and stays consistent. Config/settings/options are valid technical
+nouns; choose ONE and keep it throughout.
 
-1. **Select the mode** (pragmatic or strict, below).
-2. **Classify each passage** as procedural or descriptive. Every other rule depends on this.
-3. **Correct your vocabulary before drafting.** In strict mode, use `make sure that` for the check/verify/confirm/ensure concept — the dictionary rejects all four as verbs. In pragmatic mode, pick one and keep it. Pick ONE noun for config/settings (all are valid technical nouns — pick one and keep it). Use no other word for these concepts in the whole document.
-4. **Apply the rules** from the catalog below.
-5. **Do the self-check** before you deliver. This step is not optional.
-6. **Never touch code**, identifiers, commands, or quoted errors (see Untouchables).
-
-When asked to CHECK text instead of writing it, report each violation as: rule number, the offending text, a compliant rewrite. Cite only rule numbers that exist in this file. Do not cite rule numbers from memory: the numbering is unintuitive and models invent it (tested — an agent without this file cited "Rule 3.1: short sentences"; the real Rule 3.1 is about verb forms).
+CHECK mode reports rule number + offending text + compliant rewrite. Cite only
+rules in this file, not remembered numbering: numbering is unintuitive and
+models invent it (tested); real Rule 3.1 covers verb forms, not short sentences.
 
 ## Two Modes
 
@@ -59,7 +74,8 @@ When asked to CHECK text instead of writing it, report each violation as: rule n
 | Sentence limit | **20 words** (Rule 5.1) | **25 words** (Rule 6.3) |
 | Unit rule | One instruction per sentence (5.2) | One topic per paragraph (6.5), max six sentences per paragraph (6.6) |
 
-Do not mix the two in one passage. A "Getting started" section is procedural. An "Architecture" section is descriptive. A note inside a procedure is descriptive (25-word limit, no imperative).
+Do not mix modes in one passage: "Getting started" = procedural; "Architecture"
+= descriptive; a note inside a procedure = descriptive (25 words, no imperative).
 
 ## THE RULE CATALOG
 
@@ -84,7 +100,8 @@ Do not mix the two in one passage. A "Getting started" section is procedural. An
 | 1.13 | Do not use technical verbs as nouns. |
 | 1.14 | Use American English spelling. |
 
-In pragmatic mode, rules 1.5, 1.8, and 1.12 do the heavy lifting: your domain vocabulary is legal. The ones agents break are 1.7, 1.11, and 1.13.
+Pragmatic mode relies on 1.5, 1.8, 1.12 for legal domain vocabulary. Agents most
+often break 1.7, 1.11, 1.13.
 
 **Before:** You can webhook the event, then do a deploy.
 **After:** Send the event to the webhook. Then deploy the service.
@@ -114,7 +131,9 @@ Break long noun chains with prepositions (of, on, in, for):
 | 3.7 | Describe an action with a verb, not a noun ("compress the file", not "perform compression of the file"). |
 
 **Approved modals: can, will, must. Banned: should, would, may, might, could (Rule 3.2).**
-The standard rejects "could" even for possibility: write "an explosion can occur", never "could occur". For "should": a requirement becomes "must"; a suggestion is stated as fact or deleted. This matters double for agent instructions — models read "should" as optional.
+"Could" is rejected even for possibility: write "an explosion can occur".
+Requirement "should" → "must"; recommendation → state as fact or delete.
+Agent instructions need this because models read "should" as optional.
 
 **Before:** The migration has completed and the table is being rebuilt.
 **After:** The migration is complete. The database rebuilds the table.
@@ -135,7 +154,7 @@ The standard rejects "could" even for possibility: write "an explosion can occur
 | 4.4 | Use connecting words between sentences on related topics ("Then", "As a result"). |
 | 4.5 | Put an article (the, a, an) or a demonstrative adjective (this, these) before nouns where applicable. |
 
-Rule 4.2 is the anti-terseness rule. STE is short sentences with complete grammar, not telegraph style:
+Rule 4.2 prevents telegraph style: STE uses short sentences with complete grammar.
 
 **Wrong shortening:** Ensure file exists before running.
 **STE:** Make sure that the file exists before you run the command.
@@ -174,7 +193,8 @@ No imperative in descriptive text. Descriptions explain; procedures instruct.
 | 7.2 | Start with a clear command or condition. |
 | 7.3 | Then give the risk or the possible result. |
 
-Never bury the instruction after the explanation. The pattern transfers directly to destructive CLI flags, irreversible migrations, and dangerous API options.
+Never bury the instruction after the explanation. Apply the pattern to destructive
+CLI flags, irreversible migrations, and dangerous API options.
 
 **Before:** Note that data loss may occur in some circumstances if the destructive flag happens to be enabled when running against production.
 **After:** CAUTION: Do not use the `--force` flag against production. The flag deletes rows that do not match the source.
@@ -191,7 +211,8 @@ Never bury the instruction after the explanation. The pattern transfers directly
 | 8.6 | Count as one word each: numbers, numbers with units, abbreviations, alphanumeric identifiers, quoted text, titles, labels, proper nouns. |
 | 8.7 | A hyphenated word counts as one word. |
 
-Rule 8.6 matters for software text: `sqlpipe run --config sqlpipe.yaml` in backticks is quoted text and counts as one word. Long identifiers do not blow your sentence budget.
+Rule 8.6 matters for software: `sqlpipe run --config sqlpipe.yaml` is quoted
+text and counts as one word; long identifiers do not consume the sentence budget.
 
 ### Section 9 — Writing practices (Rules 9.1-9.4, GR-1 to GR-8)
 
@@ -202,13 +223,18 @@ Rule 8.6 matters for software text: `sqlpipe run --config sqlpipe.yaml` in backt
 | 9.3 | Do not build phrasal verbs ("go down" → "decrease", "set up" → "install" or "configure"). |
 | 9.4 | Keep one consistent style and terminology through the whole document. |
 
-General recommendations GR-1 to GR-8: keep the conjunction "that", be careful with "with", give pronouns clear referents, prefer "this + noun" over bare "this", avoid false friends, avoid Latin abbreviations, use inclusive language, and use the possessive apostrophe form only when you are sure it is correct (GR-8: if unsure, do not use it — non-native readers find it hard).
+General recommendations GR-1 to GR-8: keep "that"; use "with" carefully; give
+pronouns clear referents; prefer "this + noun"; avoid false friends and Latin
+abbreviations; use inclusive language; use possessive apostrophes only when sure
+(GR-8: otherwise omit; non-native readers find them hard).
 
 GR-6 for software docs: "e.g." → "for example", "i.e." → "that is", and delete "etc." — name the items or write "and more".
 
 ## VOCABULARY DISCIPLINE
 
-The official dictionary (~900 approved words, ~1,200 banned words with alternatives) is copyrighted by ASD and is not reproduced here. Its mechanics apply without it: **one word, one meaning, one part of speech.**
+The official dictionary (~900 approved words, ~1,200 banned words with alternatives)
+is copyrighted by ASD and omitted here. Its mechanics still apply: **one word,
+one meaning, one part of speech.**
 
 Known part-of-speech rulings, useful as patterns:
 
@@ -233,7 +259,8 @@ Known part-of-speech rulings, useful as patterns:
 
 ### Slop-to-simple substitutions
 
-This table is ours, not the ASD dictionary. It maps the words AI-generated docs overuse to plain replacements. If the word carries no fact, delete it instead of replacing it.
+This table is ours, not ASD's dictionary: AI-doc slop → plain replacements. If a
+word carries no fact, delete it rather than replace it.
 
 | Slop | Write instead |
 |---|---|
@@ -266,7 +293,7 @@ This table is ours, not the ASD dictionary. It maps the words AI-generated docs 
 
 ### Consistency pass
 
-Collapse synonym rotations to one term each (Rules 1.11, 9.4). The two lists below work differently.
+Collapse synonym rotations to one term (Rules 1.11, 9.4). The lists below differ.
 
 **Technical nouns — not in the dictionary. Pick one and keep it consistent (both modes):**
 
@@ -290,7 +317,8 @@ Collapse synonym rotations to one term each (Rules 1.11, 9.4). The two lists bel
 
 ## Untouchables
 
-These are technical names (Rules 1.5, 8.6). Leave them exact, even when they break vocabulary rules:
+These are technical names (Rules 1.5, 8.6). Leave them exact even when they break
+vocabulary rules:
 
 - Code blocks, inline code, identifiers, CLI commands, flags, file paths
 - Quoted error messages and log lines
@@ -299,7 +327,7 @@ These are technical names (Rules 1.5, 8.6). Leave them exact, even when they bre
 
 ## Beyond Documentation
 
-Same rules, different targets. Full adaptations in `references/use-cases.md`:
+Same rules, different targets; full adaptations: `references/use-cases.md`:
 
 - **Error messages**: state what happened (simple past), the cause if known, then the fix as an imperative. No "Oops", no "Please ensure", no apology filler.
 - **Runbooks**: STE's home turf. Imperative steps, conditions first, warnings before the step.
@@ -310,14 +338,14 @@ Same rules, different targets. Full adaptations in `references/use-cases.md`:
 
 ## Self-Check Before You Deliver
 
-This step is not optional. Run these four checks on your draft:
+Self-check is mandatory. Run four checks:
 
 1. Count words in your three longest sentences. Over the 20/25 limit → split them.
 2. Search your draft for: `'ll`, `'re`, `'s` (contraction), `has been`, `have been`, `should`, `-ing` verbs after a comma, semicolons.
 3. Search for every `if` and `when`. Each one stands at the START of its sentence, before the command. "Increase the timeout if the network is slow" → "If the network is slow, increase the timeout."
 4. Search for the verbs you did NOT pick in Your Task step 3 (the check/verify/confirm set). Replace every hit with your chosen verb.
 
-Fix what you find, then deliver. For a full audit, run `references/checklist.md`.
+Fix findings, then deliver. Full audit → `references/checklist.md`.
 
 ## Full Example
 
@@ -339,7 +367,9 @@ What changed: 40-word sentences split under 20; "you're" expanded; "check/confir
 
 STE is for technical facts and instructions. Do not apply it to marketing copy, blog voice, or brand writing — it deletes persuasion by design. When a user asks for STE on marketing text, say so and offer it for the docs instead.
 
-This skill is an unofficial aid. It is not affiliated with or endorsed by ASD or STEMG, and no tool can guarantee STE compliance. ASD-STE100 is a registered trademark of ASD. The official standard is a free download at asd-ste100.org.
+Unofficial aid; not affiliated with or endorsed by ASD or STEMG. No tool can
+guarantee STE compliance. ASD-STE100 is ASD's registered trademark; the official
+standard is a free download at asd-ste100.org.
 
 ## References
 
