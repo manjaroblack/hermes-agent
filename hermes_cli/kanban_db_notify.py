@@ -227,8 +227,7 @@ def count_notify_subs(
     query = "SELECT COUNT(*) FROM kanban_notify_subs"
     if clauses:
         query += " WHERE " + " AND ".join(clauses)
-    conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
-    try:
+    with _kb._read_only_connection(path) as conn:
         try:
             row = conn.execute(query, params).fetchone()
         except sqlite3.OperationalError as exc:
@@ -236,8 +235,6 @@ def count_notify_subs(
                 return 0
             raise
         return int(row[0]) if row else 0
-    finally:
-        conn.close()
 
 
 def remove_notify_sub(

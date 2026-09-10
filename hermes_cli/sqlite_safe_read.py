@@ -14,7 +14,7 @@ import os
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Optional
+from typing import Optional, cast
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 _live_lock = threading.RLock()
 # canonical path -> number of live connections opened by this process
 _live_connections: dict[str, int] = {}
+# canonical path -> connection id -> caller-confirmed journal mode. A mode
+# hint lets source-tree-safe readers avoid raw header access while a tracked
+# connection is already live.
+_live_journal_modes: dict[str, dict[int, Optional[str]]] = {}
 
 
 class UntrackableConnectionError(RuntimeError):
@@ -68,12 +72,51 @@ def _track_key(key: str, delta: int = 1) -> None:
         _live_connections[key] = remaining
     else:
         _live_connections.pop(key, None)
+        _live_journal_modes.pop(key, None)
 
 
 def untrack_connection(path: Path | str) -> None:
     """Record that one connection to *path* has been closed."""
     with _live_lock:
         _track_key(_key(path), -1)
+
+
+def set_live_connection_journal_mode(
+    conn: sqlite3.Connection,
+    mode: Optional[str],
+) -> None:
+    """Record a tracked connection's caller-confirmed journal mode."""
+    path = getattr(conn, "_hermes_tracked_path", None)
+    if path is None:
+        return
+    normalized = str(mode).strip().lower() if mode is not None else None
+    with _live_lock:
+        modes = _live_journal_modes.get(path)
+        if modes is not None and id(conn) in modes:
+            modes[id(conn)] = normalized
+
+
+def live_connection_journal_mode(path: Path | str) -> Optional[str]:
+    """Return the one known mode shared by every tracked connection."""
+    key = _key(path)
+    with _live_lock:
+        total = _live_connections.get(key, 0)
+        modes = _live_journal_modes.get(key, {})
+        if total <= 0 or len(modes) != total:
+            return None
+        observed = set(modes.values())
+        if len(observed) != 1:
+            return None
+        return next(iter(observed))
+
+
+def _untrack_tracked_connection(path: str, conn: object) -> None:
+    """Remove one tracked connection and its journal-mode hint."""
+    with _live_lock:
+        modes = _live_journal_modes.get(path)
+        if modes is not None:
+            modes.pop(id(conn), None)
+        _track_key(path, -1)
 
 
 def has_live_connection(path: Path | str) -> bool:
@@ -93,7 +136,7 @@ class _TrackingMixin:
 
     _hermes_tracked_path: str | None = None
 
-    def close(self) -> None:  # type: ignore[misc]
+    def close(self) -> None:
         with _live_lock:
             path = getattr(self, "_hermes_tracked_path", None)
             # Close first; untrack only once the descriptor is actually gone. Untracking before a failing
@@ -102,7 +145,7 @@ class _TrackingMixin:
             super().close()  # type: ignore[misc]
             if path is not None:
                 self._hermes_tracked_path = None
-                untrack_connection(path)
+                _untrack_tracked_connection(path, self)
 
 
 class TrackedConnection(_TrackingMixin, sqlite3.Connection):
@@ -149,8 +192,11 @@ def connect_tracked(
                 # simulating FTS5-less runtimes do this). Retag the instance's class so close()
                 # still releases the registry entry rather than silently losing probe safety.
                 conn = _retrofit_tracking(conn, resolved)
-            conn._hermes_tracked_path = resolved
+            cast(_TrackingMixin, conn)._hermes_tracked_path = resolved
+            if resolved not in _live_connections:
+                _live_journal_modes.pop(resolved, None)
             _track_key(resolved)
+            _live_journal_modes.setdefault(resolved, {})[id(conn)] = None
             return conn
         except Exception:
             try:
@@ -167,7 +213,7 @@ def _retrofit_tracking(conn: sqlite3.Connection, resolved: str) -> sqlite3.Conne
     one mixing in the tracking ``close()`` (used when an opener ignored the factory we asked for)."""
     cls = type(conn)
     try:
-        conn.__class__ = _tracking_factory(cls)  # type: ignore[assignment]
+        conn.__class__ = _tracking_factory(cls)
         return conn
     except TypeError as exc:
         raise UntrackableConnectionError(

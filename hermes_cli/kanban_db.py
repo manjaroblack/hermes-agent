@@ -16,10 +16,12 @@ import json
 import os
 import re
 import secrets
+import shutil
 import sqlite3
 import subprocess
 import sys
 import logging
+import tempfile
 import threading
 import time
 from contextvars import ContextVar, Token
@@ -1011,18 +1013,112 @@ def list_boards(*, include_archived: bool = True) -> list[dict]:
     return entries
 
 
+def _sqlite_header_is_wal(header: bytes) -> bool:
+    """Return whether SQLite's file header declares WAL journal mode."""
+    return len(header) >= 20 and header[18:20] == b"\x02\x02"
+
+
+def _sqlite_file_state(path: Path) -> Optional[tuple[int, int, int, int]]:
+    """Return a cheap identity/size/mtime tuple for a SQLite sidecar."""
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns)
+
+
+def _copy_wal_snapshot(source: Path, destination: Path) -> None:
+    """Copy a WAL database and its WAL frames only after a stable read."""
+    wal_source = Path(f"{source}-wal")
+    wal_destination = Path(f"{destination}-wal")
+    for attempt in range(3):
+        before = (_sqlite_file_state(source), _sqlite_file_state(wal_source))
+        if before[0] is None:
+            raise OSError(f"SQLite database disappeared during snapshot: {source}")
+        try:
+            shutil.copyfile(source, destination)
+            if before[1] is None:
+                wal_destination.unlink(missing_ok=True)
+            else:
+                shutil.copyfile(wal_source, wal_destination)
+        except OSError:
+            if attempt >= 2:
+                raise
+            time.sleep(0.01)
+            continue
+        after = (_sqlite_file_state(source), _sqlite_file_state(wal_source))
+        if before == after:
+            return
+        if attempt < 2:
+            time.sleep(0.01)
+    raise sqlite3.OperationalError(
+        f"SQLite database changed during read-only snapshot: {source}"
+    )
+
+
 @contextlib.contextmanager
 def _read_only_connection(path: Path):
-    """Open an existing SQLite database without initializing or migrating it."""
-    from hermes_cli.sqlite_safe_read import connect_tracked
+    """Open *path* without writing SQLite sidecars beside the source DB.
 
-    uri = path.resolve().as_uri() + "?mode=ro"
-    conn = connect_tracked(uri, uri=True, tracking_path=path)
-    conn.row_factory = sqlite3.Row
+    A normal SQLite ``mode=ro`` open can still create ``-wal``/``-shm``
+    files. WAL databases are therefore read from a private snapshot that
+    includes committed WAL frames. A tracked live connection can only be
+    shared when its journal mode makes a source-side open safe.
+    """
+    source = path.resolve()
+    temp_dir = None
+    read_path = source
     try:
-        yield conn
+        from hermes_cli.sqlite_safe_read import (
+            LiveConnectionError,
+            connect_tracked,
+            live_connection_journal_mode,
+            offline_file_access,
+        )
+
+        try:
+            with offline_file_access(source, what="snapshot"):
+                with source.open("rb") as handle:
+                    header = handle.read(20)
+                if _sqlite_header_is_wal(header):
+                    temp_dir = tempfile.TemporaryDirectory(
+                        prefix="hermes-kanban-read-"
+                    )
+                    read_path = Path(temp_dir.name) / source.name
+                    _copy_wal_snapshot(source, read_path)
+                uri = read_path.as_uri() + "?mode=ro"
+        except LiveConnectionError:
+            journal_mode = live_connection_journal_mode(source)
+            wal_path = Path(f"{source}-wal")
+            shm_path = Path(f"{source}-shm")
+            if journal_mode == "delete":
+                uri = source.as_uri() + "?mode=ro"
+            elif (
+                journal_mode == "wal"
+                and wal_path.is_file()
+                and shm_path.is_file()
+            ):
+                uri = source.as_uri() + "?mode=ro"
+            else:
+                raise sqlite3.OperationalError(
+                    "cannot safely read a live SQLite database without a "
+                    "known journal mode and, for WAL, both sidecars: "
+                    f"{source}"
+                )
+
+        conn = connect_tracked(
+            uri,
+            uri=True,
+            tracking_path=read_path,
+        )
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+        finally:
+            conn.close()
     finally:
-        conn.close()
+        if temp_dir is not None:
+            temp_dir.cleanup()
 
 
 def _read_only_task_rows(path: Path) -> list[dict[str, Any]]:
