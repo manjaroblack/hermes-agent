@@ -248,6 +248,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   // affordance; clicking it bumps `reconnectNonce`, which is a dependency of
   // the connect effect, so a fresh PTY spawns in place.
   const [reconnectNonce, setReconnectNonce] = useState(0);
+  const [freshChannelNonce, setFreshChannelNonce] = useState(0);
   useEffect(() => {
     ptyStateRef.current = ptyState;
   }, [ptyState]);
@@ -282,6 +283,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     setReconnectNonce((n) => n + 1);
   }, [clearReconnectTimer]);
   const startFreshDashboardChat = useCallback(() => {
+    const hadResumeTarget = searchParams.has("resume");
     const next = new URLSearchParams(searchParams);
 
     next.delete("resume");
@@ -295,7 +297,13 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     setBanner(null);
     setLastCloseCode(null);
     setPtyState("connecting");
-    setReconnectNonce((n) => n + 1);
+    // When a resumed chat is cleared, the URL change already rebuilds the
+    // PTY effect. Deferring the nonce bump avoids a first render that still
+    // carries the old resume target, followed by the intended fresh launch.
+    if (!hadResumeTarget) {
+      setFreshChannelNonce((n) => n + 1);
+      setReconnectNonce((n) => n + 1);
+    }
   }, [clearReconnectTimer, searchParams, setSearchParams]);
   // Clear mobile-input tracking refs when the tab is hidden so stale state
   // from a previous /chat visit doesn't cause the mobile-replacement logic
@@ -369,8 +377,11 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   // effect dep) so the user explicitly starts a fresh scoped session.
   const { profile: scopedProfile } = useProfileScope();
   const channel = useMemo(
-    () => generateChannelId(`${resumeParam ?? ""}\0${scopedProfile}`),
-    [resumeParam, scopedProfile],
+    () =>
+      generateChannelId(
+        `${resumeParam ?? ""}\0${scopedProfile}\0${freshChannelNonce}`,
+      ),
+    [freshChannelNonce, resumeParam, scopedProfile],
   );
   const titleScope = `${channel}\0${reconnectNonce}`;
   const sessionTitle =
@@ -1223,6 +1234,9 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       }, PTY_CONNECTING_TIMEOUT_MS);
 
     ws.onopen = () => {
+      if (unmounting || wsRef.current !== ws) {
+        return;
+      }
       clearReconnectTimer();
       clearConnectingTimer();
       connectInFlightRef.current = false;
@@ -1293,6 +1307,9 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     }
 
     ws.onmessage = (ev) => {
+      if (unmounting || wsRef.current !== ws) {
+        return;
+      }
       if (typeof ev.data === "string") {
         // The active-session fallback (no `?resume=` on the URL) tells us
         // via a one-off JSON control frame that a replay is starting (#93518,
@@ -1334,6 +1351,12 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     };
 
     ws.onclose = (ev) => {
+      // An older socket can finish closing after a fresh launch has already
+      // installed its replacement. Its callback must not clear the current
+      // ref or schedule a reconnect for the new PTY.
+      if (unmounting || wsRef.current !== ws) {
+        return;
+      }
       // Drain buffered sanitizer state. A buffered partial escape is dropped
       // (writing an unterminated CSI would wedge xterm's parser); a buffered
       // newline run is emitted collapsed.

@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { SessionInfo } from "@/lib/api";
 import { PTY_TICKET_TIMEOUT_MS } from "@/lib/pty-reconnect";
 
 class FakeFitAddon {
@@ -80,7 +81,15 @@ class FakeTerminal {
 
 const maybeReloadForLoopbackWsAuthFailure = vi.fn(() => false);
 const apiMocks = vi.hoisted(() => ({
-  buildWsUrl: vi.fn(async () => "ws://localhost/api/pty?channel=chat-1"),
+  buildWsUrl: vi.fn(
+    async (_path: string, params: Record<string, string>) =>
+      `ws://localhost/api/pty?${new URLSearchParams(params).toString()}`,
+  ),
+  getSessionDetail: vi.fn(async () => ({ title: "Old session" })),
+  getSessionLatestDescendant: vi.fn(async () => ({ session_id: "old-session" })),
+  getSessions: vi.fn(async (): Promise<{ sessions: SessionInfo[] }> => ({
+    sessions: [],
+  })),
 }));
 
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: FakeFitAddon }));
@@ -90,9 +99,6 @@ vi.mock("@xterm/addon-webgl", () => ({ WebglAddon: FakeWebglAddon }));
 vi.mock("@xterm/xterm", () => ({ Terminal: FakeTerminal }));
 vi.mock("@/components/ChatSidebar", () => ({
   ChatSidebar: () => null,
-}));
-vi.mock("@/components/ChatSessionList", () => ({
-  ChatSessionList: () => null,
 }));
 vi.mock("@/components/Backdrop", () => ({ Backdrop: () => null }));
 vi.mock("@/plugins", () => ({
@@ -114,6 +120,17 @@ vi.mock("@/i18n", () => ({
         closeModelTools: "Close model tools",
         modelToolsSheetSubtitle: "Tools",
         modelToolsSheetTitle: "Model",
+      },
+      common: {
+        loading: "Loading",
+        refresh: "Refresh",
+        retry: "Retry",
+      },
+      sessions: {
+        newChat: "New chat",
+        noSessions: "No sessions",
+        title: "Sessions",
+        untitledSession: "Untitled session",
       },
     },
   }),
@@ -157,6 +174,13 @@ type CloseEventLike = {
 
 let container: HTMLDivElement;
 let root: Root;
+let cryptoUuidCounter = 0;
+let cryptoRandomCounter = 0;
+
+function LocationProbe() {
+  const { search } = useLocation();
+  return <output data-testid="location-search">{search}</output>;
+}
 
 // jsdom runs without an origin here (per-file @vitest-environment jsdom on a
 // node-default config), so localStorage is undefined. Stub it so components
@@ -191,9 +215,17 @@ async function render(ui: ReactNode) {
 
 beforeEach(() => {
   FakeWebSocket.instances = [];
+  cryptoUuidCounter = 0;
+  cryptoRandomCounter = 0;
   maybeReloadForLoopbackWsAuthFailure.mockClear();
   apiMocks.buildWsUrl.mockReset();
-  apiMocks.buildWsUrl.mockResolvedValue("ws://localhost/api/pty?channel=chat-1");
+  apiMocks.buildWsUrl.mockImplementation(
+    async (_path, params) =>
+      `ws://localhost/api/pty?${new URLSearchParams(params).toString()}`,
+  );
+  apiMocks.getSessionDetail.mockClear();
+  apiMocks.getSessionLatestDescendant.mockClear();
+  apiMocks.getSessions.mockClear();
   vi.stubGlobal("WebSocket", FakeWebSocket);
   vi.stubGlobal(
     "ResizeObserver",
@@ -216,10 +248,10 @@ beforeEach(() => {
   }));
   vi.stubGlobal("crypto", {
     getRandomValues: (values: Uint8Array) => {
-      values.fill(7);
+      values.fill(++cryptoRandomCounter);
       return values;
     },
-    randomUUID: () => "chat-test-id",
+    randomUUID: () => `chat-test-${++cryptoUuidCounter}`,
   });
 
   Object.defineProperty(window, "visualViewport", {
@@ -255,6 +287,306 @@ afterEach(async () => {
 });
 
 describe("ChatPage", () => {
+  it("starts one fresh PTY from the rendered New chat control", async () => {
+    const { default: ChatPage } = await import("./ChatPage");
+
+    await render(
+      <MemoryRouter
+        initialEntries={["/chat?resume=old-session&profile=selected&view=chat"]}
+      >
+        <LocationProbe />
+        <ChatPage isActive />
+      </MemoryRouter>,
+    );
+
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+    const firstParams = apiMocks.buildWsUrl.mock.calls[0][1];
+    expect(firstParams).toMatchObject({
+      channel: expect.any(String),
+      resume: "old-session",
+    });
+
+    const newChatButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("New chat"),
+    );
+    expect(newChatButton).not.toBeUndefined();
+
+    await act(async () => {
+      newChatButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="location-search"]')?.textContent).toBe(
+        "?profile=selected&view=chat",
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(apiMocks.buildWsUrl.mock.calls.length).toBeGreaterThanOrEqual(2),
+    );
+
+    expect(apiMocks.buildWsUrl).toHaveBeenCalledTimes(2);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    const freshParams = apiMocks.buildWsUrl.mock.calls[1][1];
+    expect(freshParams).toMatchObject({
+      channel: expect.any(String),
+      fresh: "1",
+    });
+    expect(freshParams.resume).toBeUndefined();
+    expect(freshParams.channel).not.toBe(firstParams.channel);
+    expect(freshParams.attach).not.toBe(firstParams.attach);
+    expect(FakeWebSocket.instances[1].url).toContain("fresh=1");
+    expect(FakeWebSocket.instances[1].url).not.toContain("resume=");
+  });
+
+  it("forces a fresh launch when the resume query key is empty", async () => {
+    const { default: ChatPage } = await import("./ChatPage");
+
+    await render(
+      <MemoryRouter initialEntries={["/chat?resume=&profile=selected"]}>
+        <ChatPage isActive />
+      </MemoryRouter>,
+    );
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+
+    const newChatButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("New chat"),
+    );
+    await act(async () => {
+      newChatButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await vi.waitFor(() => expect(apiMocks.buildWsUrl).toHaveBeenCalledTimes(2));
+    const freshParams = apiMocks.buildWsUrl.mock.calls[1][1];
+    expect(freshParams).toMatchObject({ fresh: "1" });
+    expect(freshParams.resume).toBeUndefined();
+    expect(freshParams.channel).not.toBe(apiMocks.buildWsUrl.mock.calls[0][1].channel);
+  });
+
+  it("rotates each fresh launch and reuses its attach token on reconnect", async () => {
+    const { default: ChatPage } = await import("./ChatPage");
+
+    await render(
+      <MemoryRouter initialEntries={["/chat?profile=selected"]}>
+        <ChatPage isActive />
+      </MemoryRouter>,
+    );
+
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+    const newChatButton = () =>
+      Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent?.includes("New chat"),
+      );
+
+    await act(async () => {
+      newChatButton()!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await vi.waitFor(() => expect(apiMocks.buildWsUrl).toHaveBeenCalledTimes(2));
+    const firstFreshParams = apiMocks.buildWsUrl.mock.calls[1][1];
+
+    await act(async () => {
+      newChatButton()!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await vi.waitFor(() => expect(apiMocks.buildWsUrl).toHaveBeenCalledTimes(3));
+    const secondFreshParams = apiMocks.buildWsUrl.mock.calls[2][1];
+
+    expect(secondFreshParams).toMatchObject({ fresh: "1" });
+    expect(secondFreshParams.channel).not.toBe(firstFreshParams.channel);
+    expect(secondFreshParams.attach).not.toBe(firstFreshParams.attach);
+
+    FakeWebSocket.instances[2].onclose?.({
+      code: 1006,
+      reason: "",
+      wasClean: false,
+    });
+    await vi.waitFor(() => expect(apiMocks.buildWsUrl).toHaveBeenCalledTimes(4));
+
+    const reconnectParams = apiMocks.buildWsUrl.mock.calls[3][1];
+    expect(reconnectParams).toMatchObject({
+      channel: secondFreshParams.channel,
+      attach: secondFreshParams.attach,
+    });
+    expect(reconnectParams.fresh).toBeUndefined();
+    expect(reconnectParams.resume).toBeUndefined();
+  });
+
+  it("cancels a delayed resumed ticket without losing the fresh intent", async () => {
+    let resolveOldTicket!: (url: string) => void;
+    apiMocks.buildWsUrl.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveOldTicket = resolve;
+        }),
+    );
+    const { default: ChatPage } = await import("./ChatPage");
+
+    await render(
+      <MemoryRouter initialEntries={["/chat?resume=old-session"]}>
+        <ChatPage isActive />
+      </MemoryRouter>,
+    );
+    await vi.waitFor(() => expect(apiMocks.buildWsUrl).toHaveBeenCalledTimes(1));
+
+    const newChatButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("New chat"),
+    );
+    await act(async () => {
+      newChatButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await vi.waitFor(() => expect(apiMocks.buildWsUrl).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+    const freshParams = apiMocks.buildWsUrl.mock.calls[1][1];
+    expect(freshParams).toMatchObject({ fresh: "1" });
+    expect(freshParams.resume).toBeUndefined();
+
+    await act(async () => {
+      resolveOldTicket("ws://localhost/api/pty?stale=1");
+      await Promise.resolve();
+    });
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(FakeWebSocket.instances[0].url).not.toContain("stale=1");
+  });
+
+  it("does not reconnect the fresh PTY after a stale socket callback", async () => {
+    const { default: ChatPage } = await import("./ChatPage");
+
+    await render(
+      <MemoryRouter initialEntries={["/chat?resume=old-session"]}>
+        <ChatPage isActive />
+      </MemoryRouter>,
+    );
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+
+    const staleSocket = FakeWebSocket.instances[0];
+    const newChatButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("New chat"),
+    );
+    await act(async () => {
+      newChatButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2));
+
+    await act(async () => {
+      FakeWebSocket.instances[1].onopen?.();
+    });
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        staleSocket.onclose?.({ code: 1006, reason: "", wasClean: false });
+        window.dispatchEvent(new Event("focus"));
+        await vi.advanceTimersByTimeAsync(350);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(apiMocks.buildWsUrl).toHaveBeenCalledTimes(2);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+  });
+
+  it("ignores a stale latest-descendant response after New chat", async () => {
+    let resolveDescendant!: (result: { session_id: string }) => void;
+    apiMocks.getSessionLatestDescendant.mockImplementationOnce(
+      () =>
+        new Promise<{ session_id: string }>((resolve) => {
+          resolveDescendant = resolve;
+        }),
+    );
+    const { default: ChatPage } = await import("./ChatPage");
+
+    await render(
+      <MemoryRouter initialEntries={["/chat?resume=old-session&view=chat"]}>
+        <LocationProbe />
+        <ChatPage isActive />
+      </MemoryRouter>,
+    );
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+
+    const newChatButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("New chat"),
+    );
+    await act(async () => {
+      newChatButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await vi.waitFor(() => expect(apiMocks.buildWsUrl).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      resolveDescendant({ session_id: "stale-descendant" });
+      await Promise.resolve();
+    });
+    expect(container.querySelector('[data-testid="location-search"]')?.textContent).toBe(
+      "?view=chat",
+    );
+    expect(apiMocks.buildWsUrl).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps an explicit later resume target functional", async () => {
+    apiMocks.getSessionLatestDescendant.mockResolvedValue({
+      session_id: "later-session",
+    });
+    apiMocks.getSessions.mockResolvedValueOnce({
+      sessions: [
+        {
+          id: "later-session",
+          source: "cli",
+          model: "test-model",
+          title: "Later session",
+          started_at: 1,
+          ended_at: 2,
+          last_active: 2,
+          is_active: false,
+          message_count: 1,
+          tool_call_count: 0,
+          input_tokens: 1,
+          output_tokens: 1,
+          preview: "later",
+        },
+      ],
+    });
+    const { default: ChatPage } = await import("./ChatPage");
+
+    await render(
+      <MemoryRouter initialEntries={["/chat?profile=selected"]}>
+        <LocationProbe />
+        <ChatPage isActive />
+      </MemoryRouter>,
+    );
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+
+    const newChatButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("New chat"),
+    );
+    await act(async () => {
+      newChatButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await vi.waitFor(() => expect(apiMocks.buildWsUrl).toHaveBeenCalledTimes(2));
+    const freshParams = apiMocks.buildWsUrl.mock.calls[1][1];
+
+    await vi.waitFor(() =>
+      expect(
+        Array.from(container.querySelectorAll("button")).some((button) =>
+          button.textContent?.includes("Later session"),
+        ),
+      ).toBe(true),
+    );
+    const laterSessionButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Later session"),
+    );
+    await act(async () => {
+      laterSessionButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await vi.waitFor(() => expect(apiMocks.buildWsUrl).toHaveBeenCalledTimes(3));
+    const resumedParams = apiMocks.buildWsUrl.mock.calls[2][1];
+    expect(resumedParams).toMatchObject({ resume: "later-session" });
+    expect(resumedParams.fresh).toBeUndefined();
+    expect(resumedParams.attach).toBe(freshParams.attach);
+    expect(resumedParams.channel).not.toBe(freshParams.channel);
+    expect(container.querySelector('[data-testid="location-search"]')?.textContent).toBe(
+      "?profile=selected&resume=later-session",
+    );
+  });
+
   it("treats loopback 4401 closes as stale-token reload candidates", async () => {
     const { default: ChatPage } = await import("./ChatPage");
 
