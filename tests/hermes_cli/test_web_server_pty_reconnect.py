@@ -69,9 +69,16 @@ def test_fresh_param_ignores_channel_active_session_file(pty_client, monkeypatch
     active_file.write_text(json.dumps({"session_id": "sess-old"}), encoding="utf-8")
     captured = {}
 
-    def fake_resolve(resume=None, sidecar_url=None, profile=None, active_session_file=None):
+    def fake_resolve(
+        resume=None,
+        sidecar_url=None,
+        profile=None,
+        active_session_file=None,
+        force_fresh=False,
+    ):
         captured["active_session_file"] = active_session_file
         captured["resume"] = resume
+        captured["force_fresh"] = force_fresh
         return (["fake-hermes-tui"], None, None)
 
     monkeypatch.setattr(_web_server_chat, "_resolve_chat_argv", fake_resolve)
@@ -80,8 +87,50 @@ def test_fresh_param_ignores_channel_active_session_file(pty_client, monkeypatch
         assert conn.receive_bytes() == b"ready"
 
     assert captured["resume"] is None
+    assert captured["force_fresh"] is True
     assert captured["active_session_file"] == str(active_file)
     assert not active_file.exists()
+
+
+def test_fresh_pty_uses_real_resolver_env_without_inherited_resume(pty_client, monkeypatch):
+    """The WS fresh intent must reach the spawned TUI environment."""
+    from hermes_cli import main_tui_launch
+
+    ws, client, token = pty_client
+    captured = {}
+    monkeypatch.setenv("HERMES_TUI_RESUME", "inherited-old")
+    monkeypatch.setenv("HERMES_TUI_DASHBOARD_FRESH", "stale-marker")
+    monkeypatch.setattr(
+        main_tui_launch,
+        "_make_tui_argv",
+        lambda root, tui_dev=False: (["fake-hermes-tui"], None),
+    )
+
+    class _RecordingBridge(_OneFrameBridge):
+        @classmethod
+        def spawn(cls, *args, **kwargs):
+            captured["env"] = kwargs["env"]
+            return cls()
+
+    monkeypatch.setattr(_web_server_chat.PtyBridge, "spawn", _RecordingBridge.spawn)
+
+    with client.websocket_connect(
+        _url(token, resume="sess-old", fresh="1")
+    ) as conn:
+        assert conn.receive_bytes() == b"ready"
+
+    assert "HERMES_TUI_RESUME" not in captured["env"]
+    assert captured["env"]["HERMES_TUI_DASHBOARD_FRESH"] == "1"
+
+    _, _, ordinary_env = _web_server_chat._resolve_chat_argv()
+    assert ordinary_env is not None
+    assert "HERMES_TUI_RESUME" not in ordinary_env
+    assert "HERMES_TUI_DASHBOARD_FRESH" not in ordinary_env
+
+    _, _, explicit_resume_env = _web_server_chat._resolve_chat_argv(resume="sess-new")
+    assert explicit_resume_env is not None
+    assert explicit_resume_env["HERMES_TUI_RESUME"] == "sess-new"
+    assert "HERMES_TUI_DASHBOARD_FRESH" not in explicit_resume_env
 
 
 def test_active_session_fallback_sends_resume_control_message(pty_client, monkeypatch):

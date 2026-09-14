@@ -56,6 +56,11 @@ export const NO_CONFIRM_DESTRUCTIVE = truthy(process.env.HERMES_TUI_NO_CONFIRM)
 // browser-embedded TUI has no healthy restart path after an idle exit.
 export const DASHBOARD_TUI_MODE = truthy(process.env.HERMES_TUI_DASHBOARD)
 
+// Set only for a dashboard-requested New chat. The PTY launcher clears this
+// marker for ordinary launches so it cannot turn a reconnect into another
+// fresh session.
+export const DASHBOARD_FRESH_START = DASHBOARD_TUI_MODE && truthy(process.env.HERMES_TUI_DASHBOARD_FRESH)
+
 // HERMES_DEV_CREDITS — dev-only live-spend readout (Δ status segment + "(dev credits)"
 // banner). Throwaway dev scaffolding; the whole readout gates on this one flag.
 export const DEV_CREDITS_MODE = truthy(process.env.HERMES_DEV_CREDITS)

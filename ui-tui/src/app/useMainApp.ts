@@ -11,7 +11,7 @@ import {
 import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { DASHBOARD_TUI_MODE, STARTUP_RESUME_ID } from '../config/env.js'
+import { DASHBOARD_FRESH_START, DASHBOARD_TUI_MODE, STARTUP_RESUME_ID } from '../config/env.js'
 import { WHEEL_SCROLL_STEP } from '../config/limits.js'
 import { RESIZE_COALESCE_MS } from '../config/timing.js'
 import { hasLeadGap, prevRenderedMsg } from '../domain/blockLayout.js'
@@ -867,6 +867,7 @@ export function useMainApp(gw: GatewayClient) {
         composer: { setInput: composerActions.setInput },
         gateway,
         session: {
+          DASHBOARD_FRESH_START,
           STARTUP_RESUME_ID,
           colsRef,
           newSession: session.newSession,

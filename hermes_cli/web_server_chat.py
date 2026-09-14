@@ -16,7 +16,7 @@ import threading
 import urllib.request
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 from hermes_cli.pty_session import PtySessionRegistry
 
 # Same logger the code used before extraction (record parity).
@@ -296,8 +296,12 @@ def _ws_auth_ok(ws: "WebSocket") -> bool:
 
 
 def _resolve_chat_argv(
-    resume: Optional[str] = None, sidecar_url: Optional[str] = None, profile: Optional[str] = None,
-    active_session_file: Optional[str] = None) -> tuple[list[str], Optional[str], Optional[dict]]:
+    resume: Optional[str] = None,
+    sidecar_url: Optional[str] = None,
+    profile: Optional[str] = None,
+    active_session_file: Optional[str] = None,
+    force_fresh: bool = False,
+) -> tuple[list[str], Optional[str], Optional[dict]]:
     """Resolve the argv + cwd + env for the chat PTY (what ``hermes --tui`` runs).
 
     Tests monkeypatch this with a tiny fake command.  Env contract: resume goes
@@ -306,7 +310,9 @@ def _resolve_chat_argv(
     in-memory gateway but is SKIPPED for profile-scoped chats (that gateway runs
     under the dashboard's own profile, so a scoped chat spawns its own);
     ``profile`` scopes the ENTIRE chat by pointing ``HERMES_HOME`` at the profile
-    dir, the same propagation ``hermes -p <name>`` performs.
+    dir, the same propagation ``hermes -p <name>`` performs. ``force_fresh``
+    removes inherited resume/fresh hand-off state and marks a dashboard child as
+    a fresh cold boot.
     """
     from hermes_cli.web_server_profiles import _config_profile_scope, _resolve_profile_dir
     from hermes_cli.web_server_sessions import _open_session_db_for_profile, _session_latest_descendant
@@ -317,6 +323,8 @@ def _resolve_chat_argv(
     requested = (profile or "").strip()
     if requested and requested.lower() != "current":
         profile_dir = _resolve_profile_dir(requested)
+    if force_fresh:
+        resume = None
 
     argv, cwd = _make_tui_argv(PROJECT_ROOT / "ui-tui", tui_dev=False)
     # Secrets kept — the spawned agent needs provider creds.  An explicit profile
@@ -351,6 +359,13 @@ def _resolve_chat_argv(
     # deploys have no COLORTERM, so hex colors would snap to the 256 palette.
     env.setdefault("COLORTERM", "truecolor")
     env["HERMES_TUI_DASHBOARD"] = "1"
+    # The subprocess environment starts as an os.environ snapshot. Resume and
+    # fresh are request-scoped hand-offs, so an inherited value must never leak
+    # into this launch or persist across an ordinary dashboard reconnect.
+    env.pop("HERMES_TUI_RESUME", None)
+    env.pop("HERMES_TUI_DASHBOARD_FRESH", None)
+    if force_fresh:
+        env["HERMES_TUI_DASHBOARD_FRESH"] = "1"
 
     if resume:
         _resume_db = _open_session_db_for_profile(
@@ -429,14 +444,20 @@ def _build_sidecar_url(channel: str) -> Optional[str]:
 
 
 async def _resolve_chat_argv_async(
-    resume: Optional[str] = None, sidecar_url: Optional[str] = None, profile: Optional[str] = None,
-    active_session_file: Optional[str] = None) -> tuple[list[str], Optional[str], Optional[dict]]:
+    resume: Optional[str] = None,
+    sidecar_url: Optional[str] = None,
+    profile: Optional[str] = None,
+    active_session_file: Optional[str] = None,
+    force_fresh: bool = False,
+) -> tuple[list[str], Optional[str], Optional[dict]]:
     """Resolve chat argv off the event loop (it may run ``npm run build``); the
     async lock keeps one-build-at-a-time without parking worker threads."""
     from hermes_cli.web_server import _get_chat_argv_lock, app
-    kwargs = {"resume": resume, "sidecar_url": sidecar_url, "profile": profile}
+    kwargs: dict[str, Any] = {"resume": resume, "sidecar_url": sidecar_url, "profile": profile}
     if active_session_file is not None:
         kwargs["active_session_file"] = active_session_file
+    if force_fresh:
+        kwargs["force_fresh"] = True
 
     async with _get_chat_argv_lock(app):
         return await asyncio.to_thread(_resolve_chat_argv, **kwargs)

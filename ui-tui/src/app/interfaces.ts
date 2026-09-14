@@ -480,6 +480,7 @@ export interface GatewayEventHandlerContext {
   }
   gateway: GatewayServices
   session: {
+    DASHBOARD_FRESH_START?: boolean
     STARTUP_RESUME_ID: string
     colsRef: MutableRefObject<number>
     newSession: (msg?: string, title?: string) => void

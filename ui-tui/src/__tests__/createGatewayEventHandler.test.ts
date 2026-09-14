@@ -1085,6 +1085,26 @@ describe('createGatewayEventHandler', () => {
     expect(getUiState().status).toBe('recovering session…')
   })
 
+  it('fresh dashboard recovery keeps the recovered session ahead of fresh startup', async () => {
+    const newSession = vi.fn()
+    const resumeById = vi.fn()
+    const ctx = buildCtx([])
+
+    ctx.session.newSession = newSession
+    ctx.session.resumeById = resumeById
+    ctx.session.STARTUP_RESUME_ID = 'stale-explicit-resume'
+    ctx.session.DASHBOARD_FRESH_START = true
+    ctx.session.recoverSidRef = ref<null | string>('sess-fresh')
+
+    const onEvent = createGatewayEventHandler(ctx)
+    onEvent({ payload: {}, type: 'gateway.ready' } as any)
+    onEvent({ payload: {}, type: 'gateway.ready' } as any)
+
+    await vi.waitFor(() => expect(resumeById).toHaveBeenCalledWith('sess-fresh'))
+    expect(resumeById).toHaveBeenCalledOnce()
+    expect(newSession).not.toHaveBeenCalled()
+  })
+
   it('on gateway.ready with auto_resume on and a recent session, resumes it', async () => {
     const appended: Msg[] = []
     const newSession = vi.fn()
@@ -1110,6 +1130,37 @@ describe('createGatewayEventHandler', () => {
 
     await vi.waitFor(() => expect(resumeById).toHaveBeenCalledWith('sess-most-recent'))
     expect(newSession).not.toHaveBeenCalled()
+  })
+
+  it('on dashboard gateway.ready, starts fresh before auto_resume even with an eligible session', async () => {
+    const appended: Msg[] = []
+    const newSession = vi.fn()
+    const resumeById = vi.fn()
+    const ctx = buildCtx(appended)
+
+    ctx.session.newSession = newSession
+    ctx.session.resumeById = resumeById
+    ctx.session.STARTUP_RESUME_ID = 'conflicting-explicit-resume'
+    ctx.session.DASHBOARD_FRESH_START = true
+    ctx.gateway.rpc = vi.fn(async (method: string) => {
+      if (method === 'config.get') {
+        return { config: { display: { tui_auto_resume_recent: true } } }
+      }
+
+      if (method === 'session.most_recent') {
+        return { session_id: 'sess-most-recent' }
+      }
+
+      return null
+    })
+
+    const onEvent = createGatewayEventHandler(ctx)
+    onEvent({ payload: {}, type: 'gateway.ready' } as any)
+    onEvent({ payload: {}, type: 'gateway.ready' } as any)
+
+    await vi.waitFor(() => expect(newSession).toHaveBeenCalledOnce())
+    expect(resumeById).not.toHaveBeenCalled()
+    expect(ctx.gateway.rpc).not.toHaveBeenCalledWith('session.most_recent', {})
   })
 
   it('on gateway.ready with auto_resume on but no eligible session, falls back to new', async () => {

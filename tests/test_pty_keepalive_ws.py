@@ -49,6 +49,8 @@ def pty_keepalive_harness(monkeypatch):
 
     async def fake_argv(**kw):
         resume = "child" if kw.get("resume") == "parent" else kw.get("resume")
+        if kw.get("force_fresh"):
+            resume = None
         env = {"HERMES_TUI_RESUME": resume} if resume else {}
         return (["x", resume or "fresh"], "/tmp", env)
 
@@ -117,6 +119,19 @@ async def test_attach_token_reuses_canonical_resume(pty_keepalive_harness):
     with client.websocket_connect("/api/pty?attach=TOK1&resume=child") as ws2:
         ws2.send_bytes(b"again")
     assert pty_keepalive_harness == [["x", "child"]]
+
+
+@pytest.mark.asyncio
+async def test_fresh_attach_token_does_not_reattach_prior_resume(pty_keepalive_harness):
+    from starlette.testclient import TestClient
+
+    client = TestClient(web_server.app)
+    with client.websocket_connect("/api/pty?attach=TOK1&resume=old") as ws1:
+        ws1.send_bytes(b"hi")
+    with client.websocket_connect("/api/pty?attach=TOK1&resume=old&fresh=1") as ws2:
+        ws2.send_bytes(b"again")
+
+    assert pty_keepalive_harness == [["x", "old"], ["x", "fresh"]]
 
 
 

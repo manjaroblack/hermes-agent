@@ -419,7 +419,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
   syncThemeToTerminalBackground()
 
   const { rpc } = ctx.gateway
-  const { STARTUP_RESUME_ID, newSession, recoverSidRef, resumeById, setCatalog } = ctx.session
+  const { DASHBOARD_FRESH_START = false, STARTUP_RESUME_ID, newSession, recoverSidRef, resumeById, setCatalog } = ctx.session
   const { bellOnComplete, bellOnPrompt, stdout, sys } = ctx.system
 
   // display.bell_on_prompt — BEL whenever a blocking prompt modal opens
@@ -658,6 +658,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     s === 'completed' || s === 'error' || s === 'failed' || s === 'interrupted' || s === 'timeout'
 
   const keepTerminalElseRunning = (s: SubagentProgress['status']) => (isTerminalStatus(s) ? s : 'running')
+  let dashboardFreshConsumed = false
 
   const handleReady = (skin?: GatewaySkin) => {
     if (skin) {
@@ -705,12 +706,29 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     const recoverSid = recoverSidRef?.current
 
     if (recoverSidRef && recoverSid) {
+      if (DASHBOARD_FRESH_START) {
+        dashboardFreshConsumed = true
+      }
+
       recoverSidRef.current = null
       resumeById(recoverSid)
       // After resumeById: it synchronously sets status to 'resuming…' on entry,
       // so override it here to keep the distinct "recovering" label visible for
       // the duration of the resume RPC (which later flips status to 'ready').
       patchUiState({ status: 'recovering session…' })
+
+      return
+    }
+
+    if (DASHBOARD_FRESH_START) {
+      if (dashboardFreshConsumed) {
+        return
+      }
+
+      dashboardFreshConsumed = true
+      patchUiState({ status: 'forging session…' })
+      newSession()
+      scheduleStartupPrompt()
 
       return
     }
