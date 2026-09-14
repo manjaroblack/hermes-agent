@@ -1,27 +1,13 @@
 # GitHub Code Review
 
-role: code-review operator
-do: inspect local diffs/PRs; run relevant checks; assess correctness/security/quality; post structured or formal feedback
-inputs: repository/PR, base/head, authenticated `gh` or PAT, review scope
-outputs: findings with file/line evidence; approve/request-changes/comment when authorized
-¬: review without current context; leak credentials; claim checks ran without output; edit a PR while reviewing
-
-Use plain `git` for local review. Use `gh` or `curl` only for GitHub PR
-interactions. Load `github-auth` for authentication.
-
-## When to Use
-
-- inspect local changes before pushing
-- review an open GitHub PR or PR URL
-- post general/inline comments or a formal approve/request-changes/comment review
-- run pre-push or end-to-end review checklists
+Perform code reviews on local changes before pushing, or review open PRs on GitHub. Most of this skill uses plain `git` — the `gh`/`curl` split only matters for PR-level interactions.
 
 ## Prerequisites
 
-- authenticated GitHub access for PR operations (`github-auth`)
-- a git repository for local review
+- Authenticated with GitHub (see `github-auth` skill)
+- Inside a git repository
 
-### Setup for PR interactions
+### Setup (for PR interactions)
 
 ```bash
 if command -v gh &>/dev/null && gh auth status &>/dev/null; then
@@ -43,11 +29,13 @@ OWNER=$(echo "$OWNER_REPO" | cut -d/ -f1)
 REPO=$(echo "$OWNER_REPO" | cut -d/ -f2)
 ```
 
-## Procedure A: Local Changes (Pre-Push)
+---
 
-Pure `git`; no API required.
+## 1. Reviewing Local Changes (Pre-Push)
 
-### 1. Scope the diff
+This is pure `git` — works everywhere, no API needed.
+
+### Get the Diff
 
 ```bash
 # Staged changes (what would be committed)
@@ -63,20 +51,22 @@ git diff main...HEAD --name-only
 git diff main...HEAD --stat
 ```
 
-### 2. Review broad → narrow
+### Review Strategy
+
+1. **Get the big picture first:**
 
 ```bash
 git diff main...HEAD --stat
 git log main..HEAD --oneline
 ```
 
-Use `read_file` for full changed-file context and the diff for exact changes:
+2. **Review file by file** — use `read_file` on changed files for full context, and the diff to see what changed:
 
 ```bash
 git diff main...HEAD -- src/auth/login.py
 ```
 
-Scan common defects:
+3. **Check for common issues:**
 
 ```bash
 # Debug statements, TODOs, console.logs left behind
@@ -92,7 +82,11 @@ git diff main...HEAD | grep -in "password\|secret\|api_key\|token.*=\|private_ke
 git diff main...HEAD | grep -n "<<<<<<\|>>>>>>\|======="
 ```
 
-### 3. Report findings
+4. **Present structured feedback** to the user.
+
+### Review Output Format
+
+When reviewing local changes, present findings in this structure:
 
 ```
 ## Code Review Summary
@@ -114,11 +108,13 @@ git diff main...HEAD | grep -n "<<<<<<\|>>>>>>\|======="
 - Good test coverage for the happy path
 ```
 
-## Procedure B: Review a GitHub PR
+---
 
-### 1. Read PR details
+## 2. Reviewing a Pull Request on GitHub
 
-With `gh`:
+### View PR Details
+
+**With gh:**
 
 ```bash
 gh pr view 123
@@ -126,7 +122,7 @@ gh pr diff 123
 gh pr diff 123 --name-only
 ```
 
-With git + `curl`:
+**With git + curl:**
 
 ```bash
 PR_NUMBER=123
@@ -154,7 +150,9 @@ for f in json.load(sys.stdin):
     print(f\"{f['status']:10} +{f['additions']:-4} -{f['deletions']:-4}  {f['filename']}\")"
 ```
 
-### 2. Check out locally
+### Check Out PR Locally for Full Review
+
+This works with plain `git` — no `gh` needed:
 
 ```bash
 # Fetch the PR branch and check it out
@@ -167,21 +165,21 @@ git checkout pr-123
 git diff main...pr-123
 ```
 
-Shortcut:
+**With gh (shortcut):**
 
 ```bash
 gh pr checkout 123
 ```
 
-### 3. Comment
+### Leave Comments on a PR
 
-General comment with `gh`:
+**General PR comment — with gh:**
 
 ```bash
 gh pr comment 123 --body "Overall looks good, a few suggestions below."
 ```
 
-General comment with `curl`:
+**General PR comment — with curl:**
 
 ```bash
 curl -s -X POST \
@@ -190,9 +188,9 @@ curl -s -X POST \
   -d '{"body": "Overall looks good, a few suggestions below."}'
 ```
 
-### 4. Inline comments
+### Leave Inline Review Comments
 
-With `gh api`:
+**Single inline comment — with gh (via API):**
 
 ```bash
 HEAD_SHA=$(gh pr view 123 --json headRefOid --jq '.headRefOid')
@@ -206,7 +204,7 @@ gh api repos/$OWNER/$REPO/pulls/123/comments \
   -f side="RIGHT"
 ```
 
-With `curl`:
+**Single inline comment — with curl:**
 
 ```bash
 # Get the head commit SHA
@@ -227,7 +225,9 @@ curl -s -X POST \
   }"
 ```
 
-### 5. Submit formal review
+### Submit a Formal Review (Approve / Request Changes)
+
+**With gh:**
 
 ```bash
 gh pr review 123 --approve --body "LGTM!"
@@ -235,7 +235,7 @@ gh pr review 123 --request-changes --body "See inline comments."
 gh pr review 123 --comment --body "Some suggestions, nothing blocking."
 ```
 
-Atomic multi-comment review with `curl`:
+**With curl — multi-comment review submitted atomically:**
 
 ```bash
 HEAD_SHA=$(curl -s \
@@ -258,78 +258,86 @@ curl -s -X POST \
   }"
 ```
 
-Events: `"APPROVE"`, `"REQUEST_CHANGES"`, `"COMMENT"`. `line` addresses the
-new file; deleted lines use `"side": "LEFT"`.
+Event values: `"APPROVE"`, `"REQUEST_CHANGES"`, `"COMMENT"`
 
-## Review Checklist
+The `line` field refers to the line number in the *new* version of the file. For deleted lines, use `"side": "LEFT"`.
+
+---
+
+## 3. Review Checklist
+
+When performing a code review (local or PR), systematically check:
 
 ### Correctness
-
-- claimed behavior works
-- empty/null/large/concurrent inputs handled
-- error paths fail clearly and safely
+- Does the code do what it claims?
+- Edge cases handled (empty inputs, nulls, large data, concurrent access)?
+- Error paths handled gracefully?
 
 ### Security
-
-- no hardcoded secrets, credentials, API keys
-- user inputs validated
-- no SQL injection, XSS, path traversal
-- auth/authz checks present where needed
+- No hardcoded secrets, credentials, or API keys
+- Input validation on user-facing inputs
+- No SQL injection, XSS, or path traversal
+- Auth/authz checks where needed
 
 ### Code Quality
-
-- names clear; functions focused/single-responsibility
-- no premature complexity
-- duplicated logic consolidated where appropriate
+- Clear naming (variables, functions, classes)
+- No unnecessary complexity or premature abstraction
+- DRY — no duplicated logic that should be extracted
+- Functions are focused (single responsibility)
 
 ### Testing
-
-- new paths tested
-- happy + error cases covered
-- tests readable/maintainable and behavior-based
+- New code paths tested?
+- Happy path and error cases covered?
+- Tests readable and maintainable?
 
 ### Performance
-
-- no N+1 queries/unnecessary loops
-- caching appropriate
-- async paths contain no blocking operations
+- No N+1 queries or unnecessary loops
+- Appropriate caching where beneficial
+- No blocking operations in async code paths
 
 ### Documentation
+- Public APIs documented
+- Non-obvious logic has comments explaining "why"
+- README updated if behavior changed
 
-- public APIs documented
-- non-obvious logic explains why
-- README updated when behavior changed
+---
 
-## Pre-Push Workflow
+## 4. Pre-Push Review Workflow
 
-When asked to review/check before pushing:
+When the user asks you to "review the code" or "check before pushing":
 
-1. `git diff main...HEAD --stat`
-2. `git diff main...HEAD`
-3. `read_file` each changed file as needed
-4. apply the checklist
-5. report Critical / Warnings / Suggestions / Looks Good
-6. offer a fix before push if critical issues exist
+1. `git diff main...HEAD --stat` — see scope of changes
+2. `git diff main...HEAD` — read the full diff
+3. For each changed file, use `read_file` if you need more context
+4. Apply the checklist above
+5. Present findings in the structured format (Critical / Warnings / Suggestions / Looks Good)
+6. If critical issues found, offer to fix them before the user pushes
 
-## End-to-End PR Workflow
+---
 
-### 1. Set up environment
+## 5. PR Review Workflow (End-to-End)
+
+When the user asks you to "review PR #N", "look at this PR", or gives you a PR URL, follow this recipe:
+
+### Step 1: Set up environment
 
 ```bash
 source "${HERMES_HOME:-$HOME/.hermes}/skills/github/github-auth/scripts/gh-env.sh"
 # Or run the inline setup block from the top of this skill
 ```
 
-### 2. Gather context
+### Step 2: Gather PR context
 
-Read metadata, description, changed files, and checks before code:
+Get the PR metadata, description, and list of changed files to understand scope before diving into code.
 
+**With gh:**
 ```bash
 gh pr view 123
 gh pr diff 123 --name-only
 gh pr checks 123
 ```
 
+**With curl:**
 ```bash
 PR_NUMBER=123
 
@@ -342,14 +350,16 @@ curl -s -H "Authorization: token $GITHUB_TOKEN" \
   https://api.github.com/repos/$GH_OWNER/$GH_REPO/pulls/$PR_NUMBER/files
 ```
 
-### 3. Check out
+### Step 3: Check out the PR locally
+
+This gives you full access to `read_file`, `search_files`, and the ability to run tests.
 
 ```bash
 git fetch origin pull/$PR_NUMBER/head:pr-$PR_NUMBER
 git checkout pr-$PR_NUMBER
 ```
 
-### 4. Read diff + full context
+### Step 4: Read the diff and understand changes
 
 ```bash
 # Full diff against the base branch
@@ -361,10 +371,9 @@ git diff main...HEAD --name-only
 git diff main...HEAD -- path/to/file.py
 ```
 
-Use `read_file` around every changed region; a diff can hide surrounding
-behavior.
+For each changed file, use `read_file` to see full context around the changes — diffs alone can miss issues visible only with surrounding code.
 
-### 5. Run local checks
+### Step 5: Run automated checks locally (if applicable)
 
 ```bash
 # Run tests if there's a test suite
@@ -376,12 +385,15 @@ ruff check . 2>&1 | head -30
 # or: eslint, clippy, etc.
 ```
 
-### 6. Apply checklist
+### Step 6: Apply the review checklist (Section 3)
 
-Assess correctness, security, quality, tests, performance, and documentation.
+Go through each category: Correctness, Security, Code Quality, Testing, Performance, Documentation.
 
-### 7. Post formal review
+### Step 7: Post the review to GitHub
 
+Collect your findings and submit them as a formal review with inline comments.
+
+**With gh:**
 ```bash
 # If no issues — approve
 gh pr review $PR_NUMBER --approve --body "Reviewed by Hermes Agent. Code looks clean — good test coverage, no security concerns."
@@ -390,8 +402,7 @@ gh pr review $PR_NUMBER --approve --body "Reviewed by Hermes Agent. Code looks c
 gh pr review $PR_NUMBER --request-changes --body "Found a few issues — see inline comments."
 ```
 
-Atomic `curl` review:
-
+**With curl — atomic review with multiple inline comments:**
 ```bash
 HEAD_SHA=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
   https://api.github.com/repos/$GH_OWNER/$GH_REPO/pulls/$PR_NUMBER \
@@ -413,10 +424,11 @@ curl -s -X POST \
   }"
 ```
 
-### 8. Add summary comment
+### Step 8: Also post a summary comment
 
-Use `references/review-output-template.md` and include the top-level summary:
+In addition to inline comments, leave a top-level summary so the PR author gets the full picture at a glance. Use the review output format from `references/review-output-template.md`.
 
+**With gh:**
 ```bash
 gh pr comment $PR_NUMBER --body "$(cat <<'EOF'
 ## Code Review Summary
@@ -442,34 +454,15 @@ EOF
 )"
 ```
 
-### 9. Clean up checkout
+### Step 9: Clean up
 
 ```bash
 git checkout main
 git branch -D pr-$PR_NUMBER
 ```
 
-## Verdict Rule
+### Decision: Approve vs Request Changes vs Comment
 
-- **Approve**: no critical/warning issues; minor suggestions only or clear
-- **Request Changes**: any critical/warning issue to fix before merge
-- **Comment**: non-blocking observations, or draft/uncertain PR
-
-## Pitfalls
-
-- diff-only reading misses context; use `read_file`
-- stale/missing head SHA makes inline comments invalid
-- token in command/output/log is a credential leak
-- local green != remote CI green
-- review edits violate role separation
-- approve only after exact checks; request changes with reproducible locations
-
-## Verification
-
-- [ ] auth method and owner/repo resolved without secret exposure
-- [ ] local or PR diff inspected file-by-file with context
-- [ ] correctness/security/quality/testing/performance/docs checklist applied
-- [ ] applicable tests/lint actually ran; output captured
-- [ ] inline comments use new-file line + current head SHA
-- [ ] formal verdict matches severity; summary comment posted when required
-- [ ] temporary PR checkout cleaned up
+- **Approve** — no critical or warning-level issues, only minor suggestions or all clear
+- **Request Changes** — any critical or warning-level issue that should be fixed before merge
+- **Comment** — observations and suggestions, but nothing blocking (use when you're unsure or the PR is a draft)

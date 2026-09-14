@@ -14,17 +14,11 @@ metadata:
 
 # Modal Serverless GPU
 
-role: Modal serverless GPU application operator
-do: install/authenticate; define App/Image/Function/Cls/Volume/Secret; run local/deployed jobs; expose endpoints; schedule/batch/scale; inspect logs and cost
-inputs: Python app; image/dependencies; GPU/memory/CPU; volume/secret; endpoint/schedule; concurrency/timeout/retry; deployment intent
-outputs: Modal run/deployment; GPU inference/training result; HTTP endpoint; persisted model/data; logs and scaling diagnostics
-¬: hardcode secrets; deploy before local smoke test; confuse volume with image/local disk; use stale autoscaler names; leave endpoints unbounded; claim cold-start/price guarantees
-
 Guide to running ML workloads on Modal's serverless GPU cloud platform.
 
-## When to Use
+## When to use Modal
 
-Use Modal when:
+**Use Modal when:**
 - Running GPU-intensive ML workloads without managing infrastructure
 - Deploying ML models as auto-scaling APIs
 - Running batch processing jobs (training, inference, data processing)
@@ -32,21 +26,21 @@ Use Modal when:
 - Prototyping ML applications quickly
 - Running scheduled jobs (cron-like workloads)
 
-Key features:
-- Serverless GPUs: T4, L4, A10G, L40S, A100, H100, H200, B200 on-demand
-- Python-native: Define infrastructure in Python code, no YAML
-- Auto-scaling: Scale to zero, scale to 100+ GPUs instantly
-- Sub-second cold starts: Rust-based infrastructure for fast container launches
-- Container caching: Image layers cached for rapid iteration
-- Web endpoints: Deploy functions as REST APIs with zero-downtime updates
+**Key features:**
+- **Serverless GPUs**: T4, L4, A10G, L40S, A100, H100, H200, B200 on-demand
+- **Python-native**: Define infrastructure in Python code, no YAML
+- **Auto-scaling**: Scale to zero, scale to 100+ GPUs instantly
+- **Sub-second cold starts**: Rust-based infrastructure for fast container launches
+- **Container caching**: Image layers cached for rapid iteration
+- **Web endpoints**: Deploy functions as REST APIs with zero-downtime updates
 
-Use alternatives instead:
-- RunPod: For longer-running pods with persistent state
-- Lambda Labs: For reserved GPU instances
-- SkyPilot: For multi-cloud orchestration and cost optimization
-- Kubernetes: For complex multi-service architectures
+**Use alternatives instead:**
+- **RunPod**: For longer-running pods with persistent state
+- **Lambda Labs**: For reserved GPU instances
+- **SkyPilot**: For multi-cloud orchestration and cost optimization
+- **Kubernetes**: For complex multi-service architectures
 
-## Procedure
+## Quick start
 
 ### Installation
 
@@ -318,7 +312,7 @@ def my_function():
     pass
 ```
 
-> Modal 1.0 autoscaler renames (see the [migration guide](https://modal.com/docs/guide/modal-1-0-migration)):
+> **Modal 1.0 autoscaler renames** (see the [migration guide](https://modal.com/docs/guide/modal-1-0-migration)):
 > - `container_idle_timeout` → `scaledown_window`
 > - `concurrency_limit` → `max_containers`
 > - `keep_warm` → `min_containers`
@@ -335,7 +329,7 @@ if __name__ == "__main__":
 # modal app logs my-app
 ```
 
-## Pitfalls
+## Common issues
 
 | Issue | Solution |
 |-------|----------|
@@ -346,17 +340,12 @@ if __name__ == "__main__":
 
 ## References
 
-- [Advanced Usage](references/advanced-usage.md) - Multi-GPU, distributed training, cost optimization
-- [Troubleshooting](references/troubleshooting.md) - Common issues and solutions
-
-## Verification
-- run the app locally with `modal run` and inspect output
-- test one real GPU/function or HTTP call before deploy
-- check logs, endpoint response, volume persistence, timeout/retry behavior, and secret redaction
+- **[Advanced Usage](references/advanced-usage.md)** - Multi-GPU, distributed training, cost optimization
+- **[Troubleshooting](references/troubleshooting.md)** - Common issues and solutions
 
 ## Resources
 
-- Documentation: https://modal.com/docs
-- Examples: https://github.com/modal-labs/modal-examples
-- Pricing: https://modal.com/pricing
-- Discord: https://discord.gg/modal
+- **Documentation**: https://modal.com/docs
+- **Examples**: https://github.com/modal-labs/modal-examples
+- **Pricing**: https://modal.com/pricing
+- **Discord**: https://discord.gg/modal

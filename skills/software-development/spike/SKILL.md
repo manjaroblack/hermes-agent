@@ -13,39 +13,23 @@ metadata:
 
 # Spike
 
-role: feasibility-spike operator
-do: decompose questions; align scope; research approaches; build disposable probes; test edge cases; record verdict/recommendation
-inputs: idea, feasibility question(s), approaches, user constraints, existing GSD setup
-outputs: `spikes/NNN-descriptive-name/README.md`, runnable probe, evidence, VALIDATED/PARTIAL/INVALIDATED verdict
-¬: productionize/clean up spike; skip observable tests; call happy-path success complete; add complex package/config infrastructure; research-only answer when a probe is needed
+Use this skill when the user wants to **feel out an idea** before committing to a real build — validating feasibility, comparing approaches, or surfacing unknowns that no amount of research will answer. Spikes are disposable by design. Throw them away once they've paid their debt.
 
-Use this skill to feel out an idea before committing to a real build: validate
-feasibility, compare approaches, or surface unknowns research cannot answer.
-Spikes are disposable; throw them away after paying their uncertainty debt.
+Load this when the user says things like "let me try this", "I want to see if X works", "spike this out", "before I commit to Y", "quick prototype of Z", "is this even possible?", or "compare A vs B".
 
-## When to Use
+## When NOT to use this
 
-Load for "let me try this", "I want to see if X works", "spike this out",
-"before I commit to Y", "quick prototype of Z", "is this even possible?", or
-"compare A vs B".
+- The answer is knowable from docs or reading code — just do research, don't build
+- The work is production path — use the `plan` skill instead
+- The idea is already validated — jump straight to implementation
 
-## When NOT to Use
+## If the user has the full GSD system installed
 
-- docs/code already answer the question → research, don't build
-- work is production path → use `plan`
-- idea is already validated → implement directly
+If `gsd-spike` shows up as a sibling skill (installed via `npx get-shit-done-cc --hermes`), prefer **`gsd-spike`** when the user wants the full GSD workflow: persistent `.planning/spikes/` state, MANIFEST tracking across sessions, Given/When/Then verdict format, and commit patterns that integrate with the rest of GSD. This skill is the lightweight standalone version for users who don't have (or don't want) the full system.
 
-## Full GSD Mode
+## Core method
 
-If `gsd-spike` appears as a sibling (installed via
-`npx get-shit-done-cc --hermes`), prefer it when the user wants full GSD:
-persistent `.planning/spikes/` state, MANIFEST tracking, Given/When/Then
-verdicts, and commits integrated with the rest of GSD. This is lightweight
-standalone mode for users without or not wanting that system.
-
-## Core Method
-
-Every spike follows:
+Regardless of scale, every spike follows this loop:
 
 ```
 decompose  →  research  →  build  →  verdict
@@ -53,19 +37,9 @@ decompose  →  research  →  build  →  verdict
                   iterate on findings
 ```
 
-## Prerequisites
-
-- concrete feasibility question or idea
-- active workspace + disposable `spikes/` destination
-- `terminal`, `write_file`, `read_file`, `web_search`, optional `delegate_task`
-- user alignment when multiple spikes/approaches are proposed
-
-## Procedure
-
 ### 1. Decompose
 
-Break the idea into **2–5 independent feasibility questions**; one question =
-one spike. Order by risk and present Given/When/Then:
+Break the user's idea into **2-5 independent feasibility questions**. Each question is one spike. Present them as a table with Given/When/Then framing:
 
 | # | Spike | Validates (Given/When/Then) | Risk |
 |---|-------|----------------------------|------|
@@ -73,44 +47,46 @@ one spike. Order by risk and present Given/When/Then:
 | 002a | pdf-parse-pdfjs | Given a multi-page PDF, when parsed with pdfjs, then structured text is extractable | Medium |
 | 002b | pdf-parse-camelot | Given a multi-page PDF, when parsed with camelot, then structured text is extractable | Medium |
 
-Types: `standard` = one approach/question; `comparison` = same question,
-different approaches, shared number + `a`/`b`/`c` suffix.
+**Spike types:**
+- **standard** — one approach answering one question
+- **comparison** — same question, different approaches (shared number, letter suffix `a`/`b`/`c`)
 
-Good = specific feasibility + observable output. Bad = broad, unobservable, or
-only "read the docs". Run the highest idea-killing risk first; easy parts are
-wasted if the hard part fails. Skip decomposition only when the user explicitly
-knows exactly one spike.
+**Good spike questions:** specific feasibility with observable output.
+**Bad spike questions:** too broad, no observable output, or just "read the docs about X".
 
-### 2. Align multi-spike scope
+**Order by risk.** The spike most likely to kill the idea runs first. No point prototyping the easy parts if the hard part doesn't work.
 
-Present the table and ask: "Build all in this order, or adjust?" Let the user
-drop, reorder, or re-frame before code.
+**Skip decomposition** only if the user already knows exactly what they want to spike and says so. Then take their idea as a single spike.
 
-### 3. Research each spike
+### 2. Align (for multi-spike ideas)
 
-Spikes are not research-free: research enough to choose, then build.
+Present the spike table. Ask: "Build all in this order, or adjust?" Let the user drop, reorder, or re-frame before you write any code.
 
-1. Brief what/why/key risk in 2–3 sentences.
-2. If choice is real, surface candidates:
+### 3. Research (per spike, before building)
+
+Spikes are not research-free — you research enough to pick the right approach, then you build. Per spike:
+
+1. **Brief it.** 2-3 sentences: what this spike is, why it matters, key risk.
+2. **Surface competing approaches** if there's real choice:
 
    | Approach | Tool/Library | Pros | Cons | Status |
    |----------|-------------|------|------|--------|
    | ... | ... | ... | ... | maintained / abandoned / beta |
 
-3. Pick one and justify it; if ≥2 credible, build quick variants.
-4. Skip research for pure logic with no external dependency.
+3. **Pick one.** State why. If 2+ are credible, build quick variants within the spike.
+4. **Skip research** for pure logic with no external dependencies.
 
-Use Hermes tools:
+Use Hermes tools for the research step:
 
-- `web_search("python websocket streaming libraries 2025")` → candidates
-- `web_extract(urls=["https://websockets.readthedocs.io/..."])` → actual docs
-- `terminal("pip show websockets | grep Version")` → installed project version
-- absent docs → clone, then `read_file` `README.md` / `examples/`
-- optional Context7 MCP: `mcp_*_resolve-library-id` → `mcp_*_query-docs`
+- `web_search("python websocket streaming libraries 2025")` — find candidates
+- `web_extract(urls=["https://websockets.readthedocs.io/..."])` — read the actual docs (returns markdown)
+- `terminal("pip show websockets | grep Version")` — check what's installed in the project's venv
 
-### 4. Build disposable probes
+For libraries without docs pages, clone and read their `README.md` / `examples/` via `read_file`. Context7 MCP (if the user has it configured) is also a good source — `mcp_*_resolve-library-id` then `mcp_*_query-docs`.
 
-One standalone directory per spike:
+### 4. Build
+
+One directory per spike. Keep it standalone.
 
 ```
 spikes/
@@ -125,18 +101,18 @@ spikes/
     └── parse.py
 ```
 
-Bias toward interaction, not a log line saying "it works":
+**Bias toward something the user can interact with.** Spikes fail when the only output is a log line that says "it works." The user wants to *feel* the spike working. Default choices, in order of preference:
 
-1. runnable CLI input → observable output
-2. minimal HTML behavior demo
-3. one-endpoint web server
-4. unit test with recognizable assertions
+1. A runnable CLI that takes input and prints observable output
+2. A minimal HTML page that demonstrates the behavior
+3. A small web server with one endpoint
+4. A unit test that exercises the question with recognizable assertions
 
-Depth over speed: test edge cases, follow surprises, and never declare success
-from one happy path. Avoid complex package management, build tools/bundlers,
-Docker, env files, and config systems unless required; hardcode throwaway work.
+**Depth over speed.** Never declare "it works" after one happy-path run. Test edge cases. Follow surprising findings. The verdict is only trustworthy when the investigation was honest.
 
-Typical single-spike sequence:
+**Avoid** unless the spike specifically requires it: complex package management, build tools/bundlers, Docker, env files, config systems. Hardcode everything — it's a spike.
+
+**Building one spike** — a typical tool sequence:
 
 ```
 terminal("mkdir -p spikes/001-websocket-streaming")
@@ -146,8 +122,7 @@ terminal("cd spikes/001-websocket-streaming && python main.py")
 # Observe output, iterate.
 ```
 
-Comparison spikes 002a/002b: when both need real engineering (not 10-line
-probes), delegate in parallel:
+**Parallel comparison spikes (002a / 002b) — delegate.** When two approaches can run in parallel and both need real engineering (not 10-line prototypes), fan out with `delegate_task`:
 
 ```
 delegate_task(tasks=[
@@ -156,11 +131,11 @@ delegate_task(tasks=[
 ])
 ```
 
-Each subagent returns a verdict; write the head-to-head comparison.
+Each subagent returns its own verdict; you write the head-to-head.
 
 ### 5. Verdict
 
-Each spike `README.md` closes with:
+Each spike's `README.md` closes with:
 
 ```markdown
 ## Verdict: VALIDATED | PARTIAL | INVALIDATED
@@ -178,13 +153,13 @@ Each spike `README.md` closes with:
 - ...
 ```
 
-- **VALIDATED** = core question answered yes with evidence
-- **PARTIAL** = works under documented X/Y/Z constraints
-- **INVALIDATED** = doesn't work for documented reason; still a successful spike
+**VALIDATED** = the core question was answered yes, with evidence.
+**PARTIAL** = it works under constraints X, Y, Z — document them.
+**INVALIDATED** = doesn't work, for this reason. This is a successful spike.
 
-## Comparison Spikes
+## Comparison spikes
 
-For approaches answering one question, build them back to back, then record:
+When two approaches answer the same question (002a / 002b), build them **back to back**, then do a head-to-head comparison at the end:
 
 ```markdown
 ## Head-to-head: pdfjs vs camelot
@@ -199,50 +174,24 @@ For approaches answering one question, build them back to back, then record:
 **Winner:** pdfjs for our use case. Camelot if we need table-first extraction later.
 ```
 
-## Frontier Mode
+## Frontier mode (picking what to spike next)
 
-If existing spikes exist and the user asks "what should I spike next?", inspect
-directories for:
+If spikes already exist and the user says "what should I spike next?", walk the existing directories and look for:
 
-- **Integration risks** — independently validated spikes touch one resource
-- **Data handoffs** — A output assumed compatible with B input, never proven
-- **Gaps in the vision** — assumed but unproven capabilities
-- **Alternative approaches** — other angles for PARTIAL/INVALIDATED results
+- **Integration risks** — two validated spikes that touch the same resource but were tested independently
+- **Data handoffs** — spike A's output was assumed compatible with spike B's input; never proven
+- **Gaps in the vision** — capabilities assumed but unproven
+- **Alternative approaches** — different angles for PARTIAL or INVALIDATED spikes
 
-Propose 2–4 Given/When/Then candidates; let the user choose.
+Propose 2-4 candidates as Given/When/Then. Let the user pick.
 
 ## Output
 
-- create `spikes/` (or `.planning/spikes/` with GSD) at repo root
-- one `NNN-descriptive-name/` per spike
-- each `README.md` captures question, approach, results, verdict
-- keep code throwaway; 2 days of production cleanup means spike scope failed
-
-## Pitfalls
-
-- docs/code-known answer needs research, not a build
-- no observable output or edge-case probe = weak evidence
-- one happy path ≠ validated
-- package/build/Docker/config complexity obscures feasibility
-- production path belongs to `plan`, not spike
-- comparison requires same question + head-to-head dimensions
-- failed/INVALIDATED spike is useful; record why
-- use persistent GSD mode when installed and requested
-
-## Verification
-
-- [ ] Given/When/Then question(s), risk order, and alignment recorded
-- [ ] approach research/choice and evidence documented
-- [ ] probe has observable output + edge cases
-- [ ] comparison variants independently run and compared
-- [ ] README has complete verdict + recommendation
-- [ ] no production files, cleanup, or hidden infrastructure added
+- Create `spikes/` (or `.planning/spikes/` if the user is using GSD conventions) in the repo root
+- One dir per spike: `NNN-descriptive-name/`
+- `README.md` per spike captures question, approach, results, verdict
+- Keep the code throwaway — a spike that takes 2 days to "clean up for production" was a bad spike
 
 ## Attribution
 
-Adapted from the GSD (Get Shit Done) project's `/gsd-spike` workflow — MIT ©
-2025 Lex Christopherson
-([gsd-build/get-shit-done](https://github.com/gsd-build/get-shit-done)). The full
-GSD system offers persistent spike state, MANIFEST tracking, and integration
-with a broader spec-driven development pipeline; install with
-`npx get-shit-done-cc --hermes --global`.
+Adapted from the GSD (Get Shit Done) project's `/gsd-spike` workflow — MIT © 2025 Lex Christopherson ([gsd-build/get-shit-done](https://github.com/gsd-build/get-shit-done)). The full GSD system offers persistent spike state, MANIFEST tracking, and integration with a broader spec-driven development pipeline; install with `npx get-shit-done-cc --hermes --global`.

@@ -12,34 +12,22 @@ metadata:
 
 ---
 
-# Weights & Biases (W&B)
+# Weights & Biases: ML Experiment Tracking & MLOps
 
-role: ML experiment-tracking and artifact-registry operator
-do: install/auth; initialize runs; log config/metrics/media; track checkpoints/artifacts; run sweeps; integrate frameworks; inspect dashboards/reports
-inputs: project/run config, metrics/media, model/dataset/code files, sweep parameters, team/workspace settings
-outputs: run URL/ID, charts, tables, artifacts/lineage, sweep results, registry aliases
-¬: expose API keys; omit run config/commit/data lineage; overwrite/label production artifacts without approval; compare runs across incompatible schemas
+## When to Use This Skill
 
-## When to Use
+Use Weights & Biases (W&B) when you need to:
+- **Track ML experiments** with automatic metric logging
+- **Visualize training** in real-time dashboards
+- **Compare runs** across hyperparameters and configurations
+- **Optimize hyperparameters** with automated sweeps
+- **Manage model registry** with versioning and lineage
+- **Collaborate on ML projects** with team workspaces
+- **Track artifacts** (datasets, models, code) with lineage
 
-- automatic metric logging and real-time training dashboards
-- run/hyperparameter comparison or automated sweeps
-- model/dataset/code artifacts with lineage
-- model registry/versioning and team collaboration
-- PyTorch, TensorFlow/Keras, Hugging Face, or Lightning training
+**Users**: 200,000+ ML practitioners | **GitHub Stars**: 10.5k+ | **Integrations**: 100+
 
-## Procedure
-
-1. Install/login without exposing `WANDB_API_KEY`; choose project, run, and team.
-2. Initialize with config + provenance; log metrics/media at meaningful cadence.
-3. Track datasets/models/code as artifacts with explicit versions + aliases.
-4. Configure sweeps or framework integration; monitor generated runs.
-5. Build comparisons/reports only across compatible schemas; verify URLs + lineage.
-
-W&B is documented here as 200,000+ practitioners, 10.5k+ GitHub stars, and
-100+ integrations. Treat these as context, not validation of a run.
-
-## Install + Login
+## Installation
 
 ```bash
 # Install W&B
@@ -52,11 +40,9 @@ wandb login
 export WANDB_API_KEY=your_api_key_here
 ```
 
-Use `wandb login`/secret stores; never print or commit `WANDB_API_KEY`.
-
 ## Quick Start
 
-### Basic tracking
+### Basic Experiment Tracking
 
 ```python
 import wandb
@@ -91,7 +77,7 @@ for epoch in range(run.config.epochs):
 wandb.finish()
 ```
 
-### PyTorch
+### With PyTorch
 
 ```python
 import torch
@@ -135,10 +121,10 @@ wandb.finish()
 
 ## Core Concepts
 
-### Projects + runs
+### 1. Projects and Runs
 
-Project = related experiments; run = one training execution. Capture stable
-names/tags/notes and retain the run ID/URL:
+**Project**: Collection of related experiments
+**Run**: Single execution of your training script
 
 ```python
 # Create/use project
@@ -154,7 +140,9 @@ print(f"Run ID: {run.id}")
 print(f"Run URL: {run.url}")
 ```
 
-### Configuration
+### 2. Configuration Tracking
+
+Track hyperparameters automatically:
 
 ```python
 config = {
@@ -180,7 +168,7 @@ lr = wandb.config.learning_rate
 batch_size = wandb.config.batch_size
 ```
 
-### Metrics/media/tables
+### 3. Metric Logging
 
 ```python
 # Log scalars
@@ -210,7 +198,7 @@ table = wandb.Table(columns=["id", "prediction", "ground_truth"])
 wandb.log({"predictions": table})
 ```
 
-### Checkpoints + artifacts
+### 4. Model Checkpointing
 
 ```python
 import torch
@@ -237,7 +225,9 @@ wandb.log_artifact(artifact)
 
 ## Hyperparameter Sweeps
 
-Define a search, train from `wandb.config`, and cap trials deliberately:
+Automatically search for optimal hyperparameters.
+
+### Define Sweep Configuration
 
 ```python
 sweep_config = {
@@ -270,6 +260,8 @@ sweep_config = {
 sweep_id = wandb.sweep(sweep_config, project="my-project")
 ```
 
+### Define Training Function
+
 ```python
 def train():
     # Initialize run
@@ -299,7 +291,7 @@ def train():
 wandb.agent(sweep_id, function=train, count=50)  # Run 50 trials
 ```
 
-Strategy shapes:
+### Sweep Strategies
 
 ```python
 # Grid search - exhaustive
@@ -330,9 +322,11 @@ sweep_config = {
 }
 ```
 
-## Artifacts + Registry
+## Artifacts
 
-Artifacts version datasets/models/files; preserve metadata and lineage:
+Track datasets, models, and other files with lineage.
+
+### Log Artifacts
 
 ```python
 # Create artifact
@@ -351,6 +345,8 @@ artifact.add_dir('data/images/')
 wandb.log_artifact(artifact)
 ```
 
+### Use Artifacts
+
 ```python
 # Download and use artifact
 run = wandb.init(project="my-project")
@@ -362,6 +358,8 @@ artifact_dir = artifact.download()
 # Use the data
 data = load_data(f"{artifact_dir}/train.csv")
 ```
+
+### Model Registry
 
 ```python
 # Log model as artifact
@@ -378,9 +376,9 @@ wandb.log_artifact(model_artifact, aliases=['best', 'production'])
 run.link_artifact(model_artifact, 'model-registry/production-models')
 ```
 
-## Framework Integrations
+## Integration Examples
 
-### Hugging Face Transformers
+### HuggingFace Transformers
 
 ```python
 from transformers import Trainer, TrainingArguments
@@ -453,7 +451,9 @@ model.fit(
 )
 ```
 
-## Visualization + Reports
+## Visualization & Analysis
+
+### Custom Charts
 
 ```python
 # Log custom visualizations
@@ -472,12 +472,17 @@ wandb.log({"conf_mat": wandb.plot.confusion_matrix(
 )})
 ```
 
-W&B reports combine runs/charts/text, support Markdown, embed visualizations,
-and enable team collaboration.
+### Reports
+
+Create shareable reports in W&B UI:
+- Combine runs, charts, and text
+- Markdown support
+- Embeddable visualizations
+- Team collaboration
 
 ## Best Practices
 
-### Organize
+### 1. Organize with Tags and Groups
 
 ```python
 wandb.init(
@@ -488,7 +493,7 @@ wandb.init(
 )
 ```
 
-### Log relevant provenance
+### 2. Log Everything Relevant
 
 ```python
 # Log system metrics
@@ -508,7 +513,7 @@ wandb.log({
 })
 ```
 
-### Name runs descriptively
+### 3. Use Descriptive Names
 
 ```python
 # ✅ Good: Descriptive run names
@@ -521,7 +526,7 @@ wandb.init(
 wandb.init(project="nlp", name="run1")
 ```
 
-### Save important outputs
+### 4. Save Important Artifacts
 
 ```python
 # Save final model
@@ -537,7 +542,7 @@ predictions_table = wandb.Table(
 wandb.log({"predictions": predictions_table})
 ```
 
-### Offline mode
+### 5. Use Offline Mode for Unstable Connections
 
 ```python
 import os
@@ -552,9 +557,9 @@ wandb.init(project="my-project")
 # wandb sync <run_directory>
 ```
 
-## Collaboration + Pricing
+## Team Collaboration
 
-Share runs by URL:
+### Share Runs
 
 ```python
 # Runs are automatically shareable via URL
@@ -562,38 +567,32 @@ run = wandb.init(project="team-project")
 print(f"Share this URL: {run.url}")
 ```
 
-Team setup: create account at wandb.ai, add members, set private/public
-visibility, and use team artifacts/registry. Listed pricing: Free = unlimited
-public projects/100 GB; Academic = free for students/researchers; Teams =
-$50/seat/month with private projects/unlimited storage; Enterprise = custom,
-on-prem options.
+### Team Projects
 
-## Pitfalls
+- Create team account at wandb.ai
+- Add team members
+- Set project visibility (private/public)
+- Use team-level artifacts and model registry
 
-- Never print, commit, or embed `WANDB_API_KEY`; use login/secret storage.
-- Run comparisons are invalid across mismatched metric schemas/configs.
-- Record commit, config, data split, and artifact lineage; a chart alone is not provenance.
-- Production aliases/registry targets are mutations → require explicit scope.
-- Offline runs remain local until `wandb sync <run_directory>` succeeds.
+## Pricing
+
+- **Free**: Unlimited public projects, 100GB storage
+- **Academic**: Free for students/researchers
+- **Teams**: $50/seat/month, private projects, unlimited storage
+- **Enterprise**: Custom pricing, on-prem options
 
 ## Resources
 
-- Documentation: https://docs.wandb.ai
-- GitHub: https://github.com/wandb/wandb
-- Examples: https://github.com/wandb/examples
-- Community: https://wandb.ai/community
-- Discord: https://wandb.me/discord
-- [references/sweeps.md](references/sweeps.md): hyperparameter optimization
-- [references/artifacts.md](references/artifacts.md): data/model versioning
-- [references/integrations.md](references/integrations.md): framework examples
+- **Documentation**: https://docs.wandb.ai
+- **GitHub**: https://github.com/wandb/wandb (10.5k+ stars)
+- **Examples**: https://github.com/wandb/examples
+- **Community**: https://wandb.ai/community
+- **Discord**: https://wandb.me/discord
 
-## Verification
+## See Also
 
-- [ ] login works without token disclosure
-- [ ] run has project/name/tags/config and URL/ID
-- [ ] metrics/media/checkpoint/artifacts log successfully
-- [ ] artifact lineage, aliases, and registry target are explicit
-- [ ] sweep strategy/metric/trial count recorded
-- [ ] framework integration emits expected runs
-- [ ] offline runs sync from a known run directory
-- [ ] reports/metrics compare like-for-like configs
+- `references/sweeps.md` - Comprehensive hyperparameter optimization guide
+- `references/artifacts.md` - Data and model versioning patterns
+- `references/integrations.md` - Framework-specific examples
+
+

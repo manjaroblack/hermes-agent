@@ -25,65 +25,45 @@ metadata:
     homepage: https://shopify.dev/docs/api/admin-graphql
 ---
 
-# Shopify Admin and Storefront GraphQL
+# Shopify — Admin & Storefront GraphQL APIs
 
-role: Shopify GraphQL read/write API operator
-do: configure token/domain/version; query admin/storefront; paginate; inspect GraphQL/user errors/cost; manage products/orders/customers/inventory/metafields; run bulk/webhooks; confirm destructive mutations
-inputs: shop domain; API token/version; GraphQL query/variables; GID; resource/mutation intent; webhook URL/app secret
-outputs: parseable GraphQL data; resource mutations; cost/pagination status; JSONL export; webhook registration/HMAC result
-¬: use legacy REST for new integrations; expose tokens; strip GID prefix; treat HTTP 200 as success; ignore `errors`/`userErrors`; exceed cost bucket; mutate production without confirmation; use access token for webhook HMAC
+Work with Shopify stores directly through `curl`: list products, manage inventory, pull orders, update customers, read metafields. No SDK, no app framework — just the GraphQL endpoint and a custom-app access token.
 
-Use `curl` against Shopify GraphQL. Admin GraphQL handles store operations;
-Storefront GraphQL handles read-only customer-facing products, collections, and
-cart. REST Admin API is legacy since 2024-04 and receives security fixes only.
-
-## When to Use
-
-- list/search/create/update products/variants
-- inspect orders/customers and shipping data
-- read/adjust/set inventory by item/location
-- read/set metafields/metaobjects
-- Storefront read-only queries, bulk exports, webhooks
+The REST Admin API is legacy since 2024-04 and only receives security fixes. **Use GraphQL Admin** for all admin work. Use **Storefront GraphQL** for read-only customer-facing queries (products, collections, cart).
 
 ## Prerequisites
 
-1. Shopify admin → **Settings → Apps and sales channels → Develop apps → Create an app**.
-2. **Configure Admin API scopes**; select only needed scopes; save.
-3. **Install app**; access token appears once, starts `shpat_`; copy immediately.
-4. Store in `${HERMES_HOME:-~/.hermes}/.env`:
-
+1. In Shopify admin: **Settings → Apps and sales channels → Develop apps → Create an app**.
+2. Click **Configure Admin API scopes**, select what you need (examples below), save.
+3. **Install app** → the Admin API access token appears ONCE. Copy it immediately — Shopify will never show it again. Tokens start with `shpat_`.
+4. Save to `${HERMES_HOME:-~/.hermes}/.env`:
    ```
    SHOPIFY_ACCESS_TOKEN=shpat_xxxxxxxxxxxxxxxxxxxx
    SHOPIFY_STORE_DOMAIN=my-store.myshopify.com
    SHOPIFY_API_VERSION=2026-01
    ```
 
-As of January 1, 2026, new admin-created legacy custom apps are gone. For a
-shop without an existing custom app after that date, use Dev Dashboard:
-https://shopify.dev/docs/apps/build/dev-dashboard. Existing admin apps remain.
+> **Heads up:** As of January 1, 2026, new "legacy custom apps" created in the Shopify admin are gone. New setups should use the **Dev Dashboard** (`shopify.dev/docs/apps/build/dev-dashboard`). Existing admin-created apps keep working. If the user's shop has no existing custom app and it's after 2026-01-01, direct them to Dev Dashboard instead of the admin flow.
 
-Scopes by task:
+Common scopes by task:
+- Products / collections: `read_products`, `write_products`
+- Inventory: `read_inventory`, `write_inventory`, `read_locations`
+- Orders: `read_orders`, `write_orders` (30 most recent without `read_all_orders`)
+- Customers: `read_customers`, `write_customers`
+- Draft orders: `read_draft_orders`, `write_draft_orders`
+- Fulfillments: `read_fulfillments`, `write_fulfillments`
+- Metafields / metaobjects: covered by the matching resource scopes
 
-- products/collections: `read_products`, `write_products`
-- inventory: `read_inventory`, `write_inventory`, `read_locations`
-- orders: `read_orders`, `write_orders` (30 most recent without `read_all_orders`)
-- customers: `read_customers`, `write_customers`
-- draft orders: `read_draft_orders`, `write_draft_orders`
-- fulfillments: `read_fulfillments`, `write_fulfillments`
-- metafields/metaobjects: matching resource scopes
+## API Basics
 
-## Procedure
+- **Endpoint:** `https://$SHOPIFY_STORE_DOMAIN/admin/api/$SHOPIFY_API_VERSION/graphql.json`
+- **Auth header:** `X-Shopify-Access-Token: $SHOPIFY_ACCESS_TOKEN` (NOT `Authorization: Bearer`)
+- **Method:** always `POST`, always `Content-Type: application/json`, body is `{"query": "...", "variables": {...}}`
+- **HTTP 200 does not mean success.** GraphQL returns errors in a top-level `errors` array and per-field `userErrors`. Always check both.
+- **IDs are GID strings:** `gid://shopify/Product/10079467700516`, `gid://shopify/Variant/...`, `gid://shopify/Order/...`. Pass these verbatim — don't strip the prefix.
+- **Rate limit:** calculated via query cost (leaky bucket). Each response has `extensions.cost` with `requestedQueryCost`, `actualQueryCost`, `throttleStatus.{currentlyAvailable, maximumAvailable, restoreRate}`. Back off when `currentlyAvailable` drops below your next query's cost. Standard shops = 100 points bucket, 50/s restore; Plus = 1000/100.
 
-### 1. Apply API basics
-
-- Admin endpoint: `https://$SHOPIFY_STORE_DOMAIN/admin/api/$SHOPIFY_API_VERSION/graphql.json`
-- Admin auth: `X-Shopify-Access-Token: $SHOPIFY_ACCESS_TOKEN`, not `Authorization`
-- always `POST`, `Content-Type: application/json`, body `{"query": "...", "variables": {...}}`
-- HTTP 200 may still contain top-level `errors` or mutation `userErrors`; check both
-- IDs are GIDs, e.g. `gid://shopify/Product/10079467700516`; pass verbatim
-- rate data is `extensions.cost`: `requestedQueryCost`, `actualQueryCost`, `throttleStatus.{currentlyAvailable, maximumAvailable, restoreRate}`; back off below next query cost; standard 100/50s, Plus 1000/100
-
-Reusable shell function:
+Base curl pattern (reusable):
 
 ```bash
 shop_gql() {
@@ -97,22 +77,23 @@ shop_gql() {
 }
 ```
 
-Pipe through `jq` for readability; `-sS` preserves errors and hides progress.
+Pipe through `jq` for readable output. `-sS` keeps errors visible but hides the progress bar.
 
-### 2. Discover shop/version
+## Discovery
 
+### Shop info + current API version
 ```bash
 shop_gql '{ shop { name myshopifyDomain primaryDomain { url } currencyCode plan { displayName } } }' | jq
 ```
 
+### List all supported API versions
 ```bash
 shop_gql '{ publicApiVersions { handle supported } }' | jq '.data.publicApiVersions[] | select(.supported)'
 ```
 
-### 3. Products
+## Products
 
-Search first 20:
-
+### Search products (first 20 matching query)
 ```bash
 shop_gql '
 query($q: String!) {
@@ -123,12 +104,9 @@ query($q: String!) {
 }' '{"q":"hoodie status:active"}' | jq
 ```
 
-Query grammar supports `title:`, `sku:`, `vendor:`, `product_type:`,
-`status:active`, `tag:`, `created_at:>2025-01-01`:
-https://shopify.dev/docs/api/usage/search-syntax.
+Query syntax supports `title:`, `sku:`, `vendor:`, `product_type:`, `status:active`, `tag:`, `created_at:>2025-01-01`. Full grammar: https://shopify.dev/docs/api/usage/search-syntax
 
-Cursor pagination:
-
+### Paginate products (cursor)
 ```bash
 shop_gql '
 query($cursor: String) {
@@ -140,8 +118,7 @@ query($cursor: String) {
 # subsequent calls: pass the previous endCursor
 ```
 
-Product variants/metafields:
-
+### Get a product with variants + metafields
 ```bash
 shop_gql '
 query($id: ID!) {
@@ -153,8 +130,7 @@ query($id: ID!) {
 }' '{"id":"gid://shopify/Product/10079467700516"}' | jq
 ```
 
-Create product:
-
+### Create a product with one variant
 ```bash
 shop_gql '
 mutation($input: ProductCreateInput!) {
@@ -165,7 +141,7 @@ mutation($input: ProductCreateInput!) {
 }' '{"input":{"title":"Test Hoodie","status":"DRAFT","vendor":"Hermes","productType":"Apparel","tags":["test"]}}'
 ```
 
-Recent versions use variant mutations:
+Variants now have their own mutations in recent versions:
 
 ```bash
 # Add variants after creating the product
@@ -178,6 +154,7 @@ mutation($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
 }' '{"productId":"gid://shopify/Product/...","variants":[{"optionValues":[{"optionName":"Size","name":"M"}],"price":"49.00","inventoryItem":{"sku":"HD-M","tracked":true}}]}'
 ```
 
+### Update price / SKU
 ```bash
 shop_gql '
 mutation($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
@@ -188,10 +165,9 @@ mutation($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
 }' '{"productId":"gid://shopify/Product/...","variants":[{"id":"gid://shopify/ProductVariant/...","price":"55.00"}]}'
 ```
 
-### 4. Orders
+## Orders
 
-Recent orders (last 30 without `read_all_orders`):
-
+### List recent orders (last 30 by default without `read_all_orders`)
 ```bash
 shop_gql '
 {
@@ -206,12 +182,9 @@ shop_gql '
 }' | jq
 ```
 
-Useful filters: `financial_status:paid|pending|refunded`,
-`fulfillment_status:unfulfilled|fulfilled`, `created_at:>2025-01-01`,
-`tag:gift`, `email:foo@example.com`.
+Useful order query filters: `financial_status:paid|pending|refunded`, `fulfillment_status:unfulfilled|fulfilled`, `created_at:>2025-01-01`, `tag:gift`, `email:foo@example.com`.
 
-Single order with address:
-
+### Fetch a single order with shipping address
 ```bash
 shop_gql '
 query($id: ID!) {
@@ -224,7 +197,7 @@ query($id: ID!) {
 }' '{"id":"gid://shopify/Order/...."}' | jq
 ```
 
-### 5. Customers
+## Customers
 
 ```bash
 # Search
@@ -245,9 +218,9 @@ mutation($input: CustomerInput!) {
 }' '{"input":{"email":"test@example.com","firstName":"Test","lastName":"User","tags":["api-created"]}}'
 ```
 
-### 6. Inventory
+## Inventory
 
-Inventory is on inventory items tied to variants, tracked per location:
+Inventory lives on **inventory items** tied to variants, quantities tracked per **location**.
 
 ```bash
 # Get inventory for a variant across all locations
@@ -265,7 +238,7 @@ query($id: ID!) {
 }' '{"id":"gid://shopify/ProductVariant/..."}'
 ```
 
-Delta adjust:
+Adjust stock (delta) — uses `inventoryAdjustQuantities`:
 
 ```bash
 shop_gql '
@@ -283,7 +256,7 @@ mutation($input: InventoryAdjustQuantitiesInput!) {
 }'
 ```
 
-Absolute set:
+Set absolute stock (not delta) — `inventorySetQuantities`:
 
 ```bash
 shop_gql '
@@ -295,7 +268,9 @@ mutation($input: InventorySetQuantitiesInput!) {
 }' '{"input":{"reason":"correction","name":"available","ignoreCompareQuantity":true,"quantities":[{"inventoryItemId":"gid://shopify/InventoryItem/...","locationId":"gid://shopify/Location/...","quantity":100}]}}'
 ```
 
-### 7. Metafields/metaobjects
+## Metafields & Metaobjects
+
+Metafields attach custom data to resources (products, customers, orders, shop).
 
 ```bash
 # Read
@@ -318,13 +293,13 @@ mutation($metafields: [MetafieldsSetInput!]!) {
 }' '{"metafields":[{"ownerId":"gid://shopify/Product/...","namespace":"custom","key":"care_instructions","type":"multi_line_text_field","value":"Wash cold. Tumble dry low."}]}'
 ```
 
-### 8. Storefront API
+## Storefront API (public read-only)
 
-Read-only customer-facing endpoint uses a distinct token:
+Different endpoint, different token, used for customer-facing apps/hydrogen-style headless setups. Headers differ:
 
-- endpoint: `https://$SHOPIFY_STORE_DOMAIN/api/$SHOPIFY_API_VERSION/graphql.json`
-- public auth: `X-Shopify-Storefront-Access-Token: <public token>`; browser-embeddable
-- private auth: `Shopify-Storefront-Private-Token: <private token>`; server-only
+- **Endpoint:** `https://$SHOPIFY_STORE_DOMAIN/api/$SHOPIFY_API_VERSION/graphql.json`
+- **Auth header (public):** `X-Shopify-Storefront-Access-Token: <public token>` — embeddable in browser
+- **Auth header (private):** `Shopify-Storefront-Private-Token: <private token>` — server-only
 
 ```bash
 curl -sS -X POST \
@@ -334,9 +309,9 @@ curl -sS -X POST \
   -d '{"query":"{ shop { name } products(first: 5) { edges { node { id title handle } } } }"}' | jq
 ```
 
-### 9. Bulk operations
+## Bulk Operations
 
-For catalogs/order dumps larger than rate limits:
+For dumps larger than rate limits allow (full product catalog, all orders for a year):
 
 ```bash
 # 1. Start bulk query
@@ -357,10 +332,11 @@ shop_gql '{ currentBulkOperation { id status errorCode objectCount fileSize url 
 curl -sS "$URL" > products.jsonl
 ```
 
-Each JSONL line is a node; nested connections are separate lines with
-`__parentId`; reassemble client-side if needed.
+Each JSONL line is a node, and nested connections are emitted as separate lines with `__parentId`. Reassemble client-side if needed.
 
-### 10. Webhooks
+## Webhooks
+
+Subscribe to events so you don't have to poll:
 
 ```bash
 shop_gql '
@@ -372,7 +348,7 @@ mutation($topic: WebhookSubscriptionTopic!, $sub: WebhookSubscriptionInput!) {
 }' '{"topic":"ORDERS_CREATE","sub":{"callbackUrl":"https://example.com/webhook","format":"JSON"}}'
 ```
 
-Verify incoming HMAC with app client secret, not access token:
+Verify incoming webhook HMAC using the app's client secret (not the access token):
 
 ```bash
 echo -n "$REQUEST_BODY" | openssl dgst -sha256 -hmac "$APP_SECRET" -binary | base64
@@ -381,31 +357,17 @@ echo -n "$REQUEST_BODY" | openssl dgst -sha256 -hmac "$APP_SECRET" -binary | bas
 
 ## Pitfalls
 
-- REST still exists but is frozen; use GraphQL for new admin integrations.
-- Admin tokens begin `shpat_`; Storefront public tokens `shpua_`; wrong header produces opaque 401.
-- Valid token + 403 means missing scope; Shopify may return `{"errors":[{"message":"Access denied for ..."}]}`; update scopes and reinstall to regenerate token.
-- Empty `userErrors` is not sufficient; also require `data.<mutation>.<resource>` non-null and inspect full response.
-- GraphQL needs full GID; convert numeric legacy ID as `gid://shopify/Product/<numeric>`.
-- Deep `products(first: 250)` can cost 1000+ points; read `extensions.cost`, start narrow, back off.
-- `products(first: N, reverse: true)` sorts by `id DESC`; for newest use `sortKey: CREATED_AT, reverse: true`.
-- Without `read_all_orders`, orders silently cap at 60-day window; Plus merchants may request protected-data scope.
-- Money amounts are strings (`"49.00"`); do not blindly `jq tonumber` when zero-padding matters.
-- Multi-currency fields include `shopMoney` and `presentmentMoney`; choose consistently.
-- Never put tokens in chat, logs, source, or durable notes.
+- **REST endpoints still exist but are frozen.** Don't write new integrations against `/admin/api/.../products.json`. Use GraphQL.
+- **Token format check.** Admin tokens start with `shpat_`. Storefront public tokens with `shpua_`. If you have one and the wrong header, every request returns 401 without a useful error body.
+- **403 with a valid token = missing scope.** Shopify returns `{"errors":[{"message":"Access denied for ..."}]}`. Re-configure Admin API scopes on the app, then reinstall to regenerate the token.
+- **`userErrors` is empty != success.** Also check `data.<mutation>.<resource>` is non-null. Some failures populate neither — inspect the whole response.
+- **GID vs numeric ID.** Legacy REST gave numeric IDs; GraphQL wants full GID strings. To convert: `gid://shopify/Product/<numeric>`.
+- **Rate limit surprise.** A single `products(first: 250)` with deep nesting can cost 1000+ points and throttle immediately on a standard-plan shop. Start narrow, read `extensions.cost`, adjust.
+- **Pagination order.** `products(first: N, reverse: true)` sorts by `id DESC`, not `created_at`. Use `sortKey: CREATED_AT, reverse: true` for "newest first."
+- **`read_all_orders` for historical data.** Without it, `orders(...)` silently caps at the 60-day window. You won't get an error, just fewer results than expected. For Shopify Plus merchants with many orders, request this scope via the app's protected-data settings.
+- **Currencies are strings.** Amounts come back as `"49.00"` not `49.0`. Don't `jq tonumber` blindly if you care about zero-padding.
+- **Multi-currency Money fields** have `shopMoney` (store's currency) AND `presentmentMoney` (customer's). Pick one consistently.
 
 ## Safety
 
-Mutations are real production changes: product create/delete, refunds,
-order cancellation, fulfillment, and inventory. Before `productDelete`,
-`orderCancel`, `refundCreate`, or bulk mutation, state what changes, which shop,
-and obtain user confirmation. No staging clone exists unless user has a separate
-development store. Verify `errors`, `userErrors`, resource non-null, and cost
-before reporting success.
-
-## Verification
-
-- response has no top-level `errors` or mutation `userErrors`
-- requested resource/mutation result is non-null and IDs remain full Shopify GIDs
-- pagination cursor and `extensions.cost.throttleStatus` were inspected when relevant
-- destructive mutation had explicit confirmation and a post-mutation readback
-- output/logs/durable notes contain no access token, app secret, or customer PII beyond task need
+Mutations in Shopify are real — they create products, charge refunds, cancel orders, ship fulfillments. Before running `productDelete`, `orderCancel`, `refundCreate`, or any bulk mutation: state clearly what the change is, on which shop, and confirm with the user. There is no staging clone of production data unless the user has a separate dev store.

@@ -15,34 +15,35 @@ metadata:
 
 # AudioCraft: Audio Generation
 
-role: local AudioCraft generation operator
-do: select MusicGen/AudioGen/EnCodec path; install pinned environment; load model; generate/save audio; optimize VRAM; verify output
-inputs: text prompt, optional melody/style/audio, model variant, duration/quality controls, output path
-outputs: WAV/MP3 audio, compressed/reconstructed audio, batch results, optional Gradio demo
-¬: ignore model VRAM/sample-rate limits; generate before saving reproducibility inputs; claim style conditioning always controls output; expose secrets
+Guide to using Meta's AudioCraft for text-to-music and text-to-audio generation with MusicGen, AudioGen, and EnCodec.
 
-Use Meta AudioCraft for text-to-music and text-to-sound generation with MusicGen, AudioGen, and EnCodec. Model sizes range from 300M to 3.3B; stereo and style conditioning are available.
+## When to use AudioCraft
 
-## When to Use
+**Use AudioCraft when:**
+- Need to generate music from text descriptions
+- Creating sound effects and environmental audio
+- Building music generation applications
+- Need melody-conditioned music generation
+- Want stereo audio output
+- Require controllable music generation with style transfer
 
-- text-to-music generation
-- environmental audio and sound effects
-- melody-conditioned or reference-style music
-- stereo output
-- local music-generation applications
-- EnCodec compression/reconstruction
+**Key features:**
+- **MusicGen**: Text-to-music generation with melody conditioning
+- **AudioGen**: Text-to-sound effects generation
+- **EnCodec**: High-fidelity neural audio codec
+- **Multiple model sizes**: Small (300M) to Large (3.3B)
+- **Stereo support**: Full stereo audio generation
+- **Style conditioning**: MusicGen-Style for reference-based generation
 
-Use alternatives when better matched: Stable Audio for longer commercial music, Bark for TTS with music/SFX, Riffusion for spectrogram workflows, OpenAI Jukebox for raw audio with lyrics.
+**Use alternatives instead:**
+- **Stable Audio**: For longer commercial music generation
+- **Bark**: For text-to-speech with music/sound effects
+- **Riffusion**: For spectogram-based music generation
+- **OpenAI Jukebox**: For raw audio generation with lyrics
 
-## Prerequisites
+## Quick start
 
-- Python environment with `audiocraft`, `torch`, `torchaudio`, and required Transformers version
-- GPU preferred; size against the MusicGen GPU table below: small ~4GB FP32/~2GB FP16, medium ~8GB/~4GB, large ~16GB/~8GB
-- CPU fallback works without CUDA but generation is substantially slower; prefer `musicgen-small` and short durations
-
-## Procedure
-
-### 1. Install
+### Installation
 
 ```bash
 # From PyPI
@@ -55,9 +56,7 @@ pip install git+https://github.com/facebookresearch/audiocraft.git
 pip install transformers torch torchaudio
 ```
 
-Use one installation route, not all three. Create the environment before installing.
-
-### 2. Basic MusicGen
+### Basic text-to-music (AudioCraft)
 
 ```python
 import torchaudio
@@ -81,7 +80,7 @@ wav = model.generate(descriptions)
 torchaudio.save("output.wav", wav[0].cpu(), sample_rate=32000)
 ```
 
-### 3. Hugging Face Transformers path
+### Using HuggingFace Transformers
 
 ```python
 from transformers import AutoProcessor, MusicgenForConditionalGeneration
@@ -111,7 +110,7 @@ sampling_rate = model.config.audio_encoder.sampling_rate
 scipy.io.wavfile.write("output.wav", rate=sampling_rate, data=audio_values[0, 0].cpu().numpy())
 ```
 
-### 4. AudioGen text-to-sound
+### Text-to-sound with AudioGen
 
 ```python
 from audiocraft.models import AudioGen
@@ -128,9 +127,9 @@ wav = model.generate(descriptions)
 torchaudio.save("sound.wav", wav[0].cpu(), sample_rate=16000)
 ```
 
-## Core Concepts
+## Core concepts
 
-### Architecture
+### Architecture overview
 
 ```
 AudioCraft Architecture:
@@ -175,9 +174,9 @@ AudioCraft Architecture:
 | `temperature` | 1.0 | Sampling temperature |
 | `cfg_coef` | 3.0 | Classifier-free guidance |
 
-## MusicGen Workflows
+## MusicGen usage
 
-### Text-to-music
+### Text-to-music generation
 
 ```python
 from audiocraft.models import MusicGen
@@ -209,7 +208,7 @@ for i, audio in enumerate(wav):
     torchaudio.save(f"music_{i}.wav", audio.cpu(), sample_rate=32000)
 ```
 
-### Melody conditioning
+### Melody-conditioned generation
 
 ```python
 from audiocraft.models import MusicGen
@@ -229,7 +228,7 @@ wav = model.generate_with_chroma(descriptions, melody, sr)
 torchaudio.save("melody_conditioned.wav", wav[0].cpu(), sample_rate=32000)
 ```
 
-### Stereo
+### Stereo generation
 
 ```python
 from audiocraft.models import MusicGen
@@ -246,7 +245,7 @@ print(f"Stereo shape: {wav.shape}")  # [1, 2, 480000]
 torchaudio.save("stereo.wav", wav[0].cpu(), sample_rate=32000)
 ```
 
-### Continuation
+### Audio continuation
 
 ```python
 from transformers import AutoProcessor, MusicgenForConditionalGeneration
@@ -271,9 +270,9 @@ inputs = processor(
 audio_values = model.generate(**inputs, do_sample=True, guidance_scale=3, max_new_tokens=512)
 ```
 
-## MusicGen-Style
+## MusicGen-Style usage
 
-### Style-conditioned
+### Style-conditioned generation
 
 ```python
 from audiocraft.models import MusicGen
@@ -302,7 +301,7 @@ descriptions = ["upbeat dance track"]
 wav = model.generate_with_style(descriptions, style_audio, sr)
 ```
 
-### Style-only
+### Style-only generation (no text)
 
 ```python
 # Generate matching style without text prompt
@@ -315,9 +314,9 @@ model.set_generation_params(
 wav = model.generate_with_style([None], style_audio, sr)
 ```
 
-`cfg_coef_beta=None` disables double CFG for style-only generation. `eval_q` supports 1-6 RVQ quantizers; `excerpt_length` is in seconds.
+## AudioGen usage
 
-## AudioGen
+### Sound effect generation
 
 ```python
 from audiocraft.models import AudioGen
@@ -340,7 +339,9 @@ for i, audio in enumerate(wav):
     torchaudio.save(f"sound_{i}.wav", audio.cpu(), sample_rate=16000)
 ```
 
-## EnCodec
+## EnCodec usage
+
+### Audio compression
 
 ```python
 from audiocraft.models import CompressionModel
@@ -370,9 +371,9 @@ with torch.no_grad():
 torchaudio.save("reconstructed.wav", decoded[0].cpu(), sample_rate=32000)
 ```
 
-## Common Workflows
+## Common workflows
 
-### Music generation pipeline
+### Workflow 1: Music generation pipeline
 
 ```python
 import torch
@@ -418,7 +419,7 @@ audio = generator.generate(
 generator.save(audio, "epic_music.wav")
 ```
 
-### Sound-design batch
+### Workflow 2: Sound design batch processing
 
 ```python
 import json
@@ -466,7 +467,7 @@ sounds = [
 results = batch_generate_sounds(sounds, "sound_effects/")
 ```
 
-### Gradio demo
+### Workflow 3: Gradio demo
 
 ```python
 import gradio as gr
@@ -506,9 +507,9 @@ demo = gr.Interface(
 demo.launch()
 ```
 
-## Performance Optimization
+## Performance optimization
 
-### Memory
+### Memory optimization
 
 ```python
 # Use smaller model
@@ -524,7 +525,7 @@ model.set_generation_params(duration=10)  # Instead of 30
 model = model.half()
 ```
 
-### Batch efficiency
+### Batch processing efficiency
 
 ```python
 # Process multiple prompts at once (more efficient)
@@ -536,7 +537,7 @@ for desc in descriptions:
     wav = model.generate([desc])  # Multiple batches (slower)
 ```
 
-### GPU requirements
+### GPU memory requirements
 
 | Model | FP32 VRAM | FP16 VRAM |
 |-------|-----------|-----------|
@@ -544,7 +545,7 @@ for desc in descriptions:
 | musicgen-medium | ~8GB | ~4GB |
 | musicgen-large | ~16GB | ~8GB |
 
-## Troubleshooting
+## Common issues
 
 | Issue | Solution |
 |-------|----------|
@@ -554,25 +555,10 @@ for desc in descriptions:
 | Audio artifacts | Try different temperature |
 | Stereo not working | Use stereo model variant |
 
-## Pitfalls
-
-- Large models and long durations consume substantial VRAM; use smaller model, shorter duration, `torch.cuda.empty_cache()`, or batch inputs.
-- `torchaudio` sample rates differ: MusicGen examples save at 32000Hz; AudioGen at 16000Hz; preserve the model's expected rate.
-- Generated output can contain artifacts or weak prompt adherence; adjust temperature/CFG and regenerate.
-
-## Verification
-
-- generated WAV/MP3 exists and is non-empty
-- sample rate/channels match the selected model path
-- stereo output has shape `[batch, 2, samples]` when requested
-- batch outputs have one file per prompt
-- EnCodec reconstruction can be opened and played
-- GPU runs show expected CUDA memory; CPU runs are labeled slow
-
 ## References
 
-- **[Advanced Usage](references/advanced-usage.md)** — training, fine-tuning, deployment
-- **[Troubleshooting](references/troubleshooting.md)** — common issues and solutions
+- **[Advanced Usage](references/advanced-usage.md)** - Training, fine-tuning, deployment
+- **[Troubleshooting](references/troubleshooting.md)** - Common issues and solutions
 
 ## Resources
 

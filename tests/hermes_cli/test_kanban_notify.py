@@ -754,8 +754,8 @@ async def test_gateway_create_json_over_limit_returns_structured_error(kanban_ho
     payload = json.loads(output)
     assert payload == {"error": "output_too_long", "limit": 3800}
     assert len(output) <= 3800
-    with kb.connect() as conn:
-        assert kb.list_notify_subs(conn) == []
+    with kbc.connect() as conn:
+        assert kbn.list_notify_subs(conn) == []
 
 
 @pytest.mark.parametrize(

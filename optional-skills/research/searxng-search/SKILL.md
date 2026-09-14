@@ -14,19 +14,7 @@ metadata:
 
 # SearXNG Search
 
-role: SearXNG meta-search operator
-do: configure/health-check instance; query JSON API; filter engines/categories/time; parse results; self-host when needed; hand URLs to extraction tools
-inputs: `SEARXNG_URL`; query; engine/category/time/safesearch/limit filters; public or self-hosted instance
-outputs: structured result titles/URLs/snippets/engine metadata; health/errors; selected URLs for extraction
-¬: run without configured URL; treat snippets as full content; assume engine coverage/freshness; omit timeout/encoding; expose private instance details
-
-Free meta-search through [SearXNG](https://searxng.org/), a privacy-respecting aggregator of 70+ engines. Public instances need no API key; unset/unreachable instances require fallback or setup.
-
-## When to Use
-
-- User requests SearXNG, privacy-respecting meta-search, or a keyless web fallback.
-- Need aggregation across configured engines, categories, or time ranges.
-- Need self-hosted search control; use `web_extract`/browser/curl after selecting a result for full content.
+Free meta-search using [SearXNG](https://searxng.org/) — a privacy-respecting, self-hosted search aggregator that queries 70+ search engines simultaneously.
 
 **No API key required** when using a public instance. Can also be self-hosted for full control. Automatically appears as a fallback when the main web search toolset (`FIRECRAWL_API_KEY`) is not configured.
 
@@ -44,9 +32,7 @@ SEARXNG_URL=http://localhost:8888
 
 If no instance is configured, this skill is unavailable and the agent falls back to other search options.
 
-## Procedure
-
-### Detection Flow
+## Detection Flow
 
 Check what is actually available before choosing an approach:
 
@@ -207,9 +193,3 @@ If `SEARXNG_URL` is not set and the user asks about SearXNG, help them either:
 2. Set up their own with Docker or pip
 
 Public instances are listed at: https://searxng.org/
-
-## Verification
-
-- `SEARXNG_URL` is set and `curl --max-time 5 "${SEARXNG_URL}/search?q=test&format=json"` returns JSON.
-- A filtered query returns result URLs/titles/snippets; report engine coverage and instance limits.
-- Search→extract uses a selected returned URL, not an invented source; self-hosted setup responds on the configured endpoint.

@@ -14,45 +14,16 @@ metadata:
 
 # HuggingFace Accelerate - Unified Distributed Training
 
-role: Hugging Face Accelerate distributed-training operator
-do: configure hardware; wrap model/optimizer/dataloader with `prepare`; use accelerator backward/accumulate/autocast; select DDP/DeepSpeed/FSDP/Megatron; checkpoint and launch
-inputs: PyTorch training script; model/optimizer/dataloader; GPU/node topology; mixed precision; DeepSpeed/FSDP plugin/config; checkpoint path
-outputs: single/multi-device training run; synchronized metrics; distributed checkpoint; launch/config diagnostics; effective batch calculation
-¬: manually move prepared tensors to devices; pass raw DeepSpeed JSON as `--config_file`; ignore process topology; save every rank; expose credentials
-
-## When to Use
-
-Use Accelerate when:
-- Want simplest distributed training
-- Need single script for any hardware
-- Use HuggingFace ecosystem
-- Want flexibility (DDP/DeepSpeed/FSDP/Megatron)
-- Need quick prototyping
-
-Key advantages:
-- 4 lines: Minimal code changes
-- Unified API: Same code for DDP, DeepSpeed, FSDP, Megatron
-- Automatic: Device placement, mixed precision, sharding
-- Interactive config: No manual launcher setup
-- Single launch: Works everywhere
-
-Use alternatives instead:
-- PyTorch Lightning: Need callbacks, high-level abstractions
-- Ray Train: Multi-node orchestration, hyperparameter tuning
-- DeepSpeed: Direct API control, advanced features
-- Raw DDP: Maximum control, minimal abstraction
-
-
-## Procedure
+## Quick start
 
 Accelerate simplifies distributed training to 4 lines of code.
 
-Installation:
+**Installation**:
 ```bash
 pip install accelerate
 ```
 
-Convert PyTorch script (4 lines):
+**Convert PyTorch script** (4 lines):
 ```python
 import torch
 + from accelerate import Accelerator
@@ -73,7 +44,7 @@ import torch
       optimizer.step()
 ```
 
-Run (single command):
+**Run** (single command):
 ```bash
 accelerate launch train.py
 ```
@@ -82,7 +53,7 @@ accelerate launch train.py
 
 ### Workflow 1: From single GPU to multi-GPU
 
-Original script:
+**Original script**:
 ```python
 # train.py
 import torch
@@ -100,7 +71,7 @@ for epoch in range(10):
         optimizer.step()
 ```
 
-With Accelerate (4 lines added):
+**With Accelerate** (4 lines added):
 ```python
 # train.py
 import torch
@@ -123,18 +94,18 @@ for epoch in range(10):
         optimizer.step()
 ```
 
-Configure (interactive):
+**Configure** (interactive):
 ```bash
 accelerate config
 ```
 
-Questions:
+**Questions**:
 - Which machine? (single/multi GPU/TPU/CPU)
 - How many machines? (1)
 - Mixed precision? (no/fp16/bf16/fp8)
 - DeepSpeed? (no/yes)
 
-Launch (works on any setup):
+**Launch** (works on any setup):
 ```bash
 # Single GPU
 accelerate launch train.py
@@ -151,7 +122,7 @@ accelerate launch --multi_gpu --num_processes 16 \
 
 ### Workflow 2: Mixed precision training
 
-Enable FP16/BF16:
+**Enable FP16/BF16**:
 ```python
 from accelerate import Accelerator
 
@@ -175,7 +146,7 @@ for batch in dataloader:
 
 ### Workflow 3: DeepSpeed ZeRO integration
 
-Enable DeepSpeed ZeRO-2 (pass a `DeepSpeedPlugin`, not a raw dict):
+**Enable DeepSpeed ZeRO-2** (pass a `DeepSpeedPlugin`, not a raw dict):
 ```python
 from accelerate import Accelerator, DeepSpeedPlugin
 
@@ -194,7 +165,7 @@ accelerator = Accelerator(
 model, optimizer, dataloader = accelerator.prepare(model, optimizer, dataloader)
 ```
 
-Or point at a full DeepSpeed JSON config via the plugin:
+**Or point at a full DeepSpeed JSON config via the plugin**:
 ```python
 from accelerate import Accelerator, DeepSpeedPlugin
 
@@ -203,7 +174,7 @@ deepspeed_plugin = DeepSpeedPlugin(hf_ds_config="ds_config.json")
 accelerator = Accelerator(mixed_precision='bf16', deepspeed_plugin=deepspeed_plugin)
 ```
 
-ds_config.json (a raw DeepSpeed config — passed via the plugin, NOT via `--config_file`):
+**ds_config.json** (a raw DeepSpeed config — passed via the plugin, NOT via `--config_file`):
 ```json
 {
     "fp16": {"enabled": false},
@@ -217,14 +188,14 @@ ds_config.json (a raw DeepSpeed config — passed via the plugin, NOT via `--con
 }
 ```
 
-Or via interactive config:
+**Or via interactive config**:
 ```bash
 accelerate config
 # Select: DeepSpeed → ZeRO-2
 # This writes an accelerate YAML config (default: ~/.cache/huggingface/accelerate/default_config.yaml)
 ```
 
-Launch (`--config_file` expects an accelerate YAML, not a raw DeepSpeed JSON):
+**Launch** (`--config_file` expects an accelerate YAML, not a raw DeepSpeed JSON):
 ```bash
 # Uses the default accelerate config written by `accelerate config`
 accelerate launch train.py
@@ -235,7 +206,7 @@ accelerate launch --config_file accelerate_deepspeed.yaml train.py
 
 ### Workflow 4: FSDP (Fully Sharded Data Parallel)
 
-Enable FSDP:
+**Enable FSDP**:
 ```python
 from accelerate import Accelerator, FullyShardedDataParallelPlugin
 
@@ -253,7 +224,7 @@ accelerator = Accelerator(
 model, optimizer, dataloader = accelerator.prepare(model, optimizer, dataloader)
 ```
 
-Or via config:
+**Or via config**:
 ```bash
 accelerate config
 # Select: FSDP → Full Shard → No CPU Offload
@@ -261,7 +232,7 @@ accelerate config
 
 ### Workflow 5: Gradient accumulation
 
-Accumulate gradients:
+**Accumulate gradients**:
 ```python
 from accelerate import Accelerator
 
@@ -277,11 +248,33 @@ for batch in dataloader:
         optimizer.step()
 ```
 
-Effective batch size: `batch_size * num_gpus * gradient_accumulation_steps`
+**Effective batch size**: `batch_size * num_gpus * gradient_accumulation_steps`
 
-## Pitfalls
+## When to use vs alternatives
 
-Issue: Wrong device placement
+**Use Accelerate when**:
+- Want simplest distributed training
+- Need single script for any hardware
+- Use HuggingFace ecosystem
+- Want flexibility (DDP/DeepSpeed/FSDP/Megatron)
+- Need quick prototyping
+
+**Key advantages**:
+- **4 lines**: Minimal code changes
+- **Unified API**: Same code for DDP, DeepSpeed, FSDP, Megatron
+- **Automatic**: Device placement, mixed precision, sharding
+- **Interactive config**: No manual launcher setup
+- **Single launch**: Works everywhere
+
+**Use alternatives instead**:
+- **PyTorch Lightning**: Need callbacks, high-level abstractions
+- **Ray Train**: Multi-node orchestration, hyperparameter tuning
+- **DeepSpeed**: Direct API control, advanced features
+- **Raw DDP**: Maximum control, minimal abstraction
+
+## Common issues
+
+**Issue: Wrong device placement**
 
 Don't manually move to device:
 ```python
@@ -292,7 +285,7 @@ batch = batch.to('cuda')
 # Accelerate handles it automatically after prepare()
 ```
 
-Issue: Gradient accumulation not working
+**Issue: Gradient accumulation not working**
 
 Use context manager:
 ```python
@@ -303,7 +296,7 @@ with accelerator.accumulate(model):
     optimizer.step()
 ```
 
-Issue: Checkpointing in distributed
+**Issue: Checkpointing in distributed**
 
 Use accelerator methods:
 ```python
@@ -315,7 +308,7 @@ if accelerator.is_main_process:
 accelerator.load_state('checkpoint/')
 ```
 
-Issue: Different results with FSDP
+**Issue: Different results with FSDP**
 
 Ensure same random seed:
 ```python
@@ -325,31 +318,26 @@ set_seed(42)
 
 ## Advanced topics
 
-Megatron integration: See [references/megatron-integration.md](references/megatron-integration.md) for tensor parallelism, pipeline parallelism, and sequence parallelism setup.
+**Megatron integration**: See [references/megatron-integration.md](references/megatron-integration.md) for tensor parallelism, pipeline parallelism, and sequence parallelism setup.
 
-Custom plugins: See [references/custom-plugins.md](references/custom-plugins.md) for creating custom distributed plugins and advanced configuration.
+**Custom plugins**: See [references/custom-plugins.md](references/custom-plugins.md) for creating custom distributed plugins and advanced configuration.
 
-Performance tuning: See [references/performance.md](references/performance.md) for profiling, memory optimization, and best practices.
+**Performance tuning**: See [references/performance.md](references/performance.md) for profiling, memory optimization, and best practices.
 
 ## Hardware requirements
 
-- CPU: Works (slow)
-- Single GPU: Works
-- Multi-GPU: DDP (default), DeepSpeed, or FSDP
-- Multi-node: DDP, DeepSpeed, FSDP, Megatron
-- TPU: Supported
-- Apple MPS: Supported
+- **CPU**: Works (slow)
+- **Single GPU**: Works
+- **Multi-GPU**: DDP (default), DeepSpeed, or FSDP
+- **Multi-node**: DDP, DeepSpeed, FSDP, Megatron
+- **TPU**: Supported
+- **Apple MPS**: Supported
 
-Launcher requirements:
-- DDP: `torch.distributed.run` (built-in)
-- DeepSpeed: `deepspeed` (pip install deepspeed)
-- FSDP: PyTorch 1.12+ (built-in)
-- Megatron: Custom setup
-
-## Verification
-- run a single-process CPU/small-batch smoke test
-- run configured mixed-precision or distributed launch and inspect rank/log output
-- save/load distributed state and verify effective batch/device placement
+**Launcher requirements**:
+- **DDP**: `torch.distributed.run` (built-in)
+- **DeepSpeed**: `deepspeed` (pip install deepspeed)
+- **FSDP**: PyTorch 1.12+ (built-in)
+- **Megatron**: Custom setup
 
 ## Resources
 
@@ -359,3 +347,6 @@ Launcher requirements:
 - Tutorial: "Accelerate your scripts"
 - Examples: https://github.com/huggingface/accelerate/tree/main/examples
 - Used by: HuggingFace Transformers, TRL, PEFT, all HF libraries
+
+
+

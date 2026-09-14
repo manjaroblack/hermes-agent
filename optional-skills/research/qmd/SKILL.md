@@ -13,13 +13,10 @@ metadata:
 
 # QMD — Query Markup Documents
 
-role: QMD local knowledge-base search operator
-do: install/check Node+SQLite+qmd; add collections/context; embed; choose BM25/vector/hybrid modes; configure MCP; query/retrieve; maintain daemon; inspect index health
-inputs: local text/Markdown paths; collection/context names; query mode; collection filter; result limit; MCP/daemon choice; multilingual model override
-outputs: keyword/vector/hybrid rankings; document content; JSON; index/model status; MCP tools; local-only search state
-¬: claim semantic results without embeddings; omit collection context; expose cloud/private content; assume runtimes/dependencies; report stale index as complete; run daemon without resource awareness
-
-Local, on-device search for Markdown, transcripts, documentation, and text files. Hybrid search combines keyword matching, semantic retrieval, and LLM reranking without cloud dependencies.
+Local, on-device search engine for personal knowledge bases. Indexes markdown
+notes, meeting transcripts, documentation, and any text-based files, then
+provides hybrid search combining keyword matching, semantic understanding, and
+LLM-powered reranking — all running locally with no cloud dependencies.
 
 Created by [Tobi Lütke](https://github.com/tobi/qmd). MIT licensed.
 
@@ -81,7 +78,7 @@ qmd --version
 qmd status
 ```
 
-### Quick Reference
+## Quick Reference
 
 | Command | What It Does | Speed |
 |---------|-------------|-------|
@@ -97,9 +94,7 @@ qmd status
 | `qmd mcp` | Start MCP server (stdio) | persistent |
 | `qmd mcp --http --daemon` | Start MCP server (HTTP, warm models) | persistent |
 
-## Procedure
-
-### Setup Workflow
+## Setup Workflow
 
 ### 1. Add Collections
 
@@ -145,7 +140,7 @@ embeddings. Re-run after adding new documents or collections.
 qmd status   # shows index health, collection stats, model info
 ```
 
-### Search Patterns
+## Search Patterns
 
 ### Fast Keyword Search (BM25)
 
@@ -222,7 +217,7 @@ qmd get "file.md:50" -l 100     # Get specific line range
 qmd multi-get "journals/*.md" --json  # Batch retrieve by glob
 ```
 
-### MCP Integration (Recommended)
+## MCP Integration (Recommended)
 
 qmd exposes an MCP server that provides search tools directly to
 Hermes Agent via the native MCP client. This is the preferred
@@ -356,7 +351,7 @@ The MCP tools accept structured JSON queries for multi-mode search:
 }
 ```
 
-### CLI Usage (Without MCP)
+## CLI Usage (Without MCP)
 
 When MCP is not configured, use qmd directly via terminal:
 
@@ -373,7 +368,7 @@ terminal(command="qmd embed")
 terminal(command="qmd status")
 ```
 
-### How the Search Pipeline Works
+## How the Search Pipeline Works
 
 Understanding the internals helps choose the right search mode:
 
@@ -391,7 +386,7 @@ Understanding the internals helps choose the right search mode:
 code blocks, blank lines) targeting ~900 tokens with 15% overlap. Code
 blocks are never split mid-block.
 
-### Best Practices
+## Best Practices
 
 1. **Always add context descriptions** — `qmd context add` dramatically
    improves retrieval accuracy. Describe what each collection contains.
@@ -408,7 +403,7 @@ blocks are never split mid-block.
 7. **First query in structured search gets 2x weight** — put the most
    important/certain query first when combining lex and vec.
 
-### Troubleshooting
+## Troubleshooting
 
 ### "Models downloading on first run"
 Normal — qmd auto-downloads ~2GB of GGUF models on first use.
@@ -434,7 +429,7 @@ Set `QMD_EMBED_MODEL` environment variable for non-English content:
 export QMD_EMBED_MODEL="your-multilingual-model"
 ```
 
-### Data Storage
+## Data Storage
 
 - **Index & vectors:** `~/.cache/qmd/index.sqlite`
 - **Models:** Auto-downloaded to local cache on first run
@@ -444,17 +439,3 @@ export QMD_EMBED_MODEL="your-multilingual-model"
 
 - [GitHub: tobi/qmd](https://github.com/tobi/qmd)
 - [QMD Changelog](https://github.com/tobi/qmd/blob/main/CHANGELOG.md)
-
-## Pitfalls
-
-- First use downloads ~2GB of local GGUF models; cold hybrid queries take ~19s and daemon mode uses ~2GB RAM.
-- Re-run `qmd embed` after adding files/collections; `qmd status` is the index-health check.
-- BM25 `search` needs no models; `vsearch`/`query` need embeddings; choose the mode matching latency/quality needs.
-- macOS system SQLite lacks extension loading; install Homebrew SQLite. `QMD_EMBED_MODEL` is a user-facing override for non-English content.
-- Keep index/model paths local and explain that `~/.cache/qmd/index.sqlite` contains indexed content metadata.
-
-## Verification
-
-- `node --version`, `qmd --version`, and `qmd status` meet prerequisites.
-- Add a test collection/context, run `qmd embed`, then verify `search`, `vsearch`, and `query --json` return expected documents.
-- If using MCP, connect stdio or `http://localhost:8181/mcp` and confirm `mcp_qmd_*` tools; report cold/warm latency and RAM assumptions.

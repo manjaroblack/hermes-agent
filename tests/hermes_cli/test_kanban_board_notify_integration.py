@@ -9,6 +9,8 @@ import sqlite3
 import pytest
 
 from hermes_cli import kanban_db as kb
+from hermes_cli import kanban_db_connect as kbc
+from hermes_cli import kanban_db_notify as kbn
 from hermes_cli import kanban_board_notify as board_notify
 
 
@@ -52,7 +54,7 @@ def _write_raw_pin(conn: sqlite3.Connection, board_id: str, raw: str) -> None:
 
 def _discord_subscriptions(conn, task_id: str) -> list[dict]:
     return [
-        row for row in kb.list_notify_subs(conn, task_id)
+        row for row in kbn.list_notify_subs(conn, task_id)
         if row["platform"] == "discord"
     ]
 
@@ -60,10 +62,10 @@ def _discord_subscriptions(conn, task_id: str) -> list[dict]:
 def test_inheritance_uses_validated_pin_and_ignores_malformed_pin(
     isolated_kanban_home,
 ):
-    conn = kb.connect()
+    conn = kbc.connect()
     try:
         pinned_parent = kb.create_task(conn, title="pinned parent", assignee="worker")
-        kb.add_notify_sub(
+        kbn.add_notify_sub(
             conn,
             task_id=pinned_parent,
             platform="discord",
@@ -82,7 +84,7 @@ def test_inheritance_uses_validated_pin_and_ignores_malformed_pin(
         malformed_parent = kb.create_task(
             conn, title="malformed parent", assignee="worker"
         )
-        kb.add_notify_sub(
+        kbn.add_notify_sub(
             conn,
             task_id=malformed_parent,
             platform="discord",
@@ -110,7 +112,7 @@ def test_inheritance_uses_validated_pin_and_ignores_malformed_pin(
 def test_create_source_falls_back_to_card_route_for_malformed_pin(
     isolated_kanban_home,
 ):
-    conn = kb.connect()
+    conn = kbc.connect()
     try:
         task_id = kb.create_task(conn, title="create source", assignee="worker")
         _write_raw_pin(conn, "default", json.dumps({"platform": "discord"}))
@@ -138,7 +140,7 @@ def test_manual_discord_subscribe_refuses_only_a_valid_board_pin(
 ):
     from hermes_cli.kanban import run_slash
 
-    conn = kb.connect()
+    conn = kbc.connect()
     try:
         task_id = kb.create_task(conn, title="manual subscribe", assignee="worker")
         _write_raw_pin(conn, "default", "{\"platform\": \"discord\"}")
@@ -150,7 +152,7 @@ def test_manual_discord_subscribe_refuses_only_a_valid_board_pin(
         "--thread-id 666"
     )
 
-    conn = kb.connect()
+    conn = kbc.connect()
     try:
         malformed_subscriptions = _discord_subscriptions(conn, task_id)
         board_notify.set_board_notify(conn, "default", _VALID_DEST)
@@ -162,7 +164,7 @@ def test_manual_discord_subscribe_refuses_only_a_valid_board_pin(
         "--thread-id 888"
     )
 
-    conn = kb.connect()
+    conn = kbc.connect()
     try:
         final_subscriptions = _discord_subscriptions(conn, task_id)
     finally:
@@ -183,8 +185,8 @@ def test_cross_board_conflict_ignores_malformed_pin_but_reserves_valid_pin(
 ):
     kb.create_board("alpha", legacy_unscoped=True)
     kb.create_board("beta", legacy_unscoped=True)
-    alpha = kb.connect(board="alpha")
-    beta = kb.connect(board="beta")
+    alpha = kbc.connect(board="alpha")
+    beta = kbc.connect(board="beta")
     try:
         _write_raw_pin(beta, "beta", "not-json")
         first = kb.set_board_notify(
@@ -220,7 +222,7 @@ def test_set_board_notify_rejects_board_mismatch_with_live_connection(
 ):
     kb.create_board("alpha", legacy_unscoped=True)
     kb.create_board("beta", legacy_unscoped=True)
-    alpha = kb.connect(board="alpha")
+    alpha = kbc.connect(board="alpha")
     try:
         with pytest.raises(ValueError, match="does not match the live connection"):
             kb.set_board_notify(
@@ -240,7 +242,7 @@ def test_board_pin_crud_uses_hermes_kanban_db_override(
 ):
     custom_db = isolated_kanban_home / "custom" / "kanban.db"
     monkeypatch.setenv("HERMES_KANBAN_DB", str(custom_db))
-    conn = kb.connect(board="default")
+    conn = kbc.connect(board="default")
     try:
         pin = kb.set_board_notify(
             conn,
@@ -256,7 +258,7 @@ def test_board_pin_crud_uses_hermes_kanban_db_override(
     assert custom_db.exists()
     assert not (isolated_kanban_home / "kanban.db").exists()
 
-    conn = kb.connect(board="default")
+    conn = kbc.connect(board="default")
     try:
         assert kb.remove_board_notify(conn, board="default") is True
         assert kb.get_board_notify(conn, board="default") is None
@@ -265,7 +267,7 @@ def test_board_pin_crud_uses_hermes_kanban_db_override(
 
 
 def test_board_pin_crud_uses_default_db_without_override(isolated_kanban_home):
-    conn = kb.connect()
+    conn = kbc.connect()
     try:
         pin = kb.set_board_notify(
             conn,
@@ -287,7 +289,7 @@ def test_board_pin_requires_explicit_board_for_custom_connection(
     isolated_kanban_home,
 ):
     custom_db = isolated_kanban_home / "explicit" / "kanban.db"
-    conn = kb.connect(db_path=custom_db)
+    conn = kbc.connect(db_path=custom_db)
     try:
         with pytest.raises(ValueError, match="board.*required"):
             kb.set_board_notify(
@@ -308,7 +310,7 @@ def test_create_source_falls_back_to_card_route_without_board_label(
     isolated_kanban_home,
 ):
     custom_db = isolated_kanban_home / "explicit-create" / "kanban.db"
-    conn = kb.connect(db_path=custom_db)
+    conn = kbc.connect(db_path=custom_db)
     try:
         task_id = kb.create_task(conn, title="boardless custom", assignee="worker")
         subscribed = kb.subscribe_notify_source_on_create(
@@ -344,7 +346,7 @@ def test_create_source_does_not_infer_active_board_for_boardless_connection(
     )
     monkeypatch.setenv("HERMES_KANBAN_BOARD", "scoped")
     custom_db = isolated_kanban_home / "explicit-scoped" / "kanban.db"
-    conn = kb.connect(db_path=custom_db)
+    conn = kbc.connect(db_path=custom_db)
     try:
         task_id = kb.create_task(
             conn, title="scoped boardless custom", assignee="worker"
@@ -371,10 +373,10 @@ def test_custom_connection_without_board_preserves_parent_card_subscription(
     isolated_kanban_home,
 ):
     custom_db = isolated_kanban_home / "explicit-parent" / "kanban.db"
-    conn = kb.connect(db_path=custom_db)
+    conn = kbc.connect(db_path=custom_db)
     try:
         parent_id = kb.create_task(conn, title="custom parent", assignee="worker")
-        kb.add_notify_sub(
+        kbn.add_notify_sub(
             conn,
             task_id=parent_id,
             platform="discord",

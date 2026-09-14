@@ -149,7 +149,7 @@ def scoped_kanban_home(tmp_path, monkeypatch):
 def test_auto_decompose_scoped_root_uses_board_snapshot(scoped_kanban_home):
     project = scoped_kanban_home
     assert not any(key.startswith("HERMES_KANBAN_") for key in os.environ)
-    with kb.connect(board="scoped") as conn:
+    with kbc.connect(board="scoped") as conn:
         task_id = kb.create_task(
             conn, title="auto scoped root", board="scoped", triage=True
         )
@@ -175,7 +175,7 @@ def test_auto_decompose_scoped_root_uses_board_snapshot(scoped_kanban_home):
 
     assert outcome.ok, outcome.reason
     assert outcome.child_ids and len(outcome.child_ids) == 2
-    with kb.connect(board="scoped") as conn:
+    with kbc.connect(board="scoped") as conn:
         rows = [
             conn.execute(
                 "SELECT project_id, legacy_unscoped, workspace_path, branch_name "

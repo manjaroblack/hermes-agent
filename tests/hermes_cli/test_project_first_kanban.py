@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from hermes_cli import kanban_db as kb
+from hermes_cli import kanban_db_connect as kbc
 from hermes_cli import projects_db as pdb
 
 
@@ -67,7 +68,7 @@ def test_scoped_board_rejects_mismatched_task_and_allows_legacy_escape(isolated_
     second = _project(isolated_home, "Second")
     kb.create_board("first", project_id=first.id, legacy_unscoped=False)
 
-    with kb.connect(board="first") as conn:
+    with kbc.connect(board="first") as conn:
         with pytest.raises(ValueError, match="TASK_PROJECT_MISMATCH"):
             kb.create_task(conn, title="wrong", board="first", project_id=second.id)
 
@@ -88,7 +89,7 @@ def test_cross_profile_task_creation_uses_board_snapshot(isolated_home, monkeypa
     other_profile.mkdir(parents=True)
     monkeypatch.setenv("HERMES_HOME", str(other_profile))
 
-    with kb.connect(board="shared") as conn:
+    with kbc.connect(board="shared") as conn:
         task_id = kb.create_task(conn, title="from worker", board="shared")
         task = kb.get_task(conn, task_id)
 
@@ -120,7 +121,7 @@ def test_binding_rejects_conflicting_existing_legacy_task(isolated_home):
     second = _project(isolated_home, "Second")
     kb.create_board("legacy", legacy_unscoped=True)
     # A compatibility row created before board binding is allowed to exist.
-    conn = kb.connect(board="default")
+    conn = kbc.connect(board="default")
     try:
         db_path = kb.kanban_db_path("default")
         assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
@@ -204,7 +205,7 @@ def test_known_assignees_include_global_profile_description(isolated_home):
         json.dumps({"description": "Writes clear release notes."}), encoding="utf-8"
     )
 
-    with kb.connect() as conn:
+    with kbc.connect() as conn:
         assignees = kb.known_assignees(conn)
 
     writer = next(row for row in assignees if row["name"] == "writer")

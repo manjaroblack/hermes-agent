@@ -11,6 +11,8 @@ import pytest
 from gateway.config import Platform, PlatformConfig
 from gateway.run import GatewayRunner
 from hermes_cli import kanban_db as kb
+from hermes_cli import kanban_db_connect as kbc
+from hermes_cli import kanban_db_notify as kbn
 import plugins.platforms.discord.adapter as discord_adapter_module
 from plugins.platforms.discord.adapter import DiscordAdapter
 
@@ -97,10 +99,10 @@ async def test_completed_artifact_notification_keeps_text_and_file_in_thread(
     )
     monkeypatch.setattr(discord_adapter_module.discord, "File", CapturedFile)
 
-    conn = kb.connect()
+    conn = kbc.connect()
     try:
         task_id = kb.create_task(conn, title="artifact notification", assignee="worker")
-        kb.add_notify_sub(
+        kbn.add_notify_sub(
             conn,
             task_id=task_id,
             platform=Platform.DISCORD.value,

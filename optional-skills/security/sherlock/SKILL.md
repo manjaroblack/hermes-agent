@@ -15,13 +15,7 @@ prerequisites:
 
 # Sherlock OSINT Username Search
 
-role: Sherlock username-OSINT operator
-do: verify/install Sherlock; extract exact username; run bounded search; parse found links; report output file; apply ethical/privacy limits
-inputs: explicit username; optional `--nsfw`/`--tor` request; network; output path
-outputs: found platform URLs; count/category summary; `<username>.txt`; timeout/rate-limit/false-positive caveats
-¬: guess username; search without legitimate purpose/permission; add optional flags unasked; treat matches as identity proof; hide false positives/privacy risks
-
-Search the exact requested username across 400+ social networks with the [Sherlock Project](https://github.com/sherlock-project/sherlock); report matches as leads, not identity proof.
+Hunt down social media accounts by username across 400+ social networks using the [Sherlock Project](https://github.com/sherlock-project/sherlock).
 
 ## When to Use
 
@@ -30,7 +24,7 @@ Search the exact requested username across 400+ social networks with the [Sherlo
 - User is conducting OSINT or reconnaissance research
 - User asks "where is this username registered?" or similar
 
-## Prerequisites
+## Requirements
 
 - Sherlock CLI installed: `pipx install sherlock-project` or `pip install sherlock-project`
 - Alternatively: Docker available (`docker run -it --rm sherlock/sherlock`)

@@ -381,7 +381,7 @@ def test_respawn_guard_rate_limited_null_ended_at_allows_probe(
     monkeypatch.setenv("HERMES_KANBAN_RATE_LIMIT_COOLDOWN_SECONDS", "300")
     now = 5_000_000
 
-    with kb.connect() as conn:
+    with kbc.connect() as conn:
         tid = kb.create_task(conn, title="rl-null-ended", assignee="a")
         kb.claim_task(conn, tid)
         run_id = kb.get_task(conn, tid).current_run_id
@@ -399,7 +399,7 @@ def test_respawn_guard_rate_limited_null_ended_at_allows_probe(
         conn.commit()
 
         monkeypatch.setattr(_kb.time, "time", lambda: now)
-        assert kb.check_respawn_guard(conn, tid) is None
+        assert kbd.check_respawn_guard(conn, tid) is None
 
 
 

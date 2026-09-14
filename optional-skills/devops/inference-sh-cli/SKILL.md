@@ -13,43 +13,41 @@ metadata:
 
 # inference.sh CLI
 
-role: `infsh` cloud AI-app operator
-do: verify/authenticate; search catalog; use exact app ID; pass JSON input; parse URLs; deliver media; report long-run/auth errors
-inputs: desired app/category, prompt/query, local files, app-specific JSON, output media target
-outputs: generated image/video/audio/search result URLs, inline `MEDIA:<url>` references
-¬: guess app IDs; omit `--json`; expose keys; misescape JSON; claim long-running app complete before output
+Run 150+ AI apps in the cloud with a simple CLI. No GPU required.
 
-Run 150+ cloud AI apps without a GPU through the `infsh` CLI. All commands use Hermes `terminal`.
+All commands use the **terminal tool** to run `infsh` commands.
 
 ## When to Use
 
-- FLUX/Reve/Seedream/Grok/Gemini image generation
-- Veo/Wan/Seedance/OmniHuman video, avatar, lipsync
-- inference.sh/`infsh` questions or unified provider access
-- Tavily/Exa AI search
+- User asks to generate images (FLUX, Reve, Seedream, Grok, Gemini image)
+- User asks to generate video (Veo, Wan, Seedance, OmniHuman)
+- User asks about inference.sh or infsh
+- User wants to run AI apps without managing individual provider APIs
+- User asks for AI-powered search (Tavily, Exa)
+- User needs avatar/lipsync generation
 
 ## Prerequisites
 
-`infsh` installed and authenticated:
+The `infsh` CLI must be installed and authenticated. Check with:
 
 ```bash
 infsh me
 ```
 
-Install/login:
+If not installed:
 
 ```bash
 curl -fsSL https://cli.inference.sh | sh
 infsh login
 ```
 
-Details: `references/authentication.md`.
+See `references/authentication.md` for full setup details.
 
-## Procedure
+## Workflow
 
-### 1. Search first
+### 1. Always Search First
 
-Never guess IDs:
+Never guess app names — always search to find the correct app ID:
 
 ```bash
 infsh app list --search flux
@@ -57,21 +55,21 @@ infsh app list --search video
 infsh app list --search image
 ```
 
-### 2. Run exact ID
+### 2. Run an App
 
-Always request machine-readable output:
+Use the exact app ID from the search results. Always use `--json` for machine-readable output:
 
 ```bash
 infsh app run <app-id> --input '{"prompt": "your prompt here"}' --json
 ```
 
-### 3. Parse/deliver
+### 3. Parse the Output
 
-Read JSON URLs; present generated media as `MEDIA:<url>`.
+The JSON output contains URLs to generated media. Present these to the user with `MEDIA:<url>` for inline display.
 
-## App Recipes
+## Common Commands
 
-### Images
+### Image Generation
 
 ```bash
 # Search for image apps
@@ -90,7 +88,7 @@ infsh app run bytedance/seedream-5-lite --input '{"prompt": "nature scene"}' --j
 infsh app run xai/grok-imagine-image --input '{"prompt": "abstract art"}' --json
 ```
 
-### Video
+### Video Generation
 
 ```bash
 # Search for video apps
@@ -106,9 +104,9 @@ infsh app run bytedance/seedance-1-5-pro --input '{"prompt": "dancing figure", "
 infsh app run falai/wan-2-5 --input '{"prompt": "person walking through city"}' --json
 ```
 
-### Local uploads
+### Local File Uploads
 
-A local path in JSON is uploaded automatically:
+The CLI automatically uploads local files when you provide a path:
 
 ```bash
 # Upscale a local image
@@ -121,7 +119,7 @@ infsh app run falai/wan-2-5-i2v --input '{"image": "/path/to/image.png", "prompt
 infsh app run bytedance/omnihuman-1-5 --input '{"audio": "/path/to/audio.mp3", "image": "/path/to/face.jpg"}' --json
 ```
 
-### Search/research and other catalogs
+### Search & Research
 
 ```bash
 infsh app list --search search
@@ -129,7 +127,7 @@ infsh app run tavily/tavily-search --input '{"query": "latest AI news"}' --json
 infsh app run exa/exa-search --input '{"query": "machine learning papers"}' --json
 ```
 
-Discover other catalogs before choosing an app ID:
+### Other Categories
 
 ```bash
 # 3D generation
@@ -144,23 +142,15 @@ infsh app list --search twitter
 
 ## Pitfalls
 
-- IDs change; run `infsh app list --search <term>` first.
-- `--json` is required for parseable URLs.
-- auth failure → `infsh login` or verify `INFSH_API_KEY`.
-- video apps can take 30-120s; use adequate terminal timeout and tell user.
-- `--input` is a JSON string; escape nested quotes correctly.
-
-## Verification
-
-- `infsh me` proves auth
-- search output supplies the exact app ID used
-- run returns valid JSON and expected URL(s)
-- local file inputs upload successfully
-- media URL is delivered as `MEDIA:<url>`
+1. **Never guess app IDs** — always run `infsh app list --search <term>` first. App IDs change and new apps are added frequently.
+2. **Always use `--json`** — raw output is hard to parse. The `--json` flag gives structured output with URLs.
+3. **Check authentication** — if commands fail with auth errors, run `infsh login` or verify `INFSH_API_KEY` is set.
+4. **Long-running apps** — video generation can take 30-120 seconds. The terminal tool timeout should be sufficient, but warn the user it may take a moment.
+5. **Input format** — the `--input` flag takes a JSON string. Make sure to properly escape quotes.
 
 ## Reference Docs
 
-- `references/authentication.md` — setup/login/API keys
-- `references/app-discovery.md` — catalog search
-- `references/running-apps.md` — inputs/output handling
-- `references/cli-reference.md` — full CLI
+- `references/authentication.md` — Setup, login, API keys
+- `references/app-discovery.md` — Searching and browsing the app catalog
+- `references/running-apps.md` — Running apps, input formats, output handling
+- `references/cli-reference.md` — Complete CLI command reference

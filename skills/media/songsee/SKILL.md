@@ -1,6 +1,6 @@
 ---
 name: songsee
-description: Audio spectrograms/features (mel, chroma, MFCC) via CLI.
+description: "Audio spectrograms/features (mel, chroma, MFCC) via CLI."
 version: 1.0.0
 author: community
 license: MIT
@@ -15,30 +15,11 @@ prerequisites:
 
 # songsee
 
-role: audio-feature visualization operator
-do: render spectrogram/mel/chroma/HPSS/self-similarity/loudness/tempogram/MFCC/flux plots; slice or stream audio
-inputs: audio path/stdin, visualization list, style/dimensions/FFT/frequency/time/output flags
-outputs: PNG/JPG image for inspection or pipeline use
-¬: assume non-WAV/MP3 decoding without `ffmpeg`; omit output path when artifact must persist
-
-## When to Use
-
-- inspect or compare audio outputs
-- generate a spectrogram or multi-panel feature grid
-- debug synthesis/audio processing
-- document an audio pipeline
-
-## Procedure
-
-1. Verify `songsee`; install it and optional `ffmpeg` when required.
-2. Select input, time slice, visualization panels, FFT/frequency/style settings.
-3. Set explicit output path for persistent artifacts; run the matching command.
-4. Inspect the rendered image and report path + selected visualization settings.
+Generate spectrograms and multi-panel audio feature visualizations from audio files.
 
 ## Prerequisites
 
 Requires [Go](https://go.dev/doc/install):
-
 ```bash
 go install github.com/steipete/songsee/cmd/songsee@latest
 ```
@@ -66,7 +47,7 @@ cat track.mp3 | songsee - --format png -o out.png
 
 ## Visualization Types
 
-Pass comma-separated values to `--viz`; multiple panels render as one grid.
+Use `--viz` with comma-separated values:
 
 | Type | Description |
 |------|-------------|
@@ -80,7 +61,9 @@ Pass comma-separated values to `--viz`; multiple panels render as one grid.
 | `mfcc` | Mel-frequency cepstral coefficients |
 | `flux` | Spectral flux (onset detection) |
 
-## Flags
+Multiple `--viz` types render as a grid in a single image.
+
+## Common Flags
 
 | Flag | Description |
 |------|-------------|
@@ -93,15 +76,8 @@ Pass comma-separated values to `--viz`; multiple panels render as one grid.
 | `--format` | Output format: `jpg` or `png` |
 | `-o` | Output file path |
 
-## Pitfalls
+## Notes
 
-- WAV/MP3 decode natively; other formats need `ffmpeg`.
-- Output is an image; use `vision_analyze` for automated visual/audio review.
-- `--viz` values are comma-separated, not repeated flags.
-
-## Verification
-
-- [ ] `songsee` is installed and input decodes
-- [ ] requested visualizations, slice, style, and format are set
-- [ ] output image exists at the stated path
-- [ ] image can be inspected for the requested analysis
+- WAV and MP3 are decoded natively; other formats require `ffmpeg`
+- Output images can be inspected with `vision_analyze` for automated audio analysis
+- Useful for comparing audio outputs, debugging synthesis, or documenting audio processing pipelines

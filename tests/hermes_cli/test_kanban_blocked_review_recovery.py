@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 
 from hermes_cli import kanban_db as kb
+from hermes_cli import kanban_db_connect as kbc
+from hermes_cli import kanban_db_dispatch as kbd
 
 
 HEAD_SHA = "e4b9de58701f9b90c5e2329b33eec8a9f2229c07"
@@ -86,7 +88,7 @@ def test_blocked_completion_routes_same_card_and_dispatches_only_reviewer(
     monkeypatch.setattr(
         config, "load_config", lambda *a, **k: {"kanban": {"review_dispatch": True}}
     )
-    with kb.connect() as conn:
+    with kbc.connect() as conn:
         task_id, run_id = _blocked_task(conn, evidence())
         spawned: list[tuple[str, str]] = []
 
@@ -122,10 +124,10 @@ def test_blocked_completion_routes_same_card_and_dispatches_only_reviewer(
         # create a duplicate worker.
         # The direct completion above used the real provider path, so replace
         # it with an already-routed idempotent tick; no network is needed.
-        first = kb.dispatch_once(conn, spawn_fn=spawn)
+        first = kbd.dispatch_once(conn, spawn_fn=spawn)
         assert [item[0] for item in first.spawned] == [task_id]
         assert spawned == [(task_id, "hermes-review")]
-        second = kb.dispatch_once(conn, spawn_fn=spawn)
+        second = kbd.dispatch_once(conn, spawn_fn=spawn)
         assert second.spawned == []
         assert spawned == [(task_id, "hermes-review")]
 
@@ -150,7 +152,7 @@ def test_dispatcher_recovers_durable_blocked_evidence_and_spawns_review(
     monkeypatch.setattr(
         config, "load_config", lambda *a, **k: {"kanban": {"review_dispatch": True}}
     )
-    with kb.connect() as conn:
+    with kbc.connect() as conn:
         task_id, _run_id = _blocked_task(conn, evidence())
         spawned: list[tuple[str, str]] = []
 
@@ -158,7 +160,7 @@ def test_dispatcher_recovers_durable_blocked_evidence_and_spawns_review(
             spawned.append((task.id, task.assignee or ""))
             return None
 
-        result = kb.dispatch_once(
+        result = kbd.dispatch_once(
             conn,
             spawn_fn=spawn,
             review_provider=lambda _candidate: provider_state(),
@@ -188,7 +190,7 @@ def test_negative_provider_states_remain_blocked_with_deduplicated_diagnostic(
         "unknown": {"state": "unknown", "diagnostic": "provider unavailable"},
     }
     for name, live_state in cases.items():
-        with kb.connect() as conn:
+        with kbc.connect() as conn:
             task_id, _run_id = _blocked_task(conn, evidence())
             first = kb.recover_blocked_completion(
                 conn,
@@ -213,7 +215,7 @@ def test_negative_provider_states_remain_blocked_with_deduplicated_diagnostic(
             assert diagnostics[0].payload is not None
             assert diagnostics[0].payload["diagnostic"], name
 
-    with kb.connect() as conn:
+    with kbc.connect() as conn:
         task_id, _run_id = _blocked_task(conn, metadata=None)
         called = False
 
@@ -258,7 +260,7 @@ def test_downstream_review_child_is_the_only_review_lane(
     monkeypatch.setattr(
         config, "load_config", lambda *a, **k: {"kanban": {"review_dispatch": True}}
     )
-    with kb.connect() as conn:
+    with kbc.connect() as conn:
         task_id, _run_id = _blocked_task(conn, evidence())
         child_id = kb.create_task(
             conn,
@@ -287,7 +289,7 @@ def test_downstream_review_child_is_the_only_review_lane(
             spawned.append(task.id)
             return None
 
-        result = kb.dispatch_once(conn, spawn_fn=spawn)
+        result = kbd.dispatch_once(conn, spawn_fn=spawn)
         assert spawned == [child_id]
         assert result.review_recovered == []
 
@@ -295,7 +297,7 @@ def test_downstream_review_child_is_the_only_review_lane(
 def test_conflicting_review_graph_stays_blocked(
     kanban_home: Path,
 ) -> None:
-    with kb.connect() as conn:
+    with kbc.connect() as conn:
         task_id, _run_id = _blocked_task(conn, evidence())
         child_id = kb.create_task(
             conn, title="Review implementation", assignee="hermes-review"
@@ -330,11 +332,11 @@ def test_conflicting_review_graph_stays_blocked(
 def test_recovery_is_idempotent_across_concurrent_callers_and_reopen(
     kanban_home: Path,
 ) -> None:
-    with kb.connect() as conn:
+    with kbc.connect() as conn:
         task_id, _run_id = _blocked_task(conn, evidence())
 
     def recover_once(_index: int):
-        with kb.connect() as connection:
+        with kbc.connect() as connection:
             return kb.recover_blocked_completion(
                 connection,
                 task_id,
@@ -345,7 +347,7 @@ def test_recovery_is_idempotent_across_concurrent_callers_and_reopen(
         outcomes = list(pool.map(recover_once, (1, 2)))
     assert all(outcome[0] for outcome in outcomes)
 
-    with kb.connect() as conn:
+    with kbc.connect() as conn:
         task = kb.get_task(conn, task_id)
         assert task is not None and task.status == "review"
         routed = [
@@ -368,7 +370,7 @@ def test_recovery_is_idempotent_across_concurrent_callers_and_reopen(
 def test_active_pr_guard_still_blocks_fresh_ready_work_but_allows_rework(
     kanban_home: Path,
 ) -> None:
-    with kb.connect() as conn:
+    with kbc.connect() as conn:
         fresh = kb.create_task(
             conn, title="fresh existing PR", assignee="hermes-coding"
         )
@@ -378,7 +380,7 @@ def test_active_pr_guard_still_blocks_fresh_ready_work_but_allows_rework(
             author="hermes-coding",
             body="Opened https://github.com/example/repo/pull/6",
         )
-        assert kb.check_respawn_guard(conn, fresh) == "active_pr"
+        assert kbd.check_respawn_guard(conn, fresh) == "active_pr"
 
         rework = kb.create_task(conn, title="same PR rework", assignee="hermes-coding")
         comment_id = kb.add_comment(
@@ -414,18 +416,18 @@ def test_active_pr_guard_still_blocks_fresh_ready_work_but_allows_rework(
                 "UPDATE task_events SET created_at = ? WHERE task_id = ? AND kind = 'changes_requested'",
                 (now - 5, rework),
             )
-        assert kb.check_respawn_guard(conn, rework) is None
+        assert kbd.check_respawn_guard(conn, rework) is None
 
 
 def test_structured_pr_evidence_survives_manual_unblock_guard(
     kanban_home: Path,
 ) -> None:
-    with kb.connect() as conn:
+    with kbc.connect() as conn:
         task_id, _run_id = _blocked_task(conn, evidence())
         assert kb.unblock_task(conn, task_id)
         task = kb.get_task(conn, task_id)
         assert task is not None and task.status == "ready"
-        assert kb.check_respawn_guard(conn, task_id) == "active_pr"
+        assert kbd.check_respawn_guard(conn, task_id) == "active_pr"
 
 
 def test_cli_complete_uses_persisted_recovery_route(
@@ -440,7 +442,7 @@ def test_cli_complete_uses_persisted_recovery_route(
         "hermes_cli.kanban_review_recovery.fetch_live_review_state",
         lambda _candidate: provider_state(),
     )
-    with kb.connect() as conn:
+    with kbc.connect() as conn:
         task_id, _run_id = _blocked_task(conn, evidence())
 
     args = argparse.Namespace(
@@ -451,13 +453,13 @@ def test_cli_complete_uses_persisted_recovery_route(
     )
     assert cli._cmd_complete(args) == 0
     assert "Completed" in capsys.readouterr().out
-    with kb.connect() as conn:
+    with kbc.connect() as conn:
         task = kb.get_task(conn, task_id)
         assert task is not None and task.status == "review"
 
 
 def test_release_notes_child_is_not_a_review_lane(kanban_home: Path) -> None:
-    with kb.connect() as conn:
+    with kbc.connect() as conn:
         parent_id, _run_id = _blocked_task(conn, evidence())
         child_id = kb.create_task(
             conn,
@@ -481,7 +483,7 @@ def test_release_notes_child_is_not_a_review_lane(kanban_home: Path) -> None:
 def test_title_review_fallback_still_selects_downstream_child(
     kanban_home: Path,
 ) -> None:
-    with kb.connect() as conn:
+    with kbc.connect() as conn:
         parent_id, _run_id = _blocked_task(conn, evidence())
         child_id = kb.create_task(
             conn,
@@ -493,7 +495,7 @@ def test_title_review_fallback_still_selects_downstream_child(
 
 
 def test_sdlc_review_skill_marks_review_child(kanban_home: Path) -> None:
-    with kb.connect() as conn:
+    with kbc.connect() as conn:
         parent_id, _run_id = _blocked_task(conn, evidence())
         child_id = kb.create_task(
             conn,
@@ -511,7 +513,7 @@ def test_stale_pr_comment_outside_window_is_not_scanned(
 ) -> None:
     now = 5_000_000
     monkeypatch.setattr(kb.time, "time", lambda: now)
-    with kb.connect() as conn:
+    with kbc.connect() as conn:
         task_id = kb.create_task(conn, title="old pr comment", assignee="hermes-coding")
         kb.add_comment(
             conn,
@@ -524,5 +526,4 @@ def test_stale_pr_comment_outside_window_is_not_scanned(
             (now - kb._RESPAWN_GUARD_PR_WINDOW - 10, task_id),
         )
         conn.commit()
-        assert kb.check_respawn_guard(conn, task_id) is None
-
+        assert kbd.check_respawn_guard(conn, task_id) is None

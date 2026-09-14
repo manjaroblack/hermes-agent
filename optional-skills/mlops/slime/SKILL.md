@@ -14,33 +14,27 @@ metadata:
 
 # slime: LLM Post-Training Framework for RL Scaling
 
-role: slime RL post-training operator
-do: provision Docker/source; select Megatron model and SGLang rollout; prepare JSONL prompts/labels; configure GRPO/other estimator; launch sync/async/agentic training; monitor/checkpoint
-inputs: model script/checkpoint; JSONL prompt/label data; actor/rollout GPU topology; parallelism; batch/rollout counts; reward/tool function
-outputs: trained checkpoint; rollout samples/rewards; logs/TensorBoard; data-buffer state; throughput and resource diagnostics
-¬: violate batch-size constraint; mix incompatible model scripts; run without checkpoint/eval intervals; ignore rollout-engine failures; expose data or credentials
-
 slime is an LLM post-training framework from Tsinghua's THUDM team, powering GLM-4.5, GLM-4.6, and GLM-4.7. It connects Megatron-LM for training with SGLang for high-throughput rollout generation.
 
-## When to Use
+## When to Use slime
 
-Choose slime when you need:
+**Choose slime when you need:**
 - Megatron-LM native training with SGLang inference
 - Custom data generation workflows with flexible data buffers
 - Training GLM, Qwen3, DeepSeek V3, or Llama 3 models
 - Research-grade framework with production backing (Z.ai)
 
-Consider alternatives when:
-- You need enterprise-grade stability features → use miles
-- You want flexible backend swapping → use verl
-- You need PyTorch-native abstractions → use torchforge
+**Consider alternatives when:**
+- You need enterprise-grade stability features → use **miles**
+- You want flexible backend swapping → use **verl**
+- You need PyTorch-native abstractions → use **torchforge**
 
 ## Key Features
 
-- Training: Megatron-LM with full parallelism support (TP, PP, DP, SP)
-- Rollout: SGLang-based high-throughput generation with router
-- Data Buffer: Flexible prompt management and sample storage
-- Models: GLM-4.x, Qwen3, DeepSeek V3/R1, Llama 3
+- **Training**: Megatron-LM with full parallelism support (TP, PP, DP, SP)
+- **Rollout**: SGLang-based high-throughput generation with router
+- **Data Buffer**: Flexible prompt management and sample storage
+- **Models**: GLM-4.x, Qwen3, DeepSeek V3/R1, Llama 3
 
 ## Architecture Overview
 
@@ -81,7 +75,7 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-## Procedure
+## Quick Start: GRPO Training
 
 ```bash
 # Source model configuration
@@ -262,7 +256,7 @@ See `examples/search-r1/` for a complete multi-turn search example.
 
 slime uses three types of arguments:
 
-1. Megatron Arguments (passed directly):
+**1. Megatron Arguments** (passed directly):
 ```bash
 --tensor-model-parallel-size 2
 --pipeline-model-parallel-size 1
@@ -270,14 +264,14 @@ slime uses three types of arguments:
 --hidden-size 4096
 ```
 
-2. SGLang Arguments (prefixed with `--sglang-`):
+**2. SGLang Arguments** (prefixed with `--sglang-`):
 ```bash
 --sglang-mem-fraction-static 0.8
 --sglang-context-length 8192
 --sglang-log-level INFO
 ```
 
-3. slime Arguments:
+**3. slime Arguments**:
 ```bash
 # Resource allocation
 --actor-num-nodes 1
@@ -347,13 +341,13 @@ class RolloutDataSourceWithBuffer(RolloutDataSource):
 
 ---
 
-## Pitfalls
+## Common Issues and Solutions
 
 ### Issue: SGLang Engine Crash
 
-Symptoms: Inference engine dies mid-training
+**Symptoms**: Inference engine dies mid-training
 
-Solutions:
+**Solutions**:
 ```bash
 # Enable fault tolerance
 --use-fault-tolerance
@@ -367,9 +361,9 @@ Solutions:
 
 ### Issue: Weight Sync Timeout
 
-Symptoms: Training hangs after rollout
+**Symptoms**: Training hangs after rollout
 
-Solutions:
+**Solutions**:
 ```bash
 # Increase sync interval
 --update-weights-interval 5
@@ -380,9 +374,9 @@ Solutions:
 
 ### Issue: OOM During Training
 
-Symptoms: CUDA OOM in backward pass
+**Symptoms**: CUDA OOM in backward pass
 
-Solutions:
+**Solutions**:
 ```bash
 # Enable gradient checkpointing
 --recompute-activations
@@ -396,9 +390,9 @@ Solutions:
 
 ### Issue: Slow Data Loading
 
-Symptoms: GPU idle during data fetch
+**Symptoms**: GPU idle during data fetch
 
-Solutions:
+**Solutions**:
 ```bash
 # Increase data workers
 --num-data-workers 4
@@ -465,14 +459,10 @@ class CustomRewardModel:
 
 ---
 
-## Verification
-- validate model script, checkpoint, JSONL fields, and GPU allocation
-- run a bounded rollout/training smoke test and inspect reward/log output
-- confirm checkpoints, TensorBoard data, and evaluation samples
-
 ## Resources
 
-- Documentation: https://thudm.github.io/slime/
-- GitHub: https://github.com/THUDM/slime
-- Blog: https://lmsys.org/blog/2025-07-09-slime/
-- Examples: See `examples/` directory for 14+ worked examples
+- **Documentation**: https://thudm.github.io/slime/
+- **GitHub**: https://github.com/THUDM/slime
+- **Blog**: https://lmsys.org/blog/2025-07-09-slime/
+- **Examples**: See `examples/` directory for 14+ worked examples
+

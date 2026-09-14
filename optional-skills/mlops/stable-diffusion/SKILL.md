@@ -14,17 +14,11 @@ metadata:
 
 # Stable Diffusion Image Generation
 
-role: Diffusers image-generation operator
-do: install Diffusers; choose pipeline/model; generate text-to-image/img2img/inpaint; add ControlNet/LoRA; tune scheduler/precision/offload; save and inspect images
-inputs: prompt/negative prompt; input image/mask/control image; model/pipeline; steps/guidance/size/seed; GPU/VRAM target
-outputs: PNG/JPEG images; reproducible seed/settings; batch results; VRAM/performance and quality caveats
-¬: ignore model license or safety; treat generated content as factual; omit seed/settings; exceed image/VRAM limits; expose private input images
-
 Guide to generating images with Stable Diffusion using the HuggingFace Diffusers library.
 
-## When to Use
+## When to use Stable Diffusion
 
-Use Stable Diffusion when:
+**Use Stable Diffusion when:**
 - Generating images from text descriptions
 - Performing image-to-image translation (style transfer, enhancement)
 - Inpainting (filling in masked regions)
@@ -32,21 +26,21 @@ Use Stable Diffusion when:
 - Creating variations of existing images
 - Building custom image generation workflows
 
-Key features:
-- Text-to-Image: Generate images from natural language prompts
-- Image-to-Image: Transform existing images with text guidance
-- Inpainting: Fill masked regions with context-aware content
-- ControlNet: Add spatial conditioning (edges, poses, depth)
-- LoRA Support: Efficient fine-tuning and style adaptation
-- Multiple Models: SD 1.5, SDXL, SD 3.0, Flux support
+**Key features:**
+- **Text-to-Image**: Generate images from natural language prompts
+- **Image-to-Image**: Transform existing images with text guidance
+- **Inpainting**: Fill masked regions with context-aware content
+- **ControlNet**: Add spatial conditioning (edges, poses, depth)
+- **LoRA Support**: Efficient fine-tuning and style adaptation
+- **Multiple Models**: SD 1.5, SDXL, SD 3.0, Flux support
 
-Use alternatives instead:
-- DALL-E 3: For API-based generation without GPU
-- Midjourney: For artistic, stylized outputs
-- Imagen: For Google Cloud integration
-- Leonardo.ai: For web-based creative workflows
+**Use alternatives instead:**
+- **DALL-E 3**: For API-based generation without GPU
+- **Midjourney**: For artistic, stylized outputs
+- **Imagen**: For Google Cloud integration
+- **Leonardo.ai**: For web-based creative workflows
 
-## Procedure
+## Quick start
 
 ### Installation
 
@@ -483,9 +477,9 @@ image = pipe(
 ).images[0]
 ```
 
-## Pitfalls
+## Common issues
 
-CUDA out of memory:
+**CUDA out of memory:**
 ```python
 # Enable memory optimizations
 pipe.enable_model_cpu_offload()
@@ -496,7 +490,7 @@ pipe.enable_vae_slicing()
 pipe = DiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16)
 ```
 
-Black/noise images:
+**Black/noise images:**
 ```python
 # Check VAE configuration
 # Use safety checker bypass if needed
@@ -506,7 +500,7 @@ pipe.safety_checker = None
 pipe = pipe.to(dtype=torch.float16)
 ```
 
-Slow generation:
+**Slow generation:**
 ```python
 # Use faster scheduler
 from diffusers import DPMSolverMultistepScheduler
@@ -518,17 +512,12 @@ image = pipe(prompt, num_inference_steps=20).images[0]
 
 ## References
 
-- [Advanced Usage](references/advanced-usage.md) - Custom pipelines, fine-tuning, deployment
-- [Troubleshooting](references/troubleshooting.md) - Common issues and solutions
-
-## Verification
-- load the selected pipeline and generate one bounded image
-- record model, prompt, seed, steps, guidance, dimensions, and dtype
-- inspect output for shape/content/artifacts and confirm no runtime errors
+- **[Advanced Usage](references/advanced-usage.md)** - Custom pipelines, fine-tuning, deployment
+- **[Troubleshooting](references/troubleshooting.md)** - Common issues and solutions
 
 ## Resources
 
-- Documentation: https://huggingface.co/docs/diffusers
-- Repository: https://github.com/huggingface/diffusers
-- Model Hub: https://huggingface.co/models?library=diffusers
-- Discord: https://discord.gg/diffusers
+- **Documentation**: https://huggingface.co/docs/diffusers
+- **Repository**: https://github.com/huggingface/diffusers
+- **Model Hub**: https://huggingface.co/models?library=diffusers
+- **Discord**: https://discord.gg/diffusers

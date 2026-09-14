@@ -12,35 +12,47 @@ metadata:
     related_skills: [concept-diagrams, excalidraw]
 ---
 
-# Architecture Diagram
+# Architecture Diagram Skill
 
-role: technical diagram designer
-do: produce one offline-capable dark, grid-backed architecture HTML with inline SVG/CSS
-inputs: components, connections, technologies, boundaries, title/subtitle, summary data
-outputs: standalone `.html` with SVG, three summary cards, metadata footer
-¬: scientific/physical/narrative subjects when a specialist fits; hand-drawn diagrams → `excalidraw`; animation → animation skill
+Generate professional, dark-themed technical architecture diagrams as standalone HTML files with inline SVG graphics. No external tools, no API keys, no rendering libraries — just write the HTML file and open it in a browser.
 
-Based on [Cocoon AI's architecture-diagram-generator](https://github.com/Cocoon-AI/architecture-diagram-generator) (MIT). If no specialist exists, use this as a general SVG fallback with the dark tech aesthetic.
+## Scope
 
-## When to Use
+**Best suited for:**
+- Software system architecture (frontend / backend / database layers)
+- Cloud infrastructure (VPC, regions, subnets, managed services)
+- Microservice / service-mesh topology
+- Database + API map, deployment diagrams
+- Anything with a tech-infra subject that fits a dark, grid-backed aesthetic
 
-- frontend/backend/database architecture
-- VPC, regions, subnets, managed cloud services
-- microservice/service-mesh topology
-- database/API maps and deployment diagrams
-- technical infrastructure that fits a dark grid-backed visual language
+**Look elsewhere first for:**
+- Physics, chemistry, math, biology, or other scientific subjects
+- Physical objects (vehicles, hardware, anatomy, cross-sections)
+- Floor plans, narrative journeys, educational / textbook-style visuals
+- Hand-drawn whiteboard sketches (consider `excalidraw`)
+- Animated explainers (consider an animation skill)
 
-¬prefer: physics, chemistry, math, biology; vehicles/hardware/anatomy/cross-sections; floor plans, journeys, educational textbook visuals; hand-drawn whiteboard; animated explainers.
+If a more specialized skill is available for the subject, prefer that. If none fits, this skill can also serve as a general SVG diagram fallback — the output will just carry the dark tech aesthetic described below.
 
-## Procedure
+Based on [Cocoon AI's architecture-diagram-generator](https://github.com/Cocoon-AI/architecture-diagram-generator) (MIT).
 
-1. Gather components, links, technologies, boundaries, and requested output path.
-2. Generate HTML with the design system below.
-3. Save with `write_file` to user path (e.g. `~/architecture-diagram.html`) or default `./[project-name]-architecture.html`.
-4. Open in any modern browser; offline except optional Google Fonts.
+## Workflow
+
+1. User describes their system architecture (components, connections, technologies)
+2. Generate the HTML file following the design system below
+3. Save with `write_file` to a `.html` file (e.g. `~/architecture-diagram.html`)
+4. User opens in any browser — works offline, no dependencies
+
+### Output Location
+
+Save diagrams to a user-specified path, or default to the current working directory:
+```
+./[project-name]-architecture.html
+```
 
 ### Preview
 
+After saving, suggest the user open it:
 ```bash
 # macOS
 open ./my-architecture.html
@@ -48,9 +60,11 @@ open ./my-architecture.html
 xdg-open ./my-architecture.html
 ```
 
-## Visual Contract
+## Design System & Visual Language
 
-### Semantic palette
+### Color Palette (Semantic Mapping)
+
+Use specific `rgba` fills and hex strokes to categorize components:
 
 | Component Type | Fill (rgba) | Stroke (Hex) |
 | :--- | :--- | :--- |
@@ -62,7 +76,10 @@ xdg-open ./my-architecture.html
 | **Message Bus** | `rgba(251, 146, 60, 0.3)` | `#fb923c` (orange-400) |
 | **External** | `rgba(30, 41, 59, 0.5)` | `#94a3b8` (slate-400) |
 
-Typography: JetBrains Mono from Google Fonts; names 12px, sublabels 9px, annotations 8px, tiny labels 7px. Background: Slate-950 `#020617`; subtle 40px grid:
+### Typography & Background
+- **Font:** JetBrains Mono (Monospace), loaded from Google Fonts
+- **Sizes:** 12px (Names), 9px (Sublabels), 8px (Annotations), 7px (Tiny labels)
+- **Background:** Slate-950 (`#020617`) with a subtle 40px grid pattern
 
 ```svg
 <!-- Background Grid Pattern -->
@@ -71,25 +88,36 @@ Typography: JetBrains Mono from Google Fonts; names 12px, sublabels 9px, annotat
 </pattern>
 ```
 
-### SVG rules
+## Technical Implementation Details
 
-- component = rounded rect `rx="6"`, 1.5px stroke
-- mask translucent fills: opaque `#0f172a` rect first, styled semi-transparent rect second
-- draw arrows after grid and before boxes; use SVG markers
-- security flow = dashed rose `#fb7185`
-- security-group boundary = dashed `4,4`, rose
-- region boundary = dashed `8,4`, amber, `rx="12"`
-- service height 60px; large components 80–120px; vertical gap ≥40px
-- place message bus in gaps, never overlapping services
-- legend outside every boundary; find lowest boundary Y, place legend ≥20px below it
+### Component Rendering
+Components are rounded rectangles (`rx="6"`) with 1.5px strokes. To prevent arrows from showing through semi-transparent fills, use a **double-rect masking technique**:
+1. Draw an opaque background rect (`#0f172a`)
+2. Draw the semi-transparent styled rect on top
 
-### HTML layout
+### Connection Rules
+- **Z-Order:** Draw arrows *early* in the SVG (after the grid) so they render behind component boxes
+- **Arrowheads:** Defined via SVG markers
+- **Security Flows:** Use dashed lines in rose color (`#fb7185`)
+- **Boundaries:**
+  - *Security Groups:* Dashed (`4,4`), rose color
+  - *Regions:* Large dashed (`8,4`), amber color, `rx="12"`
 
-1. Header: title + pulsing dot + subtitle
-2. Main SVG inside rounded border card
-3. Three summary cards below diagram
-4. Minimal metadata footer
+### Spacing & Layout Logic
+- **Standard Height:** 60px (Services); 80-120px (Large components)
+- **Vertical Gap:** Minimum 40px between components
+- **Message Buses:** Must be placed *in the gap* between services, not overlapping them
+- **Legend Placement:** **CRITICAL.** Must be placed outside all boundary boxes. Calculate the lowest Y-coordinate of all boundaries and place the legend at least 20px below it.
 
+## Document Structure
+
+The generated HTML file follows a four-part layout:
+1. **Header:** Title with a pulsing dot indicator and subtitle
+2. **Main SVG:** The diagram contained within a rounded border card
+3. **Summary Cards:** A grid of three cards below the diagram for high-level details
+4. **Footer:** Minimal metadata
+
+### Info Card Pattern
 ```html
 <div class="card">
   <div class="card-header">
@@ -104,29 +132,17 @@ Typography: JetBrains Mono from Google Fonts; names 12px, sublabels 9px, annotat
 ```
 
 ## Output Requirements
+- **Single File:** One self-contained `.html` file
+- **No External Dependencies:** All CSS and SVG must be inline (except Google Fonts)
+- **No JavaScript:** Use pure CSS for any animations (like pulsing dots)
+- **Compatibility:** Must render correctly in any modern web browser
 
-- one self-contained `.html`
-- inline CSS + SVG; Google Fonts is the only permitted external dependency
-- no JavaScript; CSS-only animation (e.g. pulsing dot)
-- render correctly in modern browsers
+## Template Reference
 
-## Template
+Load the full HTML template for the exact structure, CSS, and SVG component examples:
 
-Load exact structure, CSS, SVG component examples, arrow variants, security groups, region boundaries, and legend before generation:
-
-```text
+```
 skill_view(name="architecture-diagram", file_path="templates/template.html")
 ```
 
-## Pitfalls
-
-- do not let labels, arrows, or legend overlap the diagram or its boundaries
-- do not add JavaScript or external assets beyond the permitted Google Fonts link
-- avoid dense miniature nodes; reduce detail or split the diagram when readability fails
-
-## Verification
-
-- file exists at stated path and opens in a modern browser
-- SVG contains requested components, arrows, boundaries, legend outside boundaries
-- all CSS/SVG inline; no JS; offline behavior except Google Fonts
-- output has header, rounded SVG card, three summary cards, footer
+The template contains working examples of every component type (frontend, backend, database, cloud, security), arrow styles (standard, dashed, curved), security groups, region boundaries, and the legend — use it as your structural reference when generating diagrams.

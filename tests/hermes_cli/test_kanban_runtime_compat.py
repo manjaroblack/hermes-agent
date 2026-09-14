@@ -10,6 +10,8 @@ import pytest
 
 from hermes_cli import kanban as cli
 from hermes_cli import kanban_db as kb
+from hermes_cli import kanban_db_connect as kbc
+from hermes_cli import kanban_db_dispatch as kbd
 from tools import kanban_tools as kanban_tools
 
 
@@ -49,14 +51,14 @@ def test_cli_dispatch_dry_run_accepts_default_dispatch_result(
     json_mode: bool,
 ) -> None:
     """CLI text and JSON output must tolerate empty review-recovery fields."""
-    monkeypatch.setattr(kb, "dispatch_once", lambda *args, **kwargs: kb.DispatchResult())
+    monkeypatch.setattr(kbd, "dispatch_once", lambda *args, **kwargs: kb.DispatchResult())
 
     result = cli._cmd_dispatch(
         argparse.Namespace(
             dry_run=True,
             json=json_mode,
             max=None,
-            failure_limit=kb.DEFAULT_SPAWN_FAILURE_LIMIT,
+            failure_limit=kbd.DEFAULT_FAILURE_LIMIT,
         )
     )
 
@@ -73,7 +75,7 @@ def test_cli_dispatch_dry_run_accepts_default_dispatch_result(
 def test_block_task_accepts_and_persists_structured_metadata(
     isolated_kanban_home: Path,
 ) -> None:
-    with kb.connect() as conn:
+    with kbc.connect() as conn:
         task_id = kb.create_task(
             conn,
             title="metadata block",
@@ -101,7 +103,7 @@ def test_worker_kanban_block_forwards_structured_metadata(
     isolated_kanban_home: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    with kb.connect() as conn:
+    with kbc.connect() as conn:
         task_id = kb.create_task(
             conn,
             title="worker metadata block",
@@ -121,5 +123,5 @@ def test_worker_kanban_block_forwards_structured_metadata(
 
     assert "error" not in result
     assert result["task_id"] == task_id
-    with kb.connect() as conn:
+    with kbc.connect() as conn:
         assert kb.get_task(conn, task_id).status == "blocked"

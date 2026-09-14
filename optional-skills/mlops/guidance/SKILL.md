@@ -14,23 +14,17 @@ metadata:
 
 # Guidance: Constrained LLM Generation
 
-role: Guidance constrained-generation operator
-do: select local/remote backend; compose chat contexts; constrain with regex/select/json/grammar; use token healing/functions; execute only trusted tools; benchmark
-inputs: model/backend; prompt/chat roles; regex/choices/schema; generation limits; tool map; local device/path
-outputs: constrained text/JSON; named selections; captured fields; multi-step transcript; latency/validity results
-¬: claim remote APIs enforce regex/select/grammar; use stale template-string grammar API; run untrusted generated code; expose API keys; omit stop/bounds
-
-## When to Use
+## When to Use This Skill
 
 Use Guidance when you need to:
-- Control LLM output syntax with regex or grammars
-- Guarantee valid JSON/XML/code generation
-- Reduce latency vs traditional prompting approaches
-- Enforce structured formats (dates, emails, IDs, etc.)
-- Build multi-step workflows with Pythonic control flow
-- Prevent invalid outputs through grammatical constraints
+- **Control LLM output syntax** with regex or grammars
+- **Guarantee valid JSON/XML/code** generation
+- **Reduce latency** vs traditional prompting approaches
+- **Enforce structured formats** (dates, emails, IDs, etc.)
+- **Build multi-step workflows** with Pythonic control flow
+- **Prevent invalid outputs** through grammatical constraints
 
-GitHub Stars: 18,000+ | From: Microsoft Research
+**GitHub Stars**: 18,000+ | **From**: Microsoft Research
 
 ## Installation
 
@@ -43,7 +37,7 @@ pip install guidance[transformers]  # Hugging Face models
 pip install guidance[llama_cpp]     # llama.cpp models
 ```
 
-## Procedure
+## Quick Start
 
 ### Basic Example: Structured Generation
 
@@ -61,7 +55,7 @@ print(result["capital"])  # "Paris"
 
 ### Chat format with a local model
 
-> Constraint support requires local logit access. Regex, `select()`, and
+> **Constraint support requires local logit access.** Regex, `select()`, and
 > grammar-based constrained generation only work with local backends
 > (`Transformers`, `LlamaCpp`). Remote API backends (`OpenAI`, and Azure
 > variants) support unconstrained `gen()` / chat only — they cannot enforce
@@ -110,7 +104,7 @@ with assistant():
 print(lm["response"])
 ```
 
-Benefits:
+**Benefits:**
 - Natural chat flow
 - Clear role separation
 - Easy to read and maintain
@@ -139,7 +133,7 @@ print(lm["email"])  # Guaranteed valid email
 print(lm["date"])   # Guaranteed YYYY-MM-DD format
 ```
 
-How it works:
+**How it works:**
 - Regex converted to grammar at token level
 - Invalid tokens filtered during generation
 - Model can only produce matching outputs
@@ -168,7 +162,7 @@ print(lm["answer"])     # One of: A, B, C, or D
 
 Guidance automatically "heals" token boundaries between prompt and generation.
 
-Problem: Tokenization creates unnatural boundaries.
+**Problem:** Tokenization creates unnatural boundaries.
 
 ```python
 # Without token healing
@@ -178,7 +172,7 @@ prompt = "The capital of France is "
 # Result: "The capital of France is  Paris" (double space!)
 ```
 
-Solution: Guidance backs up one token and regenerates.
+**Solution:** Guidance backs up one token and regenerates.
 
 ```python
 from guidance import models, gen
@@ -190,14 +184,16 @@ lm += "The capital of France is " + gen("capital", max_tokens=5)
 # Result: "The capital of France is Paris" (correct spacing)
 ```
 
-Benefits:
+**Benefits:**
 - Natural text boundaries
 - No awkward spacing issues
 - Better model performance (sees natural token sequences)
 
 ### 4. Grammar-Based Generation
 
-Define complex structures by composing grammar functions. The template-string `grammar=` form is not part of current guidance — build grammars from composable functions, or use `guidance.json()` for JSON.
+Define complex structures by composing grammar functions. The template-string
+`grammar=` form is not part of current guidance — build grammars from
+composable functions, or use `guidance.json()` for JSON.
 
 ```python
 from guidance import models, gen
@@ -221,7 +217,7 @@ grammar = "name=" + gen("name", regex=r"[A-Za-z ]+") + " age=" + gen("age", rege
 lm += grammar
 ```
 
-Use cases:
+**Use cases:**
 - Complex structured outputs
 - Nested data structures
 - Programming language syntax
@@ -249,7 +245,7 @@ print(lm["name"])
 print(lm["age"])
 ```
 
-Stateful Functions:
+**Stateful Functions:**
 
 ```python
 @guidance(stateless=False)
@@ -539,55 +535,46 @@ lm += gen("name", regex=r"^(John|Jane)$", max_tokens=10)
 | Pythonic Syntax | ✅ Yes | ✅ Yes | ✅ Yes | ❌ SQL-like |
 | Learning Curve | Low | Low | Medium | High |
 
-When to choose Guidance:
+**When to choose Guidance:**
 - Need regex/grammar constraints
 - Want token healing
 - Building complex workflows with control flow
 - Using local models (Transformers, llama.cpp)
 - Prefer Pythonic syntax
 
-When to choose alternatives:
+**When to choose alternatives:**
 - Instructor: Need Pydantic validation with automatic retrying
 - Outlines: Need JSON schema validation
 - LMQL: Prefer declarative query syntax
 
 ## Performance Characteristics
 
-Latency Reduction:
+**Latency Reduction:**
 - 30-50% faster than traditional prompting for constrained outputs
 - Token healing reduces unnecessary regeneration
 - Grammar constraints prevent invalid token generation
 
-Memory Usage:
+**Memory Usage:**
 - Minimal overhead vs unconstrained generation
 - Grammar compilation cached after first use
 - Efficient token filtering at inference time
 
-Token Efficiency:
+**Token Efficiency:**
 - Prevents wasted tokens on invalid outputs
 - No need for retry loops
 - Direct path to valid outputs
 
-## Pitfalls
-- Token-level constraints require local logit access; remote OpenAI/Azure backends support unconstrained generation only.
-- guidance 0.3.x has no `models.Anthropic` class; follow the documented backend surface.
-- Build grammars from composable functions or `guidance.json()`; do not copy removed template-string `grammar=` patterns.
-- Tool/code execution in ReAct examples needs a sandbox and trusted inputs.
-
-## Verification
-- run a local constrained generation with a small model or fixture
-- assert regex/select/JSON output constraints and captured fields
-- test remote/local capability boundaries and inspect latency/errors
-
 ## Resources
 
-- Documentation: https://guidance.readthedocs.io
-- GitHub: https://github.com/guidance-ai/guidance (18k+ stars)
-- Notebooks: https://github.com/guidance-ai/guidance/tree/main/notebooks
-- Discord: Community support available
+- **Documentation**: https://guidance.readthedocs.io
+- **GitHub**: https://github.com/guidance-ai/guidance (18k+ stars)
+- **Notebooks**: https://github.com/guidance-ai/guidance/tree/main/notebooks
+- **Discord**: Community support available
 
 ## See Also
 
 - `references/constraints.md` - Comprehensive regex and grammar patterns
 - `references/backends.md` - Backend-specific configuration
 - `references/examples.md` - Production-ready examples
+
+
