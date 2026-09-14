@@ -452,6 +452,19 @@ def _gateway_platform_value(platform: Any) -> str:
     return str(getattr(platform, "value", platform) or "").strip().lower()
 
 
+def _is_native_discord_final_only(source: Any) -> bool:
+    """Whether a turn must buffer ordinary text until its final reply.
+
+    Relay-delivered Discord events retain the underlying platform value for display policy, so the
+    authenticated relay marker is part of this decision. Native Discord keeps the ordinary final-send
+    rail; explicit approval, error, command, and other notice paths remain separate.
+    """
+    return (
+        _gateway_platform_value(getattr(source, "platform", None)) == "discord"
+        and getattr(source, "delivered_via_upstream_relay", False) is not True
+    )
+
+
 def _non_conversational_metadata(
     metadata: Optional[Dict[str, Any]] = None, *, platform: Any = None) -> Optional[Dict[str, Any]]:
     """Mark Discord lifecycle/status sends without changing other platforms."""

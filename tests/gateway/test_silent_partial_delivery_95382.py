@@ -309,10 +309,16 @@ async def _run_turn(monkeypatch, tmp_path, *, consumer_cls=None, session_id):
         gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"}
     )
 
-    adapter = CaptureAdapter()
+    # This boundary regression exercises the relay delivery ledger, not the
+    # native Discord final-only surface. Keep the authenticated relay marker
+    # explicit so the control still covers streaming reconciliation.
+    adapter = CaptureAdapter(platform=Platform.RELAY)
     runner = _make_runner(adapter)
     source = SessionSource(
-        platform=Platform.DISCORD, chat_id="1534932197436424204", chat_type="group"
+        platform=Platform.RELAY,
+        chat_id="1534932197436424204",
+        chat_type="group",
+        delivered_via_upstream_relay=True,
     )
     result = await runner._run_agent(
         message="deploy status?",
@@ -320,7 +326,7 @@ async def _run_turn(monkeypatch, tmp_path, *, consumer_cls=None, session_id):
         history=[],
         source=source,
         session_id=session_id,
-        session_key=f"agent:main:discord:group:{session_id}",
+        session_key=f"agent:main:relay:group:{session_id}",
     )
     return adapter, result
 

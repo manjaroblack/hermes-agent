@@ -63,8 +63,8 @@ class ProgressCaptureAdapter(BasePlatformAdapter):
 class DiscordProgressCaptureAdapter(ProgressCaptureAdapter):
     """Capture sends while exercising Discord's real preview formatter."""
 
-    def __init__(self):
-        super().__init__(platform=Platform.DISCORD)
+    def __init__(self, platform=Platform.DISCORD):
+        super().__init__(platform=platform)
 
     def format_tool_preview(self, preview, **kwargs):
         from plugins.platforms.discord.adapter import DiscordAdapter
@@ -762,7 +762,7 @@ def test_discord_truncated_tool_url_links_to_full_destination(monkeypatch, tmp_p
         encoding="utf-8",
     )
 
-    adapter = DiscordProgressCaptureAdapter()
+    adapter = DiscordProgressCaptureAdapter(platform=Platform.RELAY)
     runner = _make_runner(adapter)
     gateway_run = importlib.import_module("gateway.run")
     monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
@@ -777,6 +777,7 @@ def test_discord_truncated_tool_url_links_to_full_destination(monkeypatch, tmp_p
         chat_id="12345",
         chat_type="dm",
         thread_id=None,
+        delivered_via_upstream_relay=True,
     )
     result = asyncio.get_event_loop().run_until_complete(
         runner._run_agent(
@@ -1516,7 +1517,7 @@ async def test_run_agent_drops_tool_progress_after_generation_invalidation(monke
     monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
     import tools.terminal_tool  # noqa: F401 - register terminal tool metadata
 
-    adapter = ProgressCaptureAdapter(platform=Platform.DISCORD)
+    adapter = ProgressCaptureAdapter(platform=Platform.RELAY)
     runner = _make_runner(adapter)
     gateway_run = importlib.import_module("gateway.run")
     monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
@@ -1527,6 +1528,7 @@ async def test_run_agent_drops_tool_progress_after_generation_invalidation(monke
         chat_id="dm-1",
         chat_type="dm",
         thread_id=None,
+        delivered_via_upstream_relay=True,
     )
     session_key = "agent:main:discord:dm:dm-1"
     runner._session_run_generation[session_key] = 1
@@ -1577,7 +1579,7 @@ async def test_run_agent_drops_interim_commentary_after_generation_invalidation(
     fake_run_agent.AIAgent = DelayedInterimAgent
     monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
 
-    adapter = ProgressCaptureAdapter(platform=Platform.DISCORD)
+    adapter = ProgressCaptureAdapter(platform=Platform.RELAY)
     runner = _make_runner(adapter)
     gateway_run = importlib.import_module("gateway.run")
     monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
@@ -1588,6 +1590,7 @@ async def test_run_agent_drops_interim_commentary_after_generation_invalidation(
         chat_id="dm-2",
         chat_type="dm",
         thread_id=None,
+        delivered_via_upstream_relay=True,
     )
     session_key = "agent:main:discord:dm:dm-2"
     runner._session_run_generation[session_key] = 1

@@ -1,13 +1,18 @@
 """Tests for Discord free-response defaults and mention gating."""
 
+import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 import sys
+import time
 
 import pytest
 
-from gateway.config import PlatformConfig
+from gateway.config import Platform, PlatformConfig, StreamingConfig
+from gateway.platforms.base import SendResult
+from gateway.platforms.event import MessageEvent, MessageType
+from gateway.session import SessionSource
 
 
 def _ensure_discord_mock():
@@ -94,6 +99,120 @@ class FakeThread:
             return
             yield
         return _iter()
+
+
+class NativeDiscordCaptureAdapter(DiscordAdapter):
+    """Exercise the real Discord adapter while capturing network I/O."""
+
+    def __init__(self):
+        super().__init__(PlatformConfig(enabled=True, token="fake-token"))
+        self._client = SimpleNamespace(user=SimpleNamespace(id=999))
+        self.sent = []
+        self.edits = []
+        self.typing = []
+        self._next_message_id = 0
+
+    async def connect(self, *, is_reconnect: bool = False) -> bool:
+        return True
+
+    async def disconnect(self) -> None:
+        return None
+
+    async def send(self, chat_id, content, reply_to=None, metadata=None) -> SendResult:
+        self._next_message_id += 1
+        self.sent.append(
+            {
+                "chat_id": chat_id,
+                "content": content,
+                "reply_to": reply_to,
+                "metadata": metadata,
+            }
+        )
+        return SendResult(success=True, message_id=f"discord-{self._next_message_id}")
+
+    async def edit_message(self, chat_id, message_id, content, **kwargs) -> SendResult:
+        self.edits.append(
+            {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "content": content,
+                "kwargs": kwargs,
+            }
+        )
+        return SendResult(success=True, message_id=message_id)
+
+    async def send_typing(self, chat_id, metadata=None) -> None:
+        self.typing.append({"chat_id": chat_id, "metadata": metadata})
+
+    async def stop_typing(self, chat_id) -> None:
+        return None
+
+    async def get_chat_info(self, chat_id):
+        return {"id": chat_id}
+
+
+class NativeDiscordFinalOnlyAgent:
+    """Emit every ordinary progress surface before returning one final."""
+
+    def __init__(self, **kwargs):
+        self.tools = []
+        self.session_id = kwargs.get("session_id")
+        self.model = "fake-discord-model"
+        self.provider = "fake"
+        self.context_compressor = SimpleNamespace(
+            last_prompt_tokens=0,
+            context_length=0,
+        )
+        self.session_prompt_tokens = 0
+        self.session_completion_tokens = 0
+
+    def run_conversation(self, message, conversation_history=None, task_id=None, **kwargs):
+        status_callback = getattr(self, "status_callback", None)
+        if status_callback:
+            status_callback("lifecycle", "Still working on the request.")
+        progress_callback = getattr(self, "tool_progress_callback", None)
+        if progress_callback:
+            progress_callback("tool.started", "terminal", "pwd", {})
+        interim_callback = getattr(self, "interim_assistant_callback", None)
+        if interim_callback:
+            interim_callback("I am checking the workspace first.")
+        stream_callback = getattr(self, "stream_delta_callback", None)
+        if stream_callback:
+            stream_callback("AUTHORITATIVE FINAL")
+        time.sleep(0.15)
+        return {
+            "final_response": "AUTHORITATIVE FINAL",
+            "messages": [],
+            "api_calls": 1,
+        }
+
+
+def _make_gateway_runner(adapter):
+    from gateway.run import GatewayRunner
+
+    runner = object.__new__(GatewayRunner)
+    runner.adapters = {adapter.platform: adapter}
+    runner._voice_mode = {}
+    runner._prefill_messages = []
+    runner._ephemeral_system_prompt = ""
+    runner._reasoning_config = None
+    runner._provider_routing = {}
+    runner._fallback_model = None
+    runner._session_db = None
+    runner._running_agents = {}
+    runner._session_run_generation = {}
+    runner._session_model_overrides = {}
+    runner._agent_cache = {}
+    runner._agent_cache_lock = None
+    runner.session_store = SimpleNamespace(_entries={}, _save=lambda: None)
+    runner.hooks = SimpleNamespace(loaded_hooks=False)
+    runner.config = SimpleNamespace(
+        thread_sessions_per_user=False,
+        group_sessions_per_user=False,
+        stt_enabled=False,
+        streaming=StreamingConfig(enabled=True),
+    )
+    return runner
 
 
 @pytest.fixture
@@ -976,6 +1095,231 @@ async def test_discord_reply_in_free_channel_triggers_backfill(adapter, monkeypa
     assert event.channel_context == (
         "[Context around the replied-to message]\n[Hermes [bot]] earlier answer"
     )
+
+
+def test_native_discord_final_only_gate_excludes_upstream_relay():
+    from gateway.run import _is_native_discord_final_only
+
+    assert _is_native_discord_final_only(
+        SimpleNamespace(
+            platform=Platform.DISCORD,
+            delivered_via_upstream_relay=False,
+        )
+    ) is True
+    assert _is_native_discord_final_only(
+        SimpleNamespace(
+            platform=Platform.DISCORD,
+            delivered_via_upstream_relay=True,
+        )
+    ) is False
+    assert _is_native_discord_final_only(
+        SimpleNamespace(
+            platform=Platform.SLACK,
+            delivered_via_upstream_relay=False,
+        )
+    ) is False
+
+
+@pytest.mark.asyncio
+async def test_native_discord_turn_suppresses_all_nonfinal_text_surfaces(
+    monkeypatch, tmp_path
+):
+    import yaml
+
+    monkeypatch.setenv("HERMES_AGENT_NOTIFY_INTERVAL", "0.01")
+    monkeypatch.setenv("HERMES_TOOL_PROGRESS_MODE", "all")
+    (tmp_path / "config.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "display": {
+                    "platforms": {
+                        "discord": {
+                            "tool_progress": "all",
+                            "thinking_progress": True,
+                            "interim_assistant_messages": True,
+                            "streaming": True,
+                            "long_running_notifications": True,
+                        }
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    fake_dotenv = SimpleNamespace(load_dotenv=lambda *args, **kwargs: None)
+    monkeypatch.setitem(sys.modules, "dotenv", fake_dotenv)
+    fake_run_agent = SimpleNamespace(AIAgent=NativeDiscordFinalOnlyAgent)
+    monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
+
+    adapter = NativeDiscordCaptureAdapter()
+    runner = _make_gateway_runner(adapter)
+    import gateway.run as gateway_run
+
+    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+    monkeypatch.setattr(
+        gateway_run,
+        "_resolve_runtime_agent_kwargs",
+        lambda: {"api_key": "***"},
+    )
+    source = SessionSource(
+        platform=Platform.DISCORD,
+        chat_id="thread-790",
+        chat_type="thread",
+        thread_id="thread-790",
+    )
+
+    result = await runner._run_agent(
+        message="do the work",
+        context_prompt="",
+        history=[],
+        source=source,
+        session_id="discord-final-only",
+        session_key="agent:main:discord:thread:thread-790",
+    )
+
+    assert result["final_response"] == "AUTHORITATIVE FINAL"
+    assert adapter.sent == []
+    assert adapter.edits == []
+
+
+def test_native_discord_proxy_path_does_not_create_stream_consumer(monkeypatch):
+    """Proxy turns keep native Discord final-only semantics before SSE I/O."""
+    import gateway.run as gateway_run
+    import gateway.stream_consumer as stream_consumer
+
+    constructed = []
+
+    class RecordingStreamConsumer:
+        def __init__(self, *args, **kwargs):
+            constructed.append((args, kwargs))
+
+    monkeypatch.setattr(stream_consumer, "GatewayStreamConsumer", RecordingStreamConsumer)
+    monkeypatch.setattr(
+        gateway_run,
+        "_load_gateway_config",
+        lambda: {"display": {"platforms": {"discord": {"streaming": True}}}},
+    )
+
+    adapter = NativeDiscordCaptureAdapter()
+    runner = _make_gateway_runner(adapter)
+    source = SessionSource(
+        platform=Platform.DISCORD,
+        chat_id="thread-proxy",
+        chat_type="thread",
+        thread_id="thread-proxy",
+    )
+
+    assert runner._proxy_stream_consumer(source, "inbound-proxy", None, lambda: True) is None
+    assert constructed == []
+
+
+@pytest.mark.asyncio
+async def test_native_discord_gateway_delivery_sends_one_authoritative_final(
+    monkeypatch, tmp_path
+):
+    import yaml
+
+    monkeypatch.setenv("HERMES_TOOL_PROGRESS_MODE", "all")
+    (tmp_path / "config.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "display": {
+                    "platforms": {
+                        "discord": {
+                            "tool_progress": "all",
+                            "thinking_progress": True,
+                            "interim_assistant_messages": True,
+                            "streaming": True,
+                            "long_running_notifications": True,
+                        }
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    fake_dotenv = SimpleNamespace(load_dotenv=lambda *args, **kwargs: None)
+    monkeypatch.setitem(sys.modules, "dotenv", fake_dotenv)
+    fake_run_agent = SimpleNamespace(AIAgent=NativeDiscordFinalOnlyAgent)
+    monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
+
+    adapter = NativeDiscordCaptureAdapter()
+    adapter.config.typing_indicator = False
+    runner = _make_gateway_runner(adapter)
+    import gateway.run as gateway_run
+
+    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+    monkeypatch.setattr(
+        gateway_run,
+        "_resolve_runtime_agent_kwargs",
+        lambda: {"api_key": "***"},
+    )
+    source = SessionSource(
+        platform=Platform.DISCORD,
+        chat_id="thread-791",
+        chat_type="thread",
+        thread_id="thread-791",
+    )
+
+    async def handler(event):
+        result = await runner._run_agent(
+            message=event.text,
+            context_prompt="",
+            history=[],
+            source=event.source,
+            session_id="discord-final-only-delivery",
+            session_key="agent:main:discord:thread:thread-791",
+            event_message_id=event.message_id,
+        )
+        return result["final_response"]
+
+    adapter.set_message_handler(handler)
+    event = MessageEvent(
+        text="do the work",
+        message_type=MessageType.TEXT,
+        source=source,
+        message_id="inbound-791",
+    )
+    adapter._active_sessions["agent:main:discord:thread:thread-791"] = asyncio.Event()
+
+    await adapter._process_message_background(
+        event, "agent:main:discord:thread:thread-791"
+    )
+
+    assert [call["content"] for call in adapter.sent] == ["AUTHORITATIVE FINAL"]
+    assert adapter.edits == []
+
+
+@pytest.mark.asyncio
+async def test_auto_thread_failure_has_no_seed_posts_and_one_parent_notice(
+    adapter, monkeypatch
+):
+    monkeypatch.setenv("DISCORD_REQUIRE_MENTION", "false")
+    monkeypatch.setenv("DISCORD_AUTO_THREAD", "true")
+    monkeypatch.delenv("DISCORD_NO_THREAD_CHANNELS", raising=False)
+    monkeypatch.delenv("DISCORD_IGNORED_CHANNELS", raising=False)
+    monkeypatch.delenv("DISCORD_FREE_RESPONSE_CHANNELS", raising=False)
+    monkeypatch.setattr(discord_platform.asyncio, "sleep", AsyncMock())
+
+    channel = FakeTextChannel(channel_id=800)
+    seed_message = SimpleNamespace(
+        create_thread=AsyncMock(side_effect=RuntimeError("thread rejected"))
+    )
+    channel.send = AsyncMock(return_value=seed_message)
+    message = make_message(channel=channel, content="hello")
+    message.create_thread = AsyncMock(side_effect=RuntimeError("thread rejected"))
+
+    await adapter._handle_message(message)
+
+    adapter.handle_message.assert_not_awaited()
+    assert message.create_thread.await_count == 2
+    seed_message.create_thread.assert_not_awaited()
+    channel.send.assert_awaited_once()
+    notice = channel.send.await_args.args[0]
+    assert "could not create" in notice.lower()
+    assert "thread" in notice.lower()
 
 
 class TestNonConversationalTrackerOffload:

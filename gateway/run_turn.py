@@ -2411,7 +2411,7 @@ class GatewayTurnMixin:
 
     def _proxy_stream_consumer(self, source: "SessionSource", event_message_id, _thread_metadata, _run_still_current):
         """Platform stream consumer for the proxy path when streaming is enabled, else ``None``."""
-        from gateway.run import _load_gateway_config, _platform_config_key
+        from gateway.run import _is_native_discord_final_only, _load_gateway_config, _platform_config_key
         _scfg = getattr(getattr(self, "config", None), "streaming", None)
         # #60671 — streaming TTS consumer is created on the outer event-loop thread before run_sync
         # launches.  run_sync only reads it via ``streaming_tts_consumer_holder[0]`` for delta callback
@@ -2423,7 +2423,7 @@ class GatewayTurnMixin:
         _plat_streaming = resolve_display_setting(_load_gateway_config(), _platform_config_key(source.platform), "streaming")
         _streaming_enabled = (
             _scfg.enabled and _scfg.transport != "off" if _plat_streaming is None else bool(_plat_streaming)
-        )
+        ) and not _is_native_discord_final_only(source)
         if not _streaming_enabled:
             return None
         try:
@@ -2595,8 +2595,8 @@ class GatewayTurnMixin:
     def _run_agent_display_settings(self, source: SessionSource) -> "GatewayRunner._RunAgentDisplay":
         """Resolve per-platform display, progress, status and streaming-surface settings for a turn."""
         from gateway.run import (
-            _gateway_platform_value, _has_platform_display_override, _load_gateway_config,
-            _platform_config_key,
+            _gateway_platform_value, _has_platform_display_override, _is_native_discord_final_only,
+            _load_gateway_config, _platform_config_key,
         )
         from gateway.display_config import resolve_display_setting
         from gateway.status_phrases import choose_status_phrase, resolve_status_phrase_catalog
@@ -2664,12 +2664,19 @@ class GatewayTurnMixin:
 
         # Webhooks can't edit messages, so tool progress / log mode are off there.
         is_webhook = source.platform == Platform.WEBHOOK
-        tool_progress_enabled = progress_mode not in {"off", "log"} and not is_webhook
+        native_discord_final_only = _is_native_discord_final_only(source)
+        tool_progress_enabled = (
+            progress_mode not in {"off", "log"}
+            and not is_webhook
+            and not native_discord_final_only
+        )
         # Live status for text-rendering typing indicators (Slack); independent of tool_progress.
         _live_status_mode = resolve_display_setting(user_config, platform_key, "live_status", "full")
         _live_status_adapter = (
             adapter if getattr(adapter, "supports_status_text", False) and _live_status_mode != "off" else None
         )
+        if native_discord_final_only:
+            _live_status_adapter = None
         # "log" mode: tool calls go to ~/.hermes/logs/tool_calls.log instead of the chat. Gateway-only.
         log_mode_enabled = progress_mode == "log" and not is_webhook
         # Interim assistant messages and thinking_progress are independent of tool progress (same
@@ -2677,10 +2684,14 @@ class GatewayTurnMixin:
         interim_assistant_messages_mode = _display_surface_mode(
             "interim_assistant_messages", default=True, require_platform_override_for={Platform.MATTERMOST},
         )
-        interim_assistant_messages_enabled = not is_webhook and interim_assistant_messages_mode != "off"
+        interim_assistant_messages_enabled = (
+            not is_webhook
+            and interim_assistant_messages_mode != "off"
+            and not native_discord_final_only
+        )
         _thinking_enabled = _display_surface_mode(
             "thinking_progress", default=False, require_platform_override_for={Platform.MATTERMOST},
-        ) != "off"
+        ) != "off" and not native_discord_final_only
         # Slack-native task cards need the progress queue even with text tool_progress off.
         # Slack-native task cards (#29483): when the Slack adapter's opt-in is set, tool progress renders as
         # native plan/task cards via chat.startStream — the progress queue is needed even though Slack keeps
@@ -3231,9 +3242,10 @@ class GatewayTurnMixin:
         """Poll the executor future (inactivity timeout + backup interrupt checks); return its result,
         or a synthetic failed run dict on inactivity timeout. Polls even with an unlimited timeout
         so the backup interrupt check runs if monitor_for_interrupt() silently died."""
-        from gateway.run import _abandon_timed_out_gateway_turn
+        from gateway.run import _abandon_timed_out_gateway_turn, _is_native_discord_final_only
         agent_holder = turn_ctx.agent_holder
         _warning_fired = False
+        native_discord_final_only = _is_native_discord_final_only(turn_ctx.source)
         while True:
             done, _ = await asyncio.wait({worker.executor_task}, timeout=5.0)
             if done:
@@ -3244,7 +3256,12 @@ class GatewayTurnMixin:
                 if worker.timeout_fired.is_set():
                     break
                 _idle_secs = self._agent_activity_summary(agent_holder[0]).get("seconds_since_activity", 0.0)
-                if not _warning_fired and worker.agent_warning is not None and _idle_secs >= worker.agent_warning:
+                if (
+                    not native_discord_final_only
+                    and not _warning_fired
+                    and worker.agent_warning is not None
+                    and _idle_secs >= worker.agent_warning
+                ):
                     _warning_fired = True
                     await self._run_agent_inactivity_warning(worker, turn_ctx.source, turn_ctx._status_thread_metadata)
                 if _idle_secs >= worker.agent_timeout:
@@ -3751,13 +3768,18 @@ class GatewayTurnMixin:
 
         Interval: agent.gateway_notify_interval / HERMES_AGENT_NOTIFY_INTERVAL (default 180s; 0 or
         long_running_notifications=off disables)."""
-        from gateway.run import _float_env, _interim_metadata, _non_conversational_metadata
+        from gateway.run import (
+            _float_env, _interim_metadata, _is_native_discord_final_only,
+            _non_conversational_metadata,
+        )
         _notify_start = time.time()
         _NOTIFY_INTERVAL = _float_env("HERMES_AGENT_NOTIFY_INTERVAL", 180)
         _long_running_mode = disp._display_surface_mode("long_running_notifications", default=True, allow_generic=True)
         if _NOTIFY_INTERVAL <= 0 or _long_running_mode == "off":
             return
         source, session_key, agent_holder = turn_ctx.source, turn_ctx.session_key, turn_ctx.agent_holder
+        if _is_native_discord_final_only(source):
+            return
         _status_thread_metadata = turn_ctx._status_thread_metadata
         _notify_adapter = self._adapter_for_source(source)
         if not _notify_adapter:

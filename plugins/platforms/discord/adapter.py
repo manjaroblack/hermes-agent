@@ -5063,37 +5063,28 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
 
     async def _auto_create_thread(self, message: 'DiscordMessage') -> Optional[Any]:
         """Create an auto-thread from a user message; returns the thread or ``None``.
-        Primary path and seed-message fallback each retry once after a short backoff (transient errors).
 
-        ``Cannot connect to host discord.com:443``) don't immediately burn through to the caller's failure
-        path (#20243).
+        Retry the direct thread endpoint once after a short backoff, but never post a parent-channel seed
+        message: a failed auto-thread must leave the caller's single bounded error notice as the only
+        parent-channel bot message (#20243).
         """
         thread_name = self._derive_auto_thread_name(message.content or "")
-        display_name = getattr(getattr(message, "author", None), "display_name", None) or "unknown user"
-        reason = f"Auto-threaded from mention by {display_name}"
         last_direct_error: Exception | None = None
-        last_fallback_error: Exception | None = None
         for attempt in range(2):
             try:
                 thread = await message.create_thread(name=thread_name, auto_archive_duration=1440)
                 return self._stamp_auto_thread_name(thread, thread_name)
             except Exception as direct_error:
                 last_direct_error = direct_error
-                try:
-                    seed_msg = await message.channel.send(
-                        f"\U0001f9f5 Thread created by Hermes: **{thread_name}**"
-                    )
-                    thread = await seed_msg.create_thread(name=thread_name, auto_archive_duration=1440, reason=reason)
-                    return self._stamp_auto_thread_name(thread, thread_name)
-                except Exception as fallback_error:
-                    last_fallback_error = fallback_error
-                    if attempt == 0:
-                        # Brief backoff: most failures here are transient connect errors.
-                        await asyncio.sleep(0.75)
-                        continue
+                if attempt == 0:
+                    # Brief backoff before the second direct attempt — most failures here are transient
+                    # connect errors. Do not emit a seed message while retrying; it becomes durable parent
+                    # chatter if the second attempt also fails.
+                    await asyncio.sleep(0.75)
+                    continue
         logger.warning(
-            "[%s] Auto-thread creation failed after retry. Direct error: %s. Fallback error: %s",
-            self.name, last_direct_error, last_fallback_error,
+            "[%s] Auto-thread creation failed after retry. Direct error: %s",
+            self.name, last_direct_error,
         )
         return None
 

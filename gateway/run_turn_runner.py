@@ -815,8 +815,17 @@ class TurnRunner:
             logger.debug("Failed to attach session title callback", exc_info=True)
 
     def _status_callback_sync(self, event_type: str, message: str) -> None:
-        from gateway.run import _prepare_gateway_status_message, _redact_gateway_user_facing_secrets, _send_or_update_status_coro
+        from gateway.run import (
+            _is_native_discord_final_only, _prepare_gateway_status_message,
+            _redact_gateway_user_facing_secrets, _send_or_update_status_coro,
+        )
         ctx = self._ctx
+        if _is_native_discord_final_only(ctx.source):
+            logger.debug(
+                "status_callback suppressed for native Discord final-only turn: %s",
+                event_type,
+            )
+            return
         if not self._status_live():
             return
         prepared = _prepare_gateway_status_message(ctx.source.platform, event_type, message)
@@ -846,12 +855,17 @@ class TurnRunner:
         if scfg is None:
             from gateway.config import StreamingConfig
             scfg = StreamingConfig()
+        from gateway.run import _is_native_discord_final_only
+        _native_discord_final_only = _is_native_discord_final_only(ctx.source)
         # display.platforms.<plat>.streaming may disable streaming per platform; None = follow global.
         plat_streaming = ctx.resolve_display_setting(ctx.user_config, platform_key, "streaming")
         want_stream_deltas = (
             scfg.enabled and scfg.transport != "off" if plat_streaming is None else bool(plat_streaming)
+        ) and not _native_discord_final_only
+        want_interim_messages = (
+            ctx.interim_assistant_messages_enabled
+            and not _native_discord_final_only
         )
-        want_interim_messages = ctx.interim_assistant_messages_enabled
         if want_stream_deltas or want_interim_messages:
             try:
                 from gateway.stream_consumer import GatewayStreamConsumer
