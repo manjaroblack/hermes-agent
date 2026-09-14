@@ -442,14 +442,17 @@ async def pty_ws(ws: WebSocket) -> None:
         await ws.close(code=1011)
         return
 
-    raw_resume = ws.query_params.get("resume") or None
-    resume = raw_resume
+    resume = ws.query_params.get("resume") or None
     profile = ws.query_params.get("profile") or None
     channel = _channel_or_close_code(ws)
     sidecar_url = _build_sidecar_url(channel) if channel else None
     force_fresh = (ws.query_params.get("fresh") or "").strip().lower() in {"1", "true", "yes", "on"}
     if force_fresh:
         resume = None
+    # Fresh rotates the browser's attach token, not the server's key namespace.
+    # Capture explicit intent before the breadcrumb fallback so later ordinary
+    # reconnects still reach this PTY after the fresh launch flag is consumed.
+    registry_resume = resume
     active_session_file: Optional[Path] = None
 
     if channel:
@@ -487,17 +490,11 @@ async def pty_ws(ws: WebSocket) -> None:
         return
 
     attach_token = ws.query_params.get("attach") or None
-    registry_resume = raw_resume
-    if raw_resume and env:
-        registry_resume = env.get("HERMES_TUI_RESUME") or raw_resume
-    if attach_token is not None:
-        if force_fresh:
-            # A fresh request must not reattach an existing PTY keyed by a stale
-            # explicit resume or an ordinary attach token.
-            attach_token = f"{attach_token}\0{profile or ''}\0fresh"
-        elif registry_resume or profile:
-            # Key explicit resumes on their canonical target, never the active-session fallback.
-            attach_token = f"{attach_token}\0{profile or ''}\0{registry_resume or ''}"
+    if registry_resume and env:
+        registry_resume = env.get("HERMES_TUI_RESUME") or registry_resume
+    if attach_token is not None and (registry_resume or profile):
+        # Key explicit resumes on their canonical target, never the active-session fallback.
+        attach_token = f"{attach_token}\0{profile or ''}\0{registry_resume or ''}"
 
     def _spawn():
         return PtyBridge.spawn(argv, cwd=cwd, env=env)

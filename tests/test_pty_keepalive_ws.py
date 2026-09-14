@@ -1,4 +1,5 @@
 import json
+from urllib.parse import urlencode
 
 import pytest
 
@@ -132,6 +133,49 @@ async def test_fresh_attach_token_does_not_reattach_prior_resume(pty_keepalive_h
         ws2.send_bytes(b"again")
 
     assert pty_keepalive_harness == [["x", "old"], ["x", "fresh"]]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("profile", [None, "work"])
+@pytest.mark.parametrize("channel", [None, "CHAT"])
+@pytest.mark.parametrize("resume", [None, "old"])
+async def test_fresh_attach_reuses_session_on_ordinary_reconnect(
+    pty_keepalive_harness, tmp_path, monkeypatch, profile, channel, resume
+):
+    """Fresh is one-shot launch intent; subsequent sockets keep the same PTY."""
+    from starlette.testclient import TestClient
+
+    active_session_file = tmp_path / "active-session.json"
+    monkeypatch.setattr(
+        _web_server_chat,
+        "_active_session_file_for_channel",
+        lambda app, channel: active_session_file,
+    )
+    params = {"attach": "TOK_FRESH"}
+    if profile:
+        params["profile"] = profile
+    if channel:
+        params["channel"] = channel
+        active_session_file.write_text(json.dumps({"session_id": "old"}), encoding="utf-8")
+    fresh_params = {**params, "fresh": "1"}
+    if resume:
+        fresh_params["resume"] = resume
+
+    client = TestClient(web_server.app)
+    with client.websocket_connect(f"/api/pty?{urlencode(fresh_params)}") as ws1:
+        ws1.send_bytes(b"hi")
+
+    if channel:
+        assert not active_session_file.exists()
+        active_session_file.write_text(json.dumps({"session_id": "new"}), encoding="utf-8")
+
+    with client.websocket_connect(f"/api/pty?{urlencode(params)}") as ws2:
+        if channel:
+            assert ws2.receive_json() == {"type": "resume", "id": "new"}
+        ws2.send_bytes(b"again")
+
+    assert pty_keepalive_harness == [["x", "fresh"]]
+    assert bytes(pty_keepalive_harness.bridges[0].written) == b"hi\x0cagain"
 
 
 
