@@ -751,14 +751,22 @@ def _apply_request_middleware(
 def _pre_dispatch_guards(function_name: str, function_args: Dict[str, Any], skip_pre_tool_call_hook: bool,
                          ids: _CallIds, middleware_trace: List[Dict[str, Any]],
                          ) -> Tuple[Dict[str, Any], Optional[Tuple[Any, str, Optional[str]]]]:
-    """Plugin pre_tool_call hook, then ACP edit approval.
+    """Legacy pre_tool_call hook, then ACP edit approval.
 
     ``(args, None)`` to proceed (args possibly plugin-modified), or
     ``(args, (result, error_type, error_message))`` when blocked.
     """
-    # pre_tool_call fires exactly once per execution: one invoke_hook pass yields
-    # both the block message and modified args. skip=True: caller already fired it.
+    # The decision-phase contract must run after execution middleware, inside
+    # ``_execute_tool``. Legacy-only hooks retain their historical early gate so
+    # read-loop notifications and callers that patch invoke_hook remain stable.
+    decision_phase = False
     if not skip_pre_tool_call_hook:
+        try:
+            from hermes_cli.plugins import has_pre_tool_call_decision_phase
+            decision_phase = has_pre_tool_call_decision_phase()
+        except Exception:
+            decision_phase = False
+    if not skip_pre_tool_call_hook and not decision_phase:
         block_message: Optional[str] = None
         try:
             from hermes_cli.plugins import _dispatch_pre_tool_call_hooks
@@ -806,7 +814,9 @@ def _approval_observability(ids: _CallIds):
 
 
 def _execute_tool(function_name: str, function_args: Dict[str, Any], original_args: Dict[str, Any], ids: _CallIds,
-                  *, user_task: Optional[str], enabled_tools: Optional[List[str]], skip_tool_execution_middleware: bool) -> Any:
+                  *, user_task: Optional[str], enabled_tools: Optional[List[str]],
+                  middleware_trace: Optional[List[Dict[str, Any]]] = None,
+                  skip_pre_tool_call_hook: bool, skip_tool_execution_middleware: bool) -> Any:
     """Run the registry handler (through tool-execution middleware unless skipped)
     with the approval observability context bound for the duration."""
     dispatch_kwargs: Dict[str, Any] = {"task_id": ids.task_id, "session_id": ids.session_id}
@@ -817,7 +827,34 @@ def _execute_tool(function_name: str, function_args: Dict[str, Any], original_ar
     else:
         dispatch_kwargs["user_task"] = user_task
 
+    policy_checked = False
+    policy_binding = None
+
     def _dispatch(next_args: Dict[str, Any]) -> Any:
+        nonlocal policy_checked, policy_binding
+        if not skip_pre_tool_call_hook and not policy_checked:
+            from hermes_cli.plugins import evaluate_pre_tool_call
+            policy = evaluate_pre_tool_call(function_name, next_args, **ids.hook_kwargs(),
+                                             middleware_trace=list(middleware_trace or []))
+            policy_checked = True
+            policy_binding = policy.binding
+            if policy.block_message is not None:
+                return tool_error(policy.block_message)
+            next_args = policy.args
+            if policy_binding is not None:
+                try:
+                    from hermes_cli.plugins import get_plugin_manager
+                    if not policy_binding.verify(get_plugin_manager(), function_name, next_args):
+                        return tool_error("BLOCKED: tool call changed after policy approval")
+                except Exception:
+                    return tool_error("BLOCKED: tool policy could not verify execution identity")
+        elif policy_binding is not None:
+            try:
+                from hermes_cli.plugins import get_plugin_manager
+                if not policy_binding.verify(get_plugin_manager(), function_name, next_args):
+                    return tool_error("BLOCKED: tool call changed after policy approval")
+            except Exception:
+                return tool_error("BLOCKED: tool policy could not verify execution identity")
         from tools.tool_gateway.names import is_connector_name
         if is_connector_name(function_name):
             from model_tools_connectors import dispatch_connector_call
@@ -939,8 +976,12 @@ def handle_function_call(
 
         # duration_ms (monotonic) is exposed to post_tool_call / transform_tool_result.
         start = time.monotonic()
+        from hermes_cli.plugins import has_pre_tool_call_decision_phase
         result = _execute_tool(function_name, function_args, original_args, ids, user_task=user_task,
-                               enabled_tools=enabled_tools, skip_tool_execution_middleware=skip_tool_execution_middleware)
+                               enabled_tools=enabled_tools, skip_pre_tool_call_hook=(
+                                   skip_pre_tool_call_hook or not has_pre_tool_call_decision_phase()
+                               ), middleware_trace=list(trace),
+                               skip_tool_execution_middleware=skip_tool_execution_middleware)
         duration_ms = _elapsed_ms(start)
         _emit(result, duration_ms=duration_ms)
         return _apply_transform_tool_result_hook(function_name, function_args, result, duration_ms, ids)

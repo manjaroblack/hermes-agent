@@ -148,20 +148,22 @@ def _hook_uses_callback_timeout(hook_name: str, timeout: float) -> bool:
 
 
 class PluginDispatchMixin:
-    @staticmethod
-    def _invoke_hook_callback(callback: Callable, payload: Dict[str, Any]) -> Any:
+    def _invoke_hook_callback(self, callback: Callable, payload: Dict[str, Any]) -> Any:
         """Invoke a hook while withholding additive fields from narrow legacy callbacks."""
-        try:
-            parameters = inspect.signature(callback).parameters
-        except (TypeError, ValueError):
-            return callback(**payload)  # no introspectable signature: historical behavior
-        if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in parameters.values()):
-            return callback(**payload)
-        keyword_kinds = {inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY}
-        return callback(**{
-            name: value for name, value in payload.items()
-            if name in parameters and parameters[name].kind in keyword_kinds
-        })
+        from hermes_cli.plugin_runtime import plugin_callback_scope
+
+        with plugin_callback_scope(payload.get("session_id")):
+            try:
+                parameters = inspect.signature(callback).parameters
+            except (TypeError, ValueError):
+                return callback(**payload)  # no introspectable signature: historical behavior
+            if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in parameters.values()):
+                return callback(**payload)
+            keyword_kinds = {inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY}
+            return callback(**{
+                name: value for name, value in payload.items()
+                if name in parameters and parameters[name].kind in keyword_kinds
+            })
 
     def invoke_hook(self, hook_name: str, **kwargs: Any) -> List[Any]:
         """Call all callbacks for *hook_name*; return their non-``None`` results.
@@ -181,7 +183,13 @@ class PluginDispatchMixin:
         timeout = _resolve_hook_callback_timeout()
         use_timeout = _hook_uses_callback_timeout(hook_name, timeout)
         fail_closed = hook_name in _HOOK_TIMEOUT_FAIL_CLOSED_HOOKS
-        for cb in self._hooks.get(hook_name, []):
+        callbacks = tuple(self._hooks.get(hook_name, ()))
+        phases = tuple(getattr(self, "_hook_phases", {}).get(hook_name, ()))
+        for index, cb in enumerate(callbacks):
+            if hook_name == "pre_tool_call" and index < len(phases) and phases[index] == "decision":
+                # Decision callbacks run only after execution middleware has produced
+                # the detached final args in plugins_policy.evaluate_pre_tool_call.
+                continue
             try:
                 if use_timeout:
                     ret = self._run_hook_callback_bounded(hook_name, cb, kwargs, timeout)
@@ -388,6 +396,37 @@ class PluginDispatchMixin:
     def iter_hook_callbacks(self, hook_name: str) -> tuple[Callable, ...]:
         """Return a stable snapshot of callbacks registered for a hook."""
         return tuple(self._hooks.get(hook_name, ()))
+
+    def iter_hook_callbacks_with_phase(self, hook_name: str) -> tuple[tuple[Callable, str], ...]:
+        """Return callbacks and their host-owned phase in registration order."""
+        hooks = getattr(self, "_hooks", {})
+        phases_by_hook = getattr(self, "_hook_phases", {})
+        callbacks = tuple(hooks.get(hook_name, ()))
+        phases = tuple(phases_by_hook.get(hook_name, ()))
+        return tuple((callback, phases[index] if index < len(phases) else "normal")
+                     for index, callback in enumerate(callbacks))
+
+    def get_hook_registration_generation(self, hook_name: str = "") -> int:
+        """Monotonic generation used to reject stale hook decisions."""
+        return int(getattr(self, "_hook_generation", 0))
+
+    def _remove_hook_callback(self, hook_name: str, callback: Callable, phase: str = "normal") -> None:
+        hooks = getattr(self, "_hooks", {})
+        phases_by_hook = getattr(self, "_hook_phases", {})
+        callbacks = hooks.get(hook_name)
+        if not callbacks:
+            return
+        phases = phases_by_hook.setdefault(hook_name, [])
+        for index in range(len(callbacks) - 1, -1, -1):
+            if callbacks[index] is callback and (index >= len(phases) or phases[index] == phase):
+                callbacks.pop(index)
+                if index < len(phases):
+                    phases.pop(index)
+                setattr(self, "_hook_generation", int(getattr(self, "_hook_generation", 0)) + 1)
+                break
+        if not callbacks:
+            hooks.pop(hook_name, None)
+            phases_by_hook.pop(hook_name, None)
 
     def render_system_prompt_sections(
         self, session_info: Mapping[str, Any]

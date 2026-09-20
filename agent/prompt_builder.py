@@ -1079,7 +1079,11 @@ def _skills_prompt_snapshot_path() -> Path:
 
 
 def clear_skills_system_prompt_cache(*, clear_snapshot: bool = False) -> None:
-    """Drop the in-process skills prompt cache (and optionally the disk snapshot)."""
+    """Drop the prompt index cache and refresh already-published plugin rosters.
+
+    Snapshot publication is separate from frozen system-prompt bytes: supported
+    skill mutations update the plugin view without rewriting an active prompt.
+    """
     with _SKILLS_PROMPT_CACHE_LOCK:
         _SKILLS_PROMPT_CACHE.clear()
     try:
@@ -1087,6 +1091,12 @@ def clear_skills_system_prompt_cache(*, clear_snapshot: bool = False) -> None:
             _skills_prompt_snapshot_path().unlink(missing_ok=True)
     except OSError as e:
         logger.debug("Could not remove skills prompt snapshot: %s", e)
+    try:
+        from hermes_cli.plugins import refresh_published_skill_snapshots
+
+        refresh_published_skill_snapshots()
+    except Exception:
+        logger.debug("Could not refresh published plugin skill rosters", exc_info=True)
 
 
 def _build_skills_manifest(skills_dir: Path) -> dict[str, list[int]]:

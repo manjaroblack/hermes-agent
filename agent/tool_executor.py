@@ -445,6 +445,7 @@ class _ManagedToolResult:
     middleware_trace: list[dict[str, Any]]
     blocked: bool
     dispatched: bool
+    policy_binding: Any = None
 
 
 class _ToolTimeoutResult(str):
@@ -620,20 +621,38 @@ def _blocked_tool_result(agent, ref: _ToolCallRef, *, block_message: Optional[st
 
 
 def _pre_tool_block(agent, ref: _ToolCallRef):
-    """Run ``pre_tool_call`` plugin hooks; returns ``(block_message, final_args)`` with any
-    hook-modified args applied. Hook failures never block."""
-    try:
-        from hermes_cli.plugins import _dispatch_pre_tool_call_hooks
+    """Run ``pre_tool_call`` plugin hooks and return block, final args, and binding.
 
-        block_msg, modified_args = _dispatch_pre_tool_call_hooks(
+    Legacy-only hook failures remain fail-open. Once a decision phase is present,
+    policy failures fail closed.
+    """
+    decision_phase = False
+    try:
+        from hermes_cli.plugins import (
+            _dispatch_pre_tool_call_hooks, evaluate_pre_tool_call, has_pre_tool_call_decision_phase,
+        )
+
+        decision_phase = has_pre_tool_call_decision_phase()
+        if not decision_phase:
+            block_message, modified_args = _dispatch_pre_tool_call_hooks(
+                ref.name,
+                ref.args,
+                **tool_hook_ids(agent, ref.task_id, ref.call_id),
+                middleware_trace=list(ref.trace),
+            )
+            return block_message, (ref.args if modified_args is None else modified_args), None
+
+        policy = evaluate_pre_tool_call(
             ref.name,
             ref.args,
             **tool_hook_ids(agent, ref.task_id, ref.call_id),
             middleware_trace=list(ref.trace),
         )
-        return block_msg, (ref.args if modified_args is None else modified_args)
+        return policy.block_message, policy.args, policy.binding
     except Exception:
-        return None, ref.args
+        if decision_phase:
+            return "BLOCKED: pre_tool_call policy failed", ref.args, None
+        return None, ref.args, None
 
 
 def _dispatch_authorized_once(
@@ -663,14 +682,36 @@ def _dispatch_authorized_once(
     if block_message is None:
         block_error_type = "plugin_block"
         resolve = lambda: _pre_tool_block(agent, ref)  # noqa: E731
-        block_message, ref.args = resolve() if authorization_gate is None else authorization_gate.run(resolve)
+        block_message, ref.args, state.policy_binding = resolve() if authorization_gate is None else authorization_gate.run(resolve)
         state.args = ref.args
+
+    if block_message is None and state.policy_binding is not None:
+        try:
+            from hermes_cli.plugins import get_plugin_manager
+
+            if not state.policy_binding.verify(get_plugin_manager(), ref.name, ref.args):
+                block_message = "BLOCKED: tool policy changed before execution"
+                block_error_type = "plugin_block"
+        except Exception:
+            block_message = "BLOCKED: tool policy identity unavailable"
+            block_error_type = "plugin_block"
 
     guardrail_decision = None
     if block_message is None:
         guardrail_decision = agent._tool_guardrails.before_call(ref.name, ref.args)
         if guardrail_decision.allows_execution:
             guardrail_decision = None
+
+    if block_message is None and guardrail_decision is None and state.policy_binding is not None:
+        try:
+            from hermes_cli.plugins import get_plugin_manager
+
+            if not state.policy_binding.verify(get_plugin_manager(), ref.name, ref.args):
+                block_message = "BLOCKED: tool call changed after policy approval"
+                block_error_type = "plugin_block"
+        except Exception:
+            block_message = "BLOCKED: tool policy could not verify execution identity"
+            block_error_type = "plugin_block"
 
     if block_message is not None or guardrail_decision is not None:
         _advance_start_order()
