@@ -1817,10 +1817,14 @@ def _apply_switched_provider_request_overrides(agent, new_provider):
 
 # Pool reload is part of the switch and must be reversible on rollback, hence the pool fields.
 _SWITCH_SNAPSHOT_FIELDS = (
-    "model", "provider", "requested_provider", "base_url", "api_mode", "api_key", "client",
+    "model", "provider", "requested_provider", "base_url", "api_mode", "api_key", "client", "_client_kwargs",
     "_anthropic_client", "_anthropic_api_key", "_anthropic_base_url", "_is_anthropic_oauth",
     "_config_context_length", "_reasoning_echo_flag", "runtime_capabilities",
-    "_credential_pool", "_credential_pool_entry_id",
+    "_credential_pool", "_credential_pool_entry_id", "_cached_system_prompt", "request_overrides",
+    "_use_prompt_caching", "_use_native_cache_layout", "_custom_providers", "reasoning_config",
+    "_primary_runtime", "_fallback_activated", "_provider_fallback_active", "_provider_fallback_route",
+    "_fallback_index", "_fallback_chain", "_fallback_model", "_transport_cache",
+    "_consecutive_stale_streams",
 )
 _MISSING = object()
 
@@ -1831,14 +1835,44 @@ def _snapshot_switch_state(agent) -> Dict[str, Any]:
     None: tests build bare agents via ``__new__`` without all fields."""
     snapshot = {name: getattr(agent, name, _MISSING) for name in _SWITCH_SNAPSHOT_FIELDS}
     # Shallow-copy the dict so mutating the live one doesn't poison the rollback target.
-    snapshot["_client_kwargs"] = dict(getattr(agent, "_client_kwargs", {}) or {})
+    client_kwargs = snapshot.get("_client_kwargs", _MISSING)
+    if isinstance(client_kwargs, dict):
+        snapshot["_client_kwargs"] = dict(client_kwargs)
+    request_overrides = snapshot.get("request_overrides", _MISSING)
+    if isinstance(request_overrides, dict):
+        snapshot["request_overrides"] = dict(request_overrides)
+    for name in ("_custom_providers", "reasoning_config", "_primary_runtime", "_transport_cache"):
+        value = snapshot.get(name, _MISSING)
+        if isinstance(value, dict):
+            snapshot[name] = dict(value)
+    fallback_chain = snapshot.get("_fallback_chain", _MISSING)
+    if isinstance(fallback_chain, list):
+        snapshot["_fallback_chain"] = copy.deepcopy(fallback_chain)
+    compressor = getattr(agent, "context_compressor", None)
+    if compressor is not None:
+        snapshot["_context_compressor_state"] = (
+            compressor,
+            {
+                name: getattr(compressor, name)
+                for name in ("model", "context_length", "base_url", "api_key", "provider", "api_mode", "threshold_tokens")
+                if hasattr(compressor, name)
+            },
+        )
     return snapshot
 
 
 def _restore_switch_snapshot(agent, snapshot: Dict[str, Any]) -> None:
     for name, value in snapshot.items():
+        if name == "_context_compressor_state":
+            compressor, fields = value
+            for field, field_value in fields.items():
+                with contextlib.suppress(Exception):
+                    setattr(compressor, field, field_value)
+            continue
         if value is _MISSING:
-            continue  # attribute did not exist before the swap; don't fabricate it
+            with contextlib.suppress(Exception):
+                delattr(agent, name)
+            continue  # attribute did not exist before the swap
         with contextlib.suppress(Exception):
             setattr(agent, name, value)
 
@@ -2141,7 +2175,8 @@ def _persist_switch_billing_route(agent) -> None:
 
 
 def switch_model(
-    agent, new_model, new_provider, api_key='', base_url='', api_mode='', capabilities=None
+    agent, new_model, new_provider, api_key='', base_url='', api_mode='', capabilities=None, *,
+    preserve_frozen_prompt=False, request_overrides=None, runtime_capabilities=None,
 ):
     """Switch the model/provider in-place for a live agent (rebuild clients, caching flags,
     compressor). Mirrors ``_try_activate_fallback()`` but also updates ``_primary_runtime`` so
@@ -2161,70 +2196,63 @@ def switch_model(
         agent, new_model, new_provider, base_url, api_mode, capabilities, old_norm, new_norm
     )
     snapshot = _snapshot_switch_state(agent)
+    frozen_system_prompt = snapshot.get("_cached_system_prompt", _MISSING)
     try:
         _swap_switch_runtime(
             agent, new_model, new_provider, api_key, base_url, api_mode, old_provider, old_norm, new_norm
         )
+        custom_providers, effective_context_length = _resolve_switch_context_length(agent, snapshot)
+        # Refresh the custom-provider snapshot from the config just loaded so the prompt_caching lookup
+        # sees flags added to config.yaml after session start.
+        if custom_providers is not None:
+            agent._custom_providers = custom_providers
+        if request_overrides is not None:
+            merged_overrides = dict(getattr(agent, "request_overrides", {}) or {})
+            merged_overrides.update(dict(request_overrides or {}))
+            agent.request_overrides = merged_overrides
+        agent._use_prompt_caching, agent._use_native_cache_layout = agent._anthropic_prompt_cache_policy(
+            provider=new_provider, base_url=agent.base_url, api_mode=api_mode, model=new_model
+        )
+        if hasattr(agent, "context_compressor") and agent.context_compressor:
+            _update_switch_compressor(agent, custom_providers, effective_context_length, snapshot)
+        # Re-read the per-model reasoning_effort override so it applies immediately (per-model > global;
+        # YAML False = disabled).
+        try:
+            from hermes_constants import resolve_reasoning_config
+            from hermes_cli.config import load_config as _sm_load_config
+            agent.reasoning_config = resolve_reasoning_config(_sm_load_config() or {}, agent.model)
+            logger.info(
+                "switch_model: reasoning_config resolved for %s: %s", agent.model, agent.reasoning_config
+            )
+        except Exception as _reasoning_err:
+            logger.debug("switch_model: could not re-resolve reasoning_config: %s", _reasoning_err)
+        # Invalidate the cached system prompt so it rebuilds next turn, except for a
+        # host-owned pre_llm switch on the frozen first request prefix.
+        if preserve_frozen_prompt and frozen_system_prompt is not _MISSING:
+            agent._cached_system_prompt = frozen_system_prompt
+        else:
+            agent._cached_system_prompt = None
+        # Publish the destination capability map only after every runtime setup above has succeeded.
+        # Failed switches must leave the old map intact.
+        agent.runtime_capabilities = runtime_capabilities if runtime_capabilities is not None else destination_capabilities
+        # Reset the cross-turn stale-call circuit breaker; otherwise the latched streak keeps
+        # short-circuiting the freshly selected healthy provider.
+        from agent.chat_completion_helpers import _reset_stale_streak
+        _reset_stale_streak(agent)
+        agent._primary_runtime = _build_primary_runtime_snapshot(agent, agent.api_mode)
+        _finish_switch(agent, new_provider, old_norm, new_norm)
+        logger.info(
+            "Model switched in-place: %s (%s) -> %s (%s)",
+            old_model, old_provider, new_model, new_provider,
+        )
+        _persist_switch_billing_route(agent)
     except Exception:
         _restore_switch_snapshot(agent, snapshot)
         raise
-    custom_providers, effective_context_length = _resolve_switch_context_length(agent, snapshot)
-    # Refresh the custom-provider snapshot from the config just loaded so the prompt_caching lookup
-    # sees flags added to config.yaml after session start.
-    if custom_providers is not None:
-        agent._custom_providers = custom_providers
-    agent._use_prompt_caching, agent._use_native_cache_layout = agent._anthropic_prompt_cache_policy(
-        provider=new_provider, base_url=agent.base_url, api_mode=api_mode, model=new_model
-    )
-    if hasattr(agent, "context_compressor") and agent.context_compressor:
-        _update_switch_compressor(agent, custom_providers, effective_context_length, snapshot)
-    # Re-read the per-model reasoning_effort override so it applies immediately (per-model > global;
-    # YAML False = disabled).
-    try:
-        from hermes_constants import resolve_reasoning_config
-        from hermes_cli.config import load_config as _sm_load_config
-        agent.reasoning_config = resolve_reasoning_config(_sm_load_config() or {}, agent.model)
-        logger.info(
-            "switch_model: reasoning_config resolved for %s: %s", agent.model, agent.reasoning_config
-        )
-    except Exception as _reasoning_err:
-        logger.debug("switch_model: could not re-resolve reasoning_config: %s", _reasoning_err)
-    # Invalidate the cached system prompt so it rebuilds next turn.
-    agent._cached_system_prompt = None
-    # Publish the destination capability map only after every runtime setup above has succeeded.
-    # Failed switches must leave the old map intact.
-    agent.runtime_capabilities = destination_capabilities
-    # Reset the cross-turn stale-call circuit breaker; otherwise the latched streak keeps
-    # short-circuiting the freshly selected healthy provider.
-    from agent.chat_completion_helpers import _reset_stale_streak
-    _reset_stale_streak(agent)
-    agent._primary_runtime = _build_primary_runtime_snapshot(agent, api_mode)
-    _finish_switch(agent, new_provider, old_norm, new_norm)
-    logger.info(
-        "Model switched in-place: %s (%s) -> %s (%s)",
-        old_model, old_provider, new_model, new_provider,
-    )
-    _persist_switch_billing_route(agent)
-
-
-def _pre_tool_block_message(agent, function_name, function_args, effective_task_id, tool_call_id, middleware_trace):
-    """Plugin pre-tool-call hook verdict: ``(block_message, function_args)``; failures never block."""
-    try:
-        from hermes_cli.plugins import _dispatch_pre_tool_call_hooks
-        block_message, modified_args = _dispatch_pre_tool_call_hooks(
-            function_name, function_args, task_id=effective_task_id or "",
-            session_id=getattr(agent, "session_id", "") or "", tool_call_id=tool_call_id or "",
-            turn_id=getattr(agent, "_current_turn_id", "") or "",
-            api_request_id=getattr(agent, "_current_api_request_id", "") or "",
-            middleware_trace=list(middleware_trace),
-        )
-        return block_message, (modified_args if modified_args is not None else function_args)
-    except Exception:
-        return None, function_args
 
 
 def invoke_tool(agent, function_name: str, function_args: dict, effective_task_id: str,
-                 tool_call_id: Optional[str] = None, messages: list = None,
+                 tool_call_id: Optional[str] = None, messages: Optional[list] = None,
                  pre_tool_block_checked: bool = False,
                  skip_tool_request_middleware: bool = False,
                  tool_request_middleware_trace: Optional[List[Dict[str, Any]]] = None,
@@ -2247,20 +2275,73 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
             _tool_middleware_trace = _tool_request_mw.trace
     except Exception as _mw_err:
         logger.debug("tool_request middleware error: %s", _mw_err)
-    block_message: Optional[str] = None
-    if not pre_tool_block_checked:
-        block_message, function_args = _pre_tool_block_message(
-            agent, function_name, function_args, effective_task_id, tool_call_id, _tool_middleware_trace
+    policy_checked = pre_tool_block_checked
+    policy_binding = None
+    policy_block_message: Optional[str] = None
+
+    def _policy_args(next_args: dict) -> dict:
+        nonlocal policy_checked, policy_binding, policy_block_message
+        if policy_checked:
+            return next_args
+        from hermes_cli.plugins import (
+            _dispatch_pre_tool_call_hooks, evaluate_pre_tool_call, has_pre_tool_call_decision_phase,
         )
-    if block_message is not None:
-        result = json.dumps({"error": block_message}, ensure_ascii=False)
+        if has_pre_tool_call_decision_phase():
+            policy = evaluate_pre_tool_call(
+                function_name,
+                next_args,
+                **hook_ids,
+                middleware_trace=list(_tool_middleware_trace),
+            )
+        else:
+            try:
+                block_message, modified_args = _dispatch_pre_tool_call_hooks(
+                    function_name,
+                    next_args,
+                    **hook_ids,
+                    middleware_trace=list(_tool_middleware_trace),
+                )
+            except Exception:
+                block_message, modified_args = None, next_args
+            from hermes_cli.plugins_policy import ToolPolicyResult
+            policy = ToolPolicyResult(
+                block_message,
+                next_args if modified_args is None else modified_args,
+                None,
+            )
+        policy_checked = True
+        policy_binding = policy.binding
+        policy_block_message = policy.block_message
+        return policy.args
+
+    def _finish_policy_block(next_args: dict):
+        if policy_block_message is None:
+            return None
+        result = json.dumps({"error": policy_block_message}, ensure_ascii=False)
         emit_terminal_post_tool_call(
-            agent, function_name=function_name, function_args=function_args, result=result,
+            agent, function_name=function_name, function_args=next_args, result=result,
             effective_task_id=effective_task_id, tool_call_id=tool_call_id, status="blocked",
-            error_type="plugin_block", error_message=block_message,
+            error_type="plugin_block", error_message=policy_block_message,
             middleware_trace=_tool_middleware_trace,
         )
         return result
+
+    def _policy_binding_is_current(next_args: dict) -> bool:
+        if policy_binding is None:
+            return True
+        try:
+            from hermes_cli.plugins import get_plugin_manager
+            return policy_binding.verify(get_plugin_manager(), function_name, next_args)
+        except Exception:
+            return False
+
+    def _reject_changed_policy(next_args: dict):
+        nonlocal policy_block_message
+        if _policy_binding_is_current(next_args):
+            return None
+        policy_block_message = "BLOCKED: tool call changed after policy approval"
+        return _finish_policy_block(next_args)
+
     tool_start_time = time.monotonic()
     inline_executor = resolve_invoke_tool_executor(agent, function_name)
     if inline_executor is not None:
@@ -2269,6 +2350,13 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
         )
 
         def _execute(next_args: dict) -> Any:
+            next_args = _policy_args(next_args)
+            blocked_result = _finish_policy_block(next_args)
+            if blocked_result is not None:
+                return blocked_result
+            blocked_result = _reject_changed_policy(next_args)
+            if blocked_result is not None:
+                return blocked_result
             result = inline_executor(agent, next_args, inline_ctx)
             emit_terminal_post_tool_call(
                 agent, function_name=function_name,
@@ -2280,7 +2368,14 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
             return result
     else:
         def _execute(next_args: dict) -> Any:
-            dispatch_kwargs = dict(
+            next_args = _policy_args(next_args)
+            blocked_result = _finish_policy_block(next_args)
+            if blocked_result is not None:
+                return blocked_result
+            blocked_result = _reject_changed_policy(next_args)
+            if blocked_result is not None:
+                return blocked_result
+            dispatch_kwargs: Dict[str, Any] = dict(
                 tool_call_id=tool_call_id, session_id=agent.session_id or "",
                 turn_id=getattr(agent, "_current_turn_id", "") or "",
                 api_request_id=getattr(agent, "_current_api_request_id", "") or "",
@@ -2290,7 +2385,8 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
                 disabled_toolsets=getattr(agent, "disabled_toolsets", None),
                 tool_request_middleware_trace=list(_tool_middleware_trace),
             )
-            if skip_tool_execution_middleware:
+            from hermes_cli.plugins import has_pre_tool_call_decision_phase
+            if skip_tool_execution_middleware or has_pre_tool_call_decision_phase():
                 dispatch_kwargs["skip_tool_execution_middleware"] = True
             import model_tools
             return model_tools.handle_function_call(function_name, next_args, effective_task_id, **dispatch_kwargs)

@@ -205,3 +205,73 @@ def test_successful_switch_still_works_after_rollback_refactor():
     assert agent.provider == "openrouter"
     assert agent.api_key == "or-key-new"
     assert agent.client is new_client
+
+
+def test_post_client_setup_failure_rolls_back_the_entire_plugin_route():
+    """A plugin switch must restore route/cache state when post-build setup fails."""
+    agent = _make_agent_openrouter()
+    agent._use_prompt_caching = True
+    agent._use_native_cache_layout = True
+    agent.request_overrides = {"extra_body": {"old": True}}
+    agent._transport_cache = {"old": object()}
+    agent.reasoning_config = {"enabled": True, "effort": "medium"}
+    original = {
+        "model": agent.model,
+        "provider": agent.provider,
+        "base_url": agent.base_url,
+        "api_key": agent.api_key,
+        "api_mode": agent.api_mode,
+        "client": agent.client,
+        "cached_prompt": agent._cached_system_prompt,
+        "request_overrides": dict(agent.request_overrides),
+        "transport_cache": dict(agent._transport_cache),
+        "reasoning_config": dict(agent.reasoning_config),
+    }
+
+    agent._create_openai_client = lambda *_a, **_kw: MagicMock(name="NewClient")
+    agent._anthropic_prompt_cache_policy = MagicMock(side_effect=RuntimeError("cache setup failed"))
+
+    with patch("hermes_cli.timeouts.get_provider_request_timeout", return_value=None):
+        with pytest.raises(RuntimeError, match="cache setup failed"):
+            agent.switch_model(
+                new_model="openai/gpt-5",
+                new_provider="openrouter",
+                api_key="or-key-new",
+                base_url="https://openrouter.ai/api/v1",
+                api_mode="chat_completions",
+            )
+
+    assert agent.model == original["model"]
+    assert agent.provider == original["provider"]
+    assert agent.base_url == original["base_url"]
+    assert agent.api_key == original["api_key"]
+    assert agent.api_mode == original["api_mode"]
+    assert agent.client is original["client"]
+    assert agent._cached_system_prompt == original["cached_prompt"]
+    assert agent.request_overrides == original["request_overrides"]
+    assert agent._transport_cache == original["transport_cache"]
+    assert agent.reasoning_config == original["reasoning_config"]
+
+
+def test_post_setup_failure_restores_the_stale_stream_circuit_breaker():
+    agent = _make_agent_openrouter()
+    setattr(agent, "_consecutive_stale_streams", 3)
+    agent._create_openai_client = lambda *_a, **_kw: MagicMock(name="NewClient")
+
+    with (
+        patch("hermes_cli.timeouts.get_provider_request_timeout", return_value=None),
+        patch(
+            "agent.agent_runtime_helpers._build_primary_runtime_snapshot",
+            side_effect=RuntimeError("post-setup failure"),
+        ),
+        pytest.raises(RuntimeError, match="post-setup failure"),
+    ):
+        getattr(agent, "switch_model")(
+            new_model="openai/gpt-5",
+            new_provider="openrouter",
+            api_key="or-key-new",
+            base_url="https://openrouter.ai/api/v1",
+            api_mode="chat_completions",
+        )
+
+    assert getattr(agent, "_consecutive_stale_streams") == 3

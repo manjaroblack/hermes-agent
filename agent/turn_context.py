@@ -8,6 +8,7 @@ returns a ``TurnContext`` with only the locals the loop reads back.
 
 from __future__ import annotations
 
+import copy
 import logging
 import sys
 import threading
@@ -662,23 +663,38 @@ def _collect_pre_llm_call_context(
     """Run ``pre_llm_call`` plugins; their context is injected into the user message
     (never the system prompt). Oversized per-hook context is spilled to disk so a
     runaway plugin can't inflate every subsequent turn's prompt."""
+    from hermes_cli import plugins as _plugins
     if getattr(agent, "_persist_disabled", False):
         return ""
     try:
         from hermes_cli.lifecycle import invoke_hook as _invoke_hook
+        _hook_generation_before = _plugins.get_hook_registration_generation("pre_llm_call")
         _pre_results = _invoke_hook(
             "pre_llm_call",
             session_id=agent.session_id,
             task_id=effective_task_id,
             turn_id=turn_id,
-            user_message=original_user_message,
-            conversation_history=list(messages),
+            user_message=copy.deepcopy(original_user_message),
+            conversation_history=copy.deepcopy(messages),
             is_first_turn=(not bool(conversation_history)),
             model=agent.model,
+            provider=getattr(agent, "provider", None) or "",
             platform=getattr(agent, "platform", None) or "",
             parent_session_id=getattr(agent, "_parent_session_id", None) or "",
             sender_id=getattr(agent, "_user_id", None) or "",
         )
+        _hook_generation_after = _plugins.get_hook_registration_generation("pre_llm_call")
+        try:
+            from agent.plugin_model_switch import apply_pre_llm_model_switch
+            apply_pre_llm_model_switch(
+                agent,
+                _pre_results,
+                is_first_turn=(not bool(conversation_history)),
+                registration_generation_before=_hook_generation_before,
+                registration_generation_after=_hook_generation_after,
+            )
+        except Exception:
+            logger.debug("pre_llm_call model switch directive rejected", exc_info=True)
         try:
             # Spill oversized per-hook context to disk so a runaway plugin can't inflate every subsequent
             # turn's prompt. Ported from openai/codex PR #21069 ("Spill large hook outputs from context").

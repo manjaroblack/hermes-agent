@@ -222,7 +222,15 @@ class PluginLedgerMixin:
     def unload(self, plugin: Union[str, PluginManifest, LoadedPlugin, None] = None) -> bool:
         """Unload registrations while excluding discovery/deferred loading."""
         with self._discovery_lock, _plugin_home_scope(self.home_path):
-            return self._unload_scoped(plugin)
+            existing_sessions = getattr(self, "_existing_skill_snapshot_sessions", lambda: ())()
+            result = self._unload_scoped(plugin)
+            invalidate = getattr(self, "invalidate_skills_snapshot", None)
+            if callable(invalidate):
+                invalidate()
+            republish = getattr(self, "_republish_existing_skill_snapshots", None)
+            if callable(republish):
+                republish(existing_sessions)
+            return result
 
     def _unload_scoped(self, plugin: Union[str, PluginManifest, LoadedPlugin, None] = None) -> bool:
         """Unload one plugin (or all when ``plugin=None``, as force rediscovery does). Every ledger registration
@@ -286,7 +294,8 @@ class PluginLedgerMixin:
         carryover_ids = {id(r) for r in self._persistent_carryover}
         self._persistent_carryover.extend(r for r in self._active_persistent() if id(r) not in carryover_ids)
         for container in (
-            self._ownership_ledger, self._plugins, self._hooks, self._middleware,
+            self._ownership_ledger, self._plugins, self._hooks,
+            getattr(self, "_hook_phases", {}), self._middleware,
             self._plugin_tool_names, self._plugin_platform_names, self._cli_commands,
             self._plugin_commands, self._plugin_skills, self._portable_mcp_servers,
             self._aux_tasks, self._system_prompt_sections, self._approval_transports,
@@ -294,6 +303,8 @@ class PluginLedgerMixin:
             self._platform_handler_factories,
         ):
             container.clear()
+        setattr(self, "_hook_generation", int(getattr(self, "_hook_generation", 0)) + 1)
+        getattr(self, "_skill_snapshots", {}).clear()
         self._context_engine = None
         with self._hook_timeout_lock:
             self._hook_running_callbacks.clear()

@@ -652,8 +652,20 @@ def _restore_or_build_system_prompt(agent, system_message, conversation_history)
     """Restore the cached system prompt from the session DB or build it fresh.
 
     Mutates ``agent._cached_system_prompt`` and persists a freshly-built prompt on first
-    build. Row states ``missing``/``null``/``empty``/``present`` are logged and DB
+    build. Row states ``missing``/``null``/``empty``/``present`` are logged, and DB
     failures log at WARNING so silent prefix-cache misses show in ``agent.log``."""
+    try:
+        from hermes_cli import plugins as _plugins
+        _plugin_manager = _plugins._delivery_manager()
+        if _plugin_manager.get_skills_snapshot(agent.session_id) is None:
+            _plugin_manager.publish_skills_snapshot(
+                agent.session_id,
+                available_tools=set(getattr(agent, "valid_tool_names", ()) or ()),
+                available_toolsets=set(getattr(agent, "enabled_toolsets", ()) or ()),
+                session_platform=getattr(agent, "platform", None) or "",
+            )
+    except Exception:
+        logger.debug("skill roster snapshot publication failed", exc_info=True)
     stored_prompt = None
     stored_state = "missing"
     session_row = None

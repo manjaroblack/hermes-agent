@@ -58,6 +58,7 @@ from hermes_cli.plugins_dispatch import (  # noqa: F401 — re-exported
     is_valid_system_prompt_section_id,
 )
 from hermes_cli.plugins_ledger import PluginLedgerMixin, PluginRegistration
+from hermes_cli.plugins_snapshot import PluginSnapshotMixin
 from hermes_cli.plugins_state import (
     PluginState, _locked_plugin_state, _nested_plugin_mapping, _nested_plugin_value,
     _plugin_relative_segments, _plugin_settings_entry,
@@ -223,6 +224,23 @@ class PluginContext:
     def plugin_id(self) -> str:
         """Return the effective registry id used for this plugin's namespaces."""
         return manifest_key(self.manifest)
+
+    @property
+    def capabilities(self) -> frozenset[str]:
+        """Immutable markers for fork surfaces implemented by this host.
+
+        The set is deliberately feature-scoped rather than a global plugin API
+        version.  A plugin must still treat an absent marker as unsupported.
+        """
+        return frozenset({
+            "pre_llm_call.model_switch.v1",
+            "pre_tool_call.decision.v1",
+            "skills.snapshot.v1",
+        })
+
+    def skills_snapshot(self):
+        """Return this plugin's current immutable session skill roster, if published."""
+        return self._manager.get_skills_snapshot()
 
     def has_plugin(self, plugin_id: str) -> bool:
         """Return True when another plugin is loaded and enabled (runtime probe for advisory
@@ -890,9 +908,22 @@ class PluginContext:
         logger.debug("Plugin %s registered %d redaction pattern(s)", self.manifest.name, count)
         return count
 
-    def register_hook(self, hook_name: str, callback: Callable) -> PluginRegistration:
-        """Register a lifecycle hook callback (unknown names warn but are still stored)."""
-        return self._track_callback("hook", hook_name, callback, self._manager._hooks, VALID_HOOKS)
+    def register_hook(
+        self, hook_name: str, callback: Callable, *, phase: str = "normal"
+    ) -> PluginRegistration:
+        """Register a lifecycle hook callback (unknown names warn but are still stored).
+
+        ``pre_tool_call`` has an additive decision phase. Other hooks retain one
+        normal phase so an accidental phase argument cannot silently change their
+        dispatch contract.
+        """
+        if phase not in {"normal", "decision"}:
+            raise ValueError("hook phase must be 'normal' or 'decision'")
+        if phase == "decision" and hook_name != "pre_tool_call":
+            raise ValueError("decision phase is only supported for pre_tool_call")
+        return self._track_callback(
+            "hook", hook_name, callback, self._manager._hooks, VALID_HOOKS, phase=phase
+        )
 
     def register_middleware(self, kind: str, callback: Callable) -> PluginRegistration:
         """Register behavior-changing middleware (request kinds rewrite the payload, execution kinds
@@ -903,14 +934,20 @@ class PluginContext:
 
     def _track_callback(
         self, kind: str, key: str, callback: Callable, mapping: Dict[str, List[Callable]],
-        valid: Set[str],
+        valid: Set[str], *, phase: str = "normal",
     ) -> PluginRegistration:
         """Append ``callback`` under ``key`` (warning on unknown ``key``) and lease its removal."""
         if key not in valid:
             logger.warning("Plugin '%s' registered unknown %s '%s' (valid: %s)", self.manifest.name, kind,
                            key, ", ".join(sorted(valid)))
         mapping.setdefault(key, []).append(callback)
-        handle = self._track(kind, key, lambda: self._manager._remove_callback(mapping, key, callback))
+        if kind == "hook":
+            self._manager._hook_phases.setdefault(key, []).append(phase)
+            self._manager._hook_generation += 1
+            release = lambda: self._manager._remove_hook_callback(key, callback, phase)
+        else:
+            release = lambda: self._manager._remove_callback(mapping, key, callback)
+        handle = self._track(kind, key, release)
         logger.debug("Plugin %s registered %s: %s", self.manifest.name, kind, key)
         return handle
 
@@ -994,8 +1031,16 @@ class PluginContext:
             "path": path, "plugin": namespace, "plugin_key": self.plugin_id, "bare_name": name,
             "description": description, "frontmatter": dict(frontmatter or {}),
         }
-        return self._register_entry("skill", qualified, self._manager._plugin_skills, entry,
-                                    "Plugin %s registered skill: %s", qualified)
+        handle = self._register_entry("skill", qualified, self._manager._plugin_skills, entry,
+                                      "Plugin %s registered skill: %s", qualified)
+        existing_sessions = getattr(self._manager, "_existing_skill_snapshot_sessions", lambda: ())()
+        invalidate = getattr(self._manager, "invalidate_skills_snapshot", None)
+        if callable(invalidate):
+            invalidate()
+        republish = getattr(self._manager, "_republish_existing_skill_snapshots", None)
+        if callable(republish):
+            republish(existing_sessions)
+        return handle
 
 
 # -- scoped provider registrars ------------------------------------------------------------------
@@ -1108,7 +1153,7 @@ def _resolve_hook_callback_timeout() -> float:
     return timeout
 
 
-class PluginManager(PluginLoaderMixin, PluginDispatchMixin, PluginLedgerMixin):
+class PluginManager(PluginLoaderMixin, PluginDispatchMixin, PluginLedgerMixin, PluginSnapshotMixin):
     """Central manager that discovers, loads, and invokes plugins."""
 
     def __init__(self, scope_key: Optional[str] = None) -> None:
@@ -1127,6 +1172,8 @@ class PluginManager(PluginLoaderMixin, PluginDispatchMixin, PluginLedgerMixin):
         # (matcher, callback, plugin_name), platform handler factories (lowercase platform -> list).
         self._plugins: Dict[str, LoadedPlugin] = {}
         self._hooks: Dict[str, List[Callable]] = {}
+        self._hook_phases: Dict[str, List[str]] = {}
+        self._hook_generation = 0
         # Fallback hooks registered by a memory provider before general discovery.
         self._memory_hook_registrations: Dict[Tuple[str, str], List[PluginRegistration]] = {}
         self._middleware: Dict[str, List[Callable]] = {}
@@ -1179,6 +1226,8 @@ class PluginManager(PluginLoaderMixin, PluginDispatchMixin, PluginLedgerMixin):
         # and contributed tool names (so `hermes plugins list` still attributes them).
         self._predeclared_modules: Dict[str, types.ModuleType] = {}
         self._predeclared_tools: Dict[str, List[str]] = {}
+        self._skill_snapshots: Dict[tuple[str, str], Any] = {}
+        self._skill_snapshot_counter = 0
 
     @property
     def has_gateway_message_injector(self) -> bool:
@@ -1555,6 +1604,31 @@ def _reset_plugin_managers_for_tests() -> None:
         logger.debug("dashboard-auth registry clear failed", exc_info=True)
 
 
+def refresh_published_skill_snapshots() -> None:
+    """Republish active rosters for the current profile after a skill mutation.
+
+    This never creates or discovers a plugin manager. Prompt-cache invalidation
+    already runs outside hook deadlines, so it is the cold-path notification
+    boundary for roster refreshes without rebuilding frozen conversation prompts.
+    """
+    current_home = _plugin_home_key()
+    with _plugin_managers_lock:
+        managers = list(dict.fromkeys(_plugin_managers_by_home.values()))
+        if _plugin_manager is not None and _plugin_manager not in managers:
+            managers.append(_plugin_manager)
+    for manager in managers:
+        try:
+            if Path(manager.home_path).resolve() != current_home:
+                continue
+            sessions = manager._existing_skill_snapshot_sessions()
+            if not sessions:
+                continue
+            manager.invalidate_skills_snapshot()
+            manager._republish_existing_skill_snapshots(sessions)
+        except Exception:
+            logger.debug("plugin skill roster refresh failed", exc_info=True)
+
+
 def has_enabled_agent_plugin_mcp(raw_config: Mapping[str, Any]) -> bool:
     """Whether config enables a portable package with MCP servers (manifest-only scan on a fresh
     manager; imports nothing, mutates no registry)."""
@@ -1727,6 +1801,12 @@ def iter_hook_callbacks(hook_name: str) -> tuple[Callable, ...]:
     return get_plugin_manager().iter_hook_callbacks(hook_name)
 
 
+def get_hook_registration_generation(hook_name: str = "") -> int:
+    """Return the host generation used to reject stale hook completions."""
+    manager = get_plugin_manager()
+    return manager.get_hook_registration_generation(hook_name)
+
+
 def fire_pre_command_hook(
     *, surface: str, command: str, alias_used: str, args_raw: str,
     session_key: Optional[str] = None, platform: Optional[str] = None,
@@ -1881,10 +1961,36 @@ def _dispatch_pre_tool_call_hooks(
 ) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
     """Invoke ``pre_tool_call`` hooks once; return ``(block_message, modified_args)`` — the resolved
     block/approve message (``None`` to proceed) and merged ``modify`` args (``None`` if none)."""
+    manager = _delivery_manager()
+    if has_pre_tool_call_decision_phase():
+        from hermes_cli.plugins_policy import evaluate_pre_tool_call
+        result = evaluate_pre_tool_call(
+            tool_name, args, manager=manager, hook_kwargs=hook_kwargs
+        )
+        return result.block_message, result.args if result.args != (args or {}) else None
     details = _get_pre_tool_call_directive_details(tool_name, args, **hook_kwargs)
     block_msg = _resolve_block_from_details(
         details, tool_name, **{k: hook_kwargs.get(k, "") for k in ("turn_id", "tool_call_id", "session_id")})
     return (block_msg, details.modified_args)
+
+
+def evaluate_pre_tool_call(
+    tool_name: str, args: Optional[Dict[str, Any]], **hook_kwargs: Any
+):
+    """Return the host-owned policy result, including an exact-call binding when enabled."""
+    manager = _delivery_manager()
+    from hermes_cli.plugins_policy import ToolPolicyResult, evaluate_pre_tool_call as _evaluate
+    if has_pre_tool_call_decision_phase():
+        return _evaluate(tool_name, args, manager=manager, hook_kwargs=hook_kwargs)
+    block_message, modified_args = _dispatch_pre_tool_call_hooks(tool_name, args, **hook_kwargs)
+    return ToolPolicyResult(block_message, modified_args or dict(args or {}), None)
+
+
+def has_pre_tool_call_decision_phase() -> bool:
+    """Return whether the additive fail-closed decision phase is enabled."""
+    manager = _delivery_manager()
+    from hermes_cli.plugins_policy import has_decision_phase
+    return has_decision_phase(manager)
 
 
 def get_pre_verify_continue_message(
