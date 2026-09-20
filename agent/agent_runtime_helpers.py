@@ -896,6 +896,14 @@ def _apply_primary_runtime_fields(agent, rt: Dict[str, Any]) -> None:
     agent.api_key = rt["api_key"]
     agent._reasoning_echo_flag = rt.get("reasoning_echo_flag", False)
     agent.request_overrides = dict(rt.get("request_overrides") or {})
+    if "reasoning_config" in rt:
+        saved_reasoning = rt.get("reasoning_config")
+        agent.reasoning_config = dict(saved_reasoning) if isinstance(saved_reasoning, dict) else saved_reasoning
+    if "reasoning_override_state" in rt:
+        saved_override_state = rt.get("reasoning_override_state")
+        agent._reasoning_effort_override_state = (
+            copy.deepcopy(saved_override_state) if isinstance(saved_override_state, dict) else None
+        )
     agent._client_kwargs = dict(rt["client_kwargs"])
 
 
@@ -1170,10 +1178,16 @@ def restore_primary_runtime(agent) -> bool:
         _rebind_primary_credential_pool(
             agent, primary_provider, _matches_primary, _load_primary_pool, prefetched_pool, prefetched
         )
-        # Older snapshots have no reasoning_config; keep the current value.
-        saved_reasoning = rt.get("reasoning_config")
-        if saved_reasoning is not None:
-            agent.reasoning_config = dict(saved_reasoning)
+        # Older snapshots have no reasoning_config; keep the current value. New snapshots retain
+        # an explicit None so a fallback effort cannot leak into a primary runtime with reasoning disabled.
+        if "reasoning_config" in rt:
+            saved_reasoning = rt.get("reasoning_config")
+            agent.reasoning_config = dict(saved_reasoning) if isinstance(saved_reasoning, dict) else saved_reasoning
+        if "reasoning_override_state" in rt:
+            saved_override_state = rt.get("reasoning_override_state")
+            agent._reasoning_effort_override_state = (
+                copy.deepcopy(saved_override_state) if isinstance(saved_override_state, dict) else None
+            )
         agent._fallback_activated = False
         agent._fallback_index = 0
         agent._rate_limit_backoff_count = 0
@@ -1822,6 +1836,7 @@ _SWITCH_SNAPSHOT_FIELDS = (
     "_config_context_length", "_reasoning_echo_flag", "runtime_capabilities",
     "_credential_pool", "_credential_pool_entry_id", "_cached_system_prompt", "request_overrides",
     "_use_prompt_caching", "_use_native_cache_layout", "_custom_providers", "reasoning_config",
+    "_reasoning_effort_override_state",
     "_primary_runtime", "_fallback_activated", "_provider_fallback_active", "_provider_fallback_route",
     "_fallback_index", "_fallback_chain", "_fallback_model", "_transport_cache",
     "_consecutive_stale_streams",
@@ -1841,7 +1856,10 @@ def _snapshot_switch_state(agent) -> Dict[str, Any]:
     request_overrides = snapshot.get("request_overrides", _MISSING)
     if isinstance(request_overrides, dict):
         snapshot["request_overrides"] = dict(request_overrides)
-    for name in ("_custom_providers", "reasoning_config", "_primary_runtime", "_transport_cache"):
+    for name in (
+        "_custom_providers", "reasoning_config", "_reasoning_effort_override_state",
+        "_primary_runtime", "_transport_cache",
+    ):
         value = snapshot.get(name, _MISSING)
         if isinstance(value, dict):
             snapshot[name] = dict(value)
@@ -2112,6 +2130,11 @@ def _build_primary_runtime_snapshot(agent, api_mode) -> Dict[str, Any]:
         "use_prompt_caching": agent._use_prompt_caching,
         "use_native_cache_layout": agent._use_native_cache_layout,
         "reasoning_config": dict(agent.reasoning_config) if getattr(agent, "reasoning_config", None) else None,
+        "reasoning_override_state": (
+            copy.deepcopy(agent._reasoning_effort_override_state)
+            if isinstance(getattr(agent, "_reasoning_effort_override_state", None), dict)
+            else None
+        ),
         "reasoning_echo_flag": getattr(agent, "_reasoning_echo_flag", False),
         # Overrides must travel with the switched-to identity or a later recovery/restore resurrects
         # PRE-switch overrides from the stale init snapshot.
@@ -2174,9 +2197,33 @@ def _persist_switch_billing_route(agent) -> None:
         logger.warning("Failed to persist billing route after model switch", exc_info=True)
 
 
+def _apply_effort_only_switch(agent, new_model: str, new_provider: str, reasoning_effort: str) -> bool:
+    """Apply a validated same-identity effort change without rebuilding credentials or clients."""
+    from agent.plugin_model_switch_reasoning import (
+        effective_reasoning_effort,
+        apply_effort_override_state,
+        reasoning_config_for_directive,
+    )
+
+    selected_config = reasoning_config_for_directive(new_model, new_provider, reasoning_effort)
+    if selected_config is None or effective_reasoning_effort(getattr(agent, "reasoning_config", None)) == reasoning_effort:
+        return False
+    snapshot = _snapshot_switch_state(agent)
+    try:
+        # The selected config is canonical before the primary runtime snapshot so fallback restore
+        # and subsequent requests retain the effort-only choice.
+        agent.reasoning_config = selected_config
+        apply_effort_override_state(agent, new_model, new_provider, reasoning_effort)
+        agent._primary_runtime = _build_primary_runtime_snapshot(agent, agent.api_mode)
+        return True
+    except Exception:
+        _restore_switch_snapshot(agent, snapshot)
+        raise
+
+
 def switch_model(
     agent, new_model, new_provider, api_key='', base_url='', api_mode='', capabilities=None, *,
-    preserve_frozen_prompt=False, request_overrides=None, runtime_capabilities=None,
+    preserve_frozen_prompt=False, request_overrides=None, runtime_capabilities=None, reasoning_effort=None,
 ):
     """Switch the model/provider in-place for a live agent (rebuild clients, caching flags,
     compressor). Mirrors ``_try_activate_fallback()`` but also updates ``_primary_runtime`` so
@@ -2184,20 +2231,36 @@ def switch_model(
     snapshot and re-raises (callers catch)."""
     old_model = agent.model
     old_provider = agent.provider
+    old_norm = (old_provider or "").strip().lower()
+    new_norm = (new_provider or "").strip().lower()
+    same_identity = (old_model or "").strip().casefold() == (new_model or "").strip().casefold() and old_norm == new_norm
+    selected_effort = None
+    if reasoning_effort is not None:
+        from agent.plugin_model_switch_reasoning import normalize_reasoning_effort
+
+        selected_effort = normalize_reasoning_effort(new_model, new_provider, reasoning_effort)
+        if same_identity:
+            if selected_effort is None:
+                return False
+            return _apply_effort_only_switch(agent, new_model, new_provider, selected_effort)
     # ── Reload credential pool for the new provider (issue #52727) ── Without this,
     # ``recover_with_credential_pool`` sees a ``pool.provider != agent.provider`` mismatch and
     # short-circuits, leaving the new provider with no rotation/recovery on 401/429 and burning the original
     # pool's entries. Only reload when the provider actually changed (or the pool was missing) —
     # re-selecting the same provider must not churn the pool reference. A reload failure is logged +
     # swallowed: the switch itself must still complete.
-    old_norm = (old_provider or "").strip().lower()
-    new_norm = (new_provider or "").strip().lower()
     api_mode, base_url, destination_capabilities = _resolve_switch_destination(
         agent, new_model, new_provider, base_url, api_mode, capabilities, old_norm, new_norm
     )
     snapshot = _snapshot_switch_state(agent)
     frozen_system_prompt = snapshot.get("_cached_system_prompt", _MISSING)
     try:
+        from agent.plugin_model_switch_reasoning import restore_effort_override_state
+
+        # A previous same-identity effort change may have rewritten a conflicting
+        # request override. Restore the user's baseline before changing identity so
+        # the temporary Jev selection cannot leak to the destination.
+        restore_effort_override_state(agent)
         _swap_switch_runtime(
             agent, new_model, new_provider, api_key, base_url, api_mode, old_provider, old_norm, new_norm
         )
@@ -2226,6 +2289,12 @@ def switch_model(
             )
         except Exception as _reasoning_err:
             logger.debug("switch_model: could not re-resolve reasoning_config: %s", _reasoning_err)
+        if selected_effort is not None:
+            from agent.plugin_model_switch_reasoning import reasoning_config_for_directive
+
+            selected_config = reasoning_config_for_directive(new_model, new_provider, selected_effort)
+            if selected_config is not None:
+                agent.reasoning_config = selected_config
         # Invalidate the cached system prompt so it rebuilds next turn, except for a
         # host-owned pre_llm switch on the frozen first request prefix.
         if preserve_frozen_prompt and frozen_system_prompt is not _MISSING:
@@ -2239,13 +2308,25 @@ def switch_model(
         # short-circuiting the freshly selected healthy provider.
         from agent.chat_completion_helpers import _reset_stale_streak
         _reset_stale_streak(agent)
-        agent._primary_runtime = _build_primary_runtime_snapshot(agent, agent.api_mode)
+        if selected_effort is None:
+            # Preserve ordinary model-switch snapshot semantics: custom-provider override
+            # re-derivation belongs after the snapshot for non-Jev switches.
+            agent._primary_runtime = _build_primary_runtime_snapshot(agent, agent.api_mode)
         _finish_switch(agent, new_provider, old_norm, new_norm)
+        if selected_effort is not None:
+            from agent.plugin_model_switch_reasoning import apply_effort_override_state
+
+            # Provider-specific overrides are part of the switched identity. Sanitize them after
+            # re-derivation so a destination extra_body cannot defeat the selected effort, then
+            # capture the final request/runtime state for rollback and subsequent turns.
+            apply_effort_override_state(agent, new_model, new_provider, selected_effort)
+            agent._primary_runtime = _build_primary_runtime_snapshot(agent, agent.api_mode)
         logger.info(
             "Model switched in-place: %s (%s) -> %s (%s)",
             old_model, old_provider, new_model, new_provider,
         )
         _persist_switch_billing_route(agent)
+        return True
     except Exception:
         _restore_switch_snapshot(agent, snapshot)
         raise

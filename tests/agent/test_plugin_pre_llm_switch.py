@@ -38,6 +38,7 @@ class _Agent:
     api_mode = "chat_completions"
     valid_tool_names = []
     _cached_system_prompt = "frozen system prompt"
+    reasoning_config: Any = None
 
     def __init__(self):
         self.switch_calls = []
@@ -407,3 +408,479 @@ def test_late_timed_out_pre_llm_result_cannot_mutate_owner_thread_state(
         assert agent.model == "old-model"
     finally:
         release.set()
+
+
+def test_same_identity_effort_only_switch_uses_first_turn_permission(monkeypatch):
+    agent = _Agent()
+    agent.model = "grok-4.6"
+    agent.provider = "xai-oauth"
+    agent.reasoning_config = {"enabled": True, "effort": "high"}
+
+    _run(
+        monkeypatch,
+        agent,
+        [{"model_switch": {
+            "model": "grok-4.6",
+            "provider": "xai-oauth",
+            "allow_cache_break": False,
+            "reasoning_effort": "medium",
+        }}],
+        [],
+    )
+
+    assert len(agent.switch_calls) == 1
+    assert agent.switch_calls[0]["new_model"] == "grok-4.6"
+    assert agent.switch_calls[0]["new_provider"] == "xai-oauth"
+    assert agent.switch_calls[0]["reasoning_effort"] == "medium"
+
+
+def test_same_identity_effort_only_avoids_destination_or_credential_resolution(monkeypatch):
+    import agent.plugin_model_switch as plugin_model_switch
+
+    agent = _Agent()
+    agent.model = "grok-4.6"
+    agent.provider = "xai-oauth"
+    agent.reasoning_config = {"enabled": True, "effort": "high"}
+    monkeypatch.setattr(
+        plugin_model_switch,
+        "_resolve_destination",
+        lambda *_args, **_kwargs: pytest.fail(
+            "same-identity effort switch performed destination/credential resolution"
+        ),
+    )
+    monkeypatch.setattr("hermes_cli.plugins.get_hook_registration_generation", lambda *_: 7)
+
+    assert plugin_model_switch.apply_pre_llm_model_switch(
+        agent,
+        [{"model_switch": {
+            "model": "grok-4.6",
+            "provider": "xai-oauth",
+            "allow_cache_break": False,
+            "reasoning_effort": "medium",
+        }}],
+        is_first_turn=True,
+        registration_generation_before=7,
+        registration_generation_after=7,
+    ) is True
+
+    assert agent.switch_calls[0]["reasoning_effort"] == "medium"
+
+
+@pytest.mark.parametrize(
+    ("history", "allow_cache_break", "expected_calls"),
+    [([], True, 0), ([{"role": "user", "content": "previous"}], False, 0)],
+)
+def test_same_identity_effort_only_rejects_wrong_cache_permission(
+    monkeypatch, history, allow_cache_break, expected_calls
+):
+    agent = _Agent()
+    agent.model = "grok-4.6"
+    agent.provider = "xai-oauth"
+    agent.reasoning_config = {"enabled": True, "effort": "high"}
+
+    _run(
+        monkeypatch,
+        agent,
+        [{"model_switch": {
+            "model": "grok-4.6",
+            "provider": "xai-oauth",
+            "allow_cache_break": allow_cache_break,
+            "reasoning_effort": "medium",
+        }}],
+        history,
+    )
+
+    assert len(agent.switch_calls) == expected_calls
+
+
+def test_later_same_identity_effort_only_switch_accepts_cache_break(monkeypatch):
+    agent = _Agent()
+    agent.model = "grok-4.6"
+    agent.provider = "xai-oauth"
+    agent.reasoning_config = {"enabled": True, "effort": "high"}
+
+    _run(
+        monkeypatch,
+        agent,
+        [{"model_switch": {
+            "model": "grok-4.6",
+            "provider": "xai-oauth",
+            "allow_cache_break": True,
+            "reasoning_effort": "medium",
+        }}],
+        [{"role": "user", "content": "previous"}],
+    )
+
+    assert len(agent.switch_calls) == 1
+    assert agent.switch_calls[0]["reasoning_effort"] == "medium"
+
+
+def test_cross_identity_valid_effort_reaches_host_switch(monkeypatch):
+    agent = _Agent()
+
+    _run(
+        monkeypatch,
+        agent,
+        [{"model_switch": {
+            "model": "grok-4.6",
+            "provider": "xai-oauth",
+            "allow_cache_break": False,
+            "reasoning_effort": "medium",
+        }}],
+        [],
+    )
+
+    assert len(agent.switch_calls) == 1
+    assert agent.switch_calls[0]["reasoning_effort"] == "medium"
+
+
+@pytest.mark.parametrize("effort", [True, {}, "unknown", "max", "ultra", " MEDIUM "])
+def test_invalid_or_unsupported_effort_keeps_model_switch_without_override(monkeypatch, effort):
+    agent = _Agent()
+
+    _run(
+        monkeypatch,
+        agent,
+        [{"model_switch": {
+            "model": "grok-4.6",
+            "provider": "xai-oauth",
+            "allow_cache_break": False,
+            "reasoning_effort": effort,
+        }}],
+        [],
+    )
+
+    assert len(agent.switch_calls) == 1
+    assert "reasoning_effort" not in agent.switch_calls[0]
+
+
+def test_unknown_destination_family_keeps_model_switch_without_effort(monkeypatch):
+    agent = _Agent()
+
+    _run(
+        monkeypatch,
+        agent,
+        [{"model_switch": {
+            "model": "opaque-model",
+            "provider": "custom",
+            "allow_cache_break": False,
+            "reasoning_effort": "medium",
+        }}],
+        [],
+    )
+
+    assert len(agent.switch_calls) == 1
+    assert "reasoning_effort" not in agent.switch_calls[0]
+
+
+def test_same_identity_effort_only_noops_when_effective_effort_is_unchanged(monkeypatch):
+    agent = _Agent()
+    agent.model = "grok-4.6"
+    agent.provider = "xai-oauth"
+    agent.reasoning_config = {"enabled": True, "effort": "medium"}
+
+    _run(
+        monkeypatch,
+        agent,
+        [{"model_switch": {
+            "model": "grok-4.6",
+            "provider": "xai-oauth",
+            "allow_cache_break": False,
+            "reasoning_effort": "medium",
+        }}],
+        [],
+    )
+
+    assert agent.switch_calls == []
+
+
+@pytest.mark.parametrize("effort", [None, True, {}, "unknown", "max"])
+def test_same_identity_absent_invalid_or_unsupported_effort_is_a_noop(monkeypatch, effort):
+    agent = _Agent()
+    agent.model = "grok-4.6"
+    agent.provider = "xai-oauth"
+    agent.reasoning_config = {"enabled": True, "effort": "high"}
+    directive = {
+        "model": "grok-4.6",
+        "provider": "xai-oauth",
+        "allow_cache_break": False,
+    }
+    if effort is not None:
+        directive["reasoning_effort"] = effort
+
+    _run(monkeypatch, agent, [{"model_switch": directive}], [])
+
+    assert agent.switch_calls == []
+
+
+def test_same_identity_effort_only_propagates_host_noop_result(monkeypatch):
+    from agent.plugin_model_switch import apply_pre_llm_model_switch
+
+    agent = _Agent()
+    agent.model = "grok-4.6"
+    agent.provider = "xai-oauth"
+    agent.reasoning_config = {"enabled": True, "effort": "high"}
+    monkeypatch.setattr(agent, "switch_model", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr("hermes_cli.plugins.get_hook_registration_generation", lambda *_: 7)
+
+    assert apply_pre_llm_model_switch(
+        agent,
+        [{"model_switch": {
+            "model": "grok-4.6",
+            "provider": "xai-oauth",
+            "allow_cache_break": False,
+            "reasoning_effort": "medium",
+        }}],
+        is_first_turn=True,
+        registration_generation_before=7,
+        registration_generation_after=7,
+    ) is False
+
+
+def test_same_identity_duplicate_directives_first_owner_controls_effort_and_permission(monkeypatch):
+    agent = _Agent()
+    agent.model = "grok-4.6"
+    agent.provider = "xai-oauth"
+    agent.reasoning_config = {"enabled": True, "effort": "high"}
+
+    _run(
+        monkeypatch,
+        agent,
+        [
+            {"model_switch": {
+                "model": "grok-4.6",
+                "provider": "xai-oauth",
+                "allow_cache_break": False,
+                "reasoning_effort": "medium",
+            }},
+            {"model_switch": {
+                "model": "grok-4.6",
+                "provider": "xai-oauth",
+                "allow_cache_break": True,
+                "reasoning_effort": "low",
+            }},
+        ],
+        [],
+    )
+
+    assert len(agent.switch_calls) == 1
+    assert agent.switch_calls[0]["reasoning_effort"] == "medium"
+    assert "allow_cache_break" not in agent.switch_calls[0]
+
+
+def test_same_identity_duplicate_cannot_fill_first_directives_missing_effort(monkeypatch):
+    agent = _Agent()
+    agent.model = "grok-4.6"
+    agent.provider = "xai-oauth"
+    agent.reasoning_config = {"enabled": True, "effort": "high"}
+
+    _run(
+        monkeypatch,
+        agent,
+        [
+            {"model_switch": {
+                "model": "grok-4.6",
+                "provider": "xai-oauth",
+                "allow_cache_break": False,
+            }},
+            {"model_switch": {
+                "model": "grok-4.6",
+                "provider": "xai-oauth",
+                "allow_cache_break": False,
+                "reasoning_effort": "medium",
+            }},
+        ],
+        [],
+    )
+
+    assert agent.switch_calls == []
+
+
+@pytest.mark.parametrize(
+    (
+        "start_model",
+        "start_provider",
+        "start_base_url",
+        "start_effort",
+        "target_model",
+        "target_provider",
+        "target_base_url",
+        "target_effort",
+        "history",
+        "allow_cache_break",
+    ),
+    [
+        (
+            "grok-4.6",
+            "xai-oauth",
+            "https://api.x.ai/v1",
+            "high",
+            "grok-4.6",
+            "xai-oauth",
+            "https://api.x.ai/v1",
+            "medium",
+            [],
+            False,
+        ),
+        (
+            "gpt-5.6-luna",
+            "openai-codex",
+            "https://chatgpt.com/backend-api/codex",
+            "medium",
+            "gpt-5.6-luna",
+            "openai-codex",
+            "https://chatgpt.com/backend-api/codex",
+            "high",
+            [{"role": "user", "content": "earlier"}, {"role": "assistant", "content": "answer"}],
+            True,
+        ),
+        (
+            "grok-4.6",
+            "xai-oauth",
+            "https://api.x.ai/v1",
+            "high",
+            "gpt-5.6-luna",
+            "openai-codex",
+            "https://chatgpt.com/backend-api/codex",
+            "medium",
+            [],
+            False,
+        ),
+    ],
+    ids=("grok-effort-only-first", "luna-effort-only-later", "grok-to-luna-with-effort"),
+)
+def test_registered_effort_switch_reaches_next_real_codex_request_without_rebuilding_prefix(
+    tmp_path,
+    monkeypatch,
+    start_model,
+    start_provider,
+    start_base_url,
+    start_effort,
+    target_model,
+    target_provider,
+    target_base_url,
+    target_effort,
+    history,
+    allow_cache_break,
+):
+    from hermes_cli import plugins
+    from hermes_cli.plugins import PluginContext, PluginManager, PluginManifest
+    from run_agent import AIAgent
+
+    with (
+        patch("model_tools.get_tool_definitions", return_value=_tool_definitions()),
+        patch("model_tools.check_toolset_requirements", return_value={}),
+        patch("agent.process_bootstrap.OpenAI"),
+    ):
+        agent = AIAgent(
+            api_key="old-test-key",
+            base_url=start_base_url,
+            provider=start_provider,
+            model=start_model,
+            quiet_mode=True,
+            skip_context_files=True,
+            skip_memory=True,
+            save_trajectories=False,
+        )
+    agent_any = cast(Any, agent)
+
+    manager = PluginManager(scope_key=str(tmp_path / "home"))
+    manager._discovered = True
+    context = PluginContext(
+        PluginManifest(name="effort-route-plugin", version="1.0.0", source="test"), manager
+    )
+
+    def route_hook(**kwargs):
+        assert kwargs["model"] == start_model
+        assert kwargs["provider"] == start_provider
+        assert kwargs["is_first_turn"] is (not history)
+        return {"model_switch": {
+            "model": target_model,
+            "provider": target_provider,
+            "allow_cache_break": allow_cache_break,
+            "reasoning_effort": target_effort,
+        }}
+
+    context.register_hook("pre_llm_call", route_hook)
+    monkeypatch.setattr(plugins, "_plugin_manager", manager)
+    monkeypatch.setattr(plugins, "_plugin_managers_by_home", {})
+    monkeypatch.setattr("hermes_cli.lifecycle._observe", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "hermes_cli.runtime_provider.resolve_runtime_provider",
+        lambda **_kwargs: {
+            "provider": target_provider,
+            "api_key": "routed-test-key",
+            "base_url": target_base_url,
+            "api_mode": "codex_responses",
+        },
+    )
+    monkeypatch.setattr(
+        "hermes_cli.models_validate.validate_requested_model",
+        lambda *_args, **_kwargs: {
+            "accepted": True,
+            "persist": True,
+            "recognized": True,
+            "message": None,
+        },
+    )
+    monkeypatch.setattr("hermes_cli.model_switch.get_model_capabilities", lambda *_a, **_k: {})
+    monkeypatch.setattr("hermes_cli.model_switch.get_model_info", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        "agent.native_compaction.resolve_native_compaction_capabilities",
+        lambda **_kwargs: {},
+    )
+    monkeypatch.setattr("agent.credential_pool.load_pool", lambda _provider: None)
+    monkeypatch.setattr("hermes_cli.config.load_config", lambda: {})
+    monkeypatch.setattr("hermes_cli.config.load_config_readonly", lambda: {})
+
+    agent_any.reasoning_config = {"enabled": True, "effort": start_effort}
+    agent_any._cached_system_prompt = "frozen system prompt"
+    agent_any._session_db = None
+    agent_any.context_compressor = None
+    agent_any.compression_enabled = False
+    agent_any._disable_streaming = True
+    monkeypatch.setattr(agent, "_try_refresh_env_client_credentials", lambda: False)
+    monkeypatch.setattr(agent, "_ensure_db_session", lambda: None)
+    monkeypatch.setattr(agent, "_persist_session", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(agent, "_save_trajectory", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(agent_any, "_cleanup_task_resources", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(agent_any, "_create_openai_client", lambda *_args, **_kwargs: MagicMock())
+    monkeypatch.setattr(agent_any, "_create_request_openai_client", lambda *_args, **_kwargs: MagicMock())
+    monkeypatch.setattr(agent_any, "_close_request_openai_client", lambda *_args, **_kwargs: None)
+
+    captured = {}
+
+    def fake_codex_request(kwargs, **_request_kwargs):
+        captured.update(copy.deepcopy(kwargs))
+        return SimpleNamespace(
+            status="completed",
+            incomplete_details=None,
+            output=[SimpleNamespace(
+                type="message",
+                status="completed",
+                content=[SimpleNamespace(type="output_text", text="routed response")],
+            )],
+            output_text="routed response",
+            model=target_model,
+            usage=None,
+        )
+
+    monkeypatch.setattr(agent_any, "_run_codex_stream", fake_codex_request)
+    history_before = copy.deepcopy(history)
+    tools_before = copy.deepcopy(agent_any.tools)
+    result = agent_any.run_conversation("hello", conversation_history=history)
+
+    assert result["final_response"] == "routed response"
+    assert captured["model"] == target_model
+    assert captured["instructions"] == "frozen system prompt"
+    assert captured["reasoning"]["effort"] == target_effort
+    if target_provider == "openai-codex":
+        assert captured["reasoning"]["summary"] == "auto"
+    assert agent_any.reasoning_config == {"enabled": True, "effort": target_effort}
+    assert agent_any._cached_system_prompt == "frozen system prompt"
+    assert history == history_before
+    assert agent_any.tools == tools_before
+    assert agent_any._primary_runtime["reasoning_config"] == {
+        "enabled": True,
+        "effort": target_effort,
+    }

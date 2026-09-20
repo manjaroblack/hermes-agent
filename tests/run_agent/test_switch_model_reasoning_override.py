@@ -43,7 +43,8 @@ class TestSwitchModelReasoningOverride:
         agent._create_openai_client = MagicMock(return_value=MagicMock())
         return agent
 
-    def test_primary_runtime_includes_reasoning_config(self):
+    @patch("agent.anthropic_adapter.build_anthropic_client", return_value=MagicMock())
+    def test_primary_runtime_includes_reasoning_config(self, _build_anthropic_client):
         """After switch_model, _primary_runtime should contain reasoning_config key."""
         from agent.agent_runtime_helpers import switch_model
 
@@ -77,7 +78,8 @@ class TestSwitchModelReasoningOverride:
 
 
 
-    def test_restore_primary_runtime_restores_reasoning(self):
+    @patch("agent.anthropic_adapter.build_anthropic_client", return_value=MagicMock())
+    def test_restore_primary_runtime_restores_reasoning(self, _build_anthropic_client):
         """restore_primary_runtime should restore reasoning_config from snapshot."""
         from agent.agent_runtime_helpers import restore_primary_runtime
 

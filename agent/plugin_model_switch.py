@@ -18,11 +18,15 @@ def _valid_directive(value: Any) -> Optional[dict[str, Any]]:
             or not isinstance(provider, str) or not provider.strip()
             or not isinstance(allow_cache_break, bool)):
         return None
-    return {
+    directive = {
         "model": model.strip(),
         "provider": provider.strip(),
         "allow_cache_break": allow_cache_break,
     }
+    reasoning_effort = model_switch.get("reasoning_effort")
+    if isinstance(reasoning_effort, str):
+        directive["reasoning_effort"] = reasoning_effort
+    return directive
 
 
 def _distinct_destinations(directives: Iterable[dict[str, Any]]) -> Optional[dict[str, Any]]:
@@ -100,17 +104,55 @@ def apply_pre_llm_model_switch(
             return False
     elif not selected["allow_cache_break"]:
         return False
-    if (selected["model"].casefold(), selected["provider"].casefold()) == (
+    same_identity = (selected["model"].casefold(), selected["provider"].casefold()) == (
         str(getattr(agent, "model", "") or "").casefold(),
         str(getattr(agent, "provider", "") or "").casefold(),
-    ):
-        return False
+    )
+    from agent.plugin_model_switch_reasoning import (
+        effective_reasoning_effort,
+        normalize_reasoning_effort,
+    )
+
+    selected_effort = normalize_reasoning_effort(
+        selected["model"], selected["provider"], selected.get("reasoning_effort")
+    )
+    if same_identity:
+        if selected_effort is None:
+            return False
+        if effective_reasoning_effort(getattr(agent, "reasoning_config", None)) == selected_effort:
+            return False
+        switch_kwargs = {
+            "preserve_frozen_prompt": True,
+            "reasoning_effort": selected_effort,
+        }
+        try:
+            applied = agent.switch_model(
+                selected["model"],
+                selected["provider"],
+                getattr(agent, "api_key", "") or "",
+                getattr(agent, "base_url", "") or "",
+                getattr(agent, "api_mode", "") or "",
+                getattr(agent, "capabilities", None),
+                **switch_kwargs,
+            )
+        except Exception:
+            return False
+        # Older test/plugin doubles return None; the runtime seam returns a bool
+        # for effort-only switches, so only an explicit False means no-op.
+        return applied is not False
     try:
         resolved = _resolve_destination(agent, selected)
     except Exception:
         return False
     if not getattr(resolved, "success", False):
         return False
+    switch_kwargs = {
+        "preserve_frozen_prompt": True,
+        "request_overrides": resolved.request_overrides,
+        "runtime_capabilities": resolved.runtime_capabilities,
+    }
+    if selected_effort is not None:
+        switch_kwargs["reasoning_effort"] = selected_effort
     try:
         agent.switch_model(
             resolved.new_model,
@@ -121,9 +163,7 @@ def apply_pre_llm_model_switch(
             resolved.capabilities,
             # ``allow_cache_break`` controls provider transport cache reuse; it
             # must never rebuild Hermes' frozen prompt/history prefix.
-            preserve_frozen_prompt=True,
-            request_overrides=resolved.request_overrides,
-            runtime_capabilities=resolved.runtime_capabilities,
+            **switch_kwargs,
         )
     except Exception:
         return False
