@@ -43,8 +43,8 @@ NC='\033[0m' # No Color
 BOLD='\033[1m'
 
 # Configuration
-REPO_URL_SSH="git@github.com:NousResearch/hermes-agent.git"
-REPO_URL_HTTPS="https://github.com/NousResearch/hermes-agent.git"
+REPO_URL_SSH="${HERMES_REPO_URL_SSH:-git@github.com:NousResearch/hermes-agent.git}"
+REPO_URL_HTTPS="${HERMES_REPO_URL_HTTPS:-https://github.com/NousResearch/hermes-agent.git}"
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 # INSTALL_DIR is resolved AFTER arg parsing and OS detection so we can pick an
 # FHS-style layout for root installs.  Track whether the user gave us an
@@ -72,10 +72,18 @@ RUN_SETUP=true
 SKIP_BROWSER=false
 SKIP_COMPUTER_USE=false
 NO_SKILLS=false
-BRANCH="main"
+BRANCH="${HERMES_INSTALL_BRANCH:-main}"
 INSTALL_COMMIT=""
 FORCE_COMMIT=false
 ENSURE_DEPS=""
+
+# Optional standalone plugin overlay. Runtime Edition sets these values from
+# scripts/install-runtime.sh; the upstream installer remains unchanged when
+# they are unset.
+RUNTIME_PLUGIN_REPO_HTTPS="${HERMES_RUNTIME_PLUGIN_REPO_HTTPS:-}"
+RUNTIME_PLUGIN_REF="${HERMES_RUNTIME_PLUGIN_REF:-}"
+RUNTIME_PLUGIN_NAME="${HERMES_RUNTIME_PLUGIN_NAME:-typesafe}"
+UPSTREAM_REPO_HTTPS="${HERMES_UPSTREAM_REPO_HTTPS:-}"
 
 MANIFEST_MODE=false
 STAGE_NAME=""
@@ -174,7 +182,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --no-skills    Start with a blank slate — seed no bundled skills, and"
             echo "                   write \$HERMES_HOME/.no-bundled-skills so future"
             echo "                   'hermes update' runs never inject bundled skills either"
-            echo "  --branch NAME  Git branch to install (default: main)"
+            echo "  --branch NAME  Git branch to install (default: $BRANCH)"
             echo "  --commit SHA   Pin checkout to a specific commit after clone/update"
             echo "                   (ignored when it would roll an existing install back)"
             echo "  --force-commit Apply --commit even if it rolls the install backwards"
@@ -325,10 +333,14 @@ emit_manifest() {
     # first-launch bootstrap and the CLI one-liner omit it (building the
     # desktop from inside the already-running app would clobber it).
     local desktop_stage=""
+    local runtime_plugin_stage=""
+    if [ -n "$RUNTIME_PLUGIN_REPO_HTTPS" ]; then
+        runtime_plugin_stage='{"name":"runtime-plugin","title":"Install Runtime Edition plugin","category":"runtime","needs_user_input":false},'
+    fi
     if [ "$INCLUDE_DESKTOP" = true ]; then
         desktop_stage='{"name":"desktop","title":"Build desktop app","category":"runtime","needs_user_input":false},'
     fi
-    printf '%s' '{"protocol_version":1,"stages":[{"name":"prerequisites","title":"System prerequisites","category":"runtime","needs_user_input":false},{"name":"repository","title":"Download Hermes Agent","category":"runtime","needs_user_input":false},{"name":"venv","title":"Create Python virtual environment","category":"runtime","needs_user_input":false},{"name":"python-deps","title":"Install Python dependencies","category":"runtime","needs_user_input":false},{"name":"node-deps","title":"Install browser-tool dependencies","category":"runtime","needs_user_input":false},{"name":"path","title":"Install hermes command","category":"runtime","needs_user_input":false},{"name":"config","title":"Prepare config and skills","category":"configuration","needs_user_input":false},{"name":"setup","title":"Configure API keys and settings","category":"configuration","needs_user_input":true},{"name":"gateway","title":"Configure gateway service","category":"configuration","needs_user_input":true},'"$desktop_stage"'{"name":"complete","title":"Finish install","category":"runtime","needs_user_input":false}]}'
+    printf '%s' '{"protocol_version":1,"stages":[{"name":"prerequisites","title":"System prerequisites","category":"runtime","needs_user_input":false},{"name":"repository","title":"Download Hermes Agent","category":"runtime","needs_user_input":false},{"name":"venv","title":"Create Python virtual environment","category":"runtime","needs_user_input":false},{"name":"python-deps","title":"Install Python dependencies","category":"runtime","needs_user_input":false},{"name":"node-deps","title":"Install browser-tool dependencies","category":"runtime","needs_user_input":false},{"name":"path","title":"Install hermes command","category":"runtime","needs_user_input":false},{"name":"config","title":"Prepare config and skills","category":"configuration","needs_user_input":false},'"$runtime_plugin_stage"'{"name":"setup","title":"Configure API keys and settings","category":"configuration","needs_user_input":true},{"name":"gateway","title":"Configure gateway service","category":"configuration","needs_user_input":true},'"$desktop_stage"'{"name":"complete","title":"Finish install","category":"runtime","needs_user_input":false}]}'
     printf '\n'
 }
 
@@ -1469,6 +1481,17 @@ show_manual_install_hint() {
 # Installation
 # ============================================================================
 
+configure_runtime_origin() {
+    [ -n "$UPSTREAM_REPO_HTTPS" ] || return 0
+    [ -d "$INSTALL_DIR/.git" ] || return 0
+    if git -C "$INSTALL_DIR" remote get-url origin >/dev/null 2>&1; then
+        git -C "$INSTALL_DIR" remote set-url origin "$REPO_URL_HTTPS"
+    else
+        git -C "$INSTALL_DIR" remote add origin "$REPO_URL_HTTPS"
+    fi
+    log_info "Configured Runtime Edition origin"
+}
+
 clone_repo() {
     log_info "Installing to $INSTALL_DIR..."
 
@@ -1707,6 +1730,23 @@ EOF
     fi
 
     log_success "Repository ready"
+}
+
+configure_runtime_remotes() {
+    [ -n "$UPSTREAM_REPO_HTTPS" ] || return 0
+    if [ ! -d "$INSTALL_DIR/.git" ]; then
+        log_error "Cannot configure Runtime Edition remotes: checkout is not a git repository"
+        return 1
+    fi
+    if git -C "$INSTALL_DIR" remote get-url upstream >/dev/null 2>&1; then
+        git -C "$INSTALL_DIR" remote set-url upstream "$UPSTREAM_REPO_HTTPS"
+    else
+        git -C "$INSTALL_DIR" remote add upstream "$UPSTREAM_REPO_HTTPS"
+    fi
+    # Keep the upstream source fetch-only; origin remains the fork's update remote.
+    # A made-up transport fails closed instead of treating a relative push URL as a path.
+    git -C "$INSTALL_DIR" remote set-url --push upstream no_push://disabled
+    log_info "Configured Runtime Edition upstream fetch-only"
 }
 
 setup_venv() {
@@ -2337,6 +2377,178 @@ SOUL_EOF
             fi
         fi
     fi
+}
+
+install_runtime_plugin() {
+    [ -n "$RUNTIME_PLUGIN_REPO_HTTPS" ] || return 0
+    if ! printf '%s' "$RUNTIME_PLUGIN_REF" | grep -qE '^[0-9a-fA-F]{40}$'; then
+        log_error "Runtime plugin ref must be a 40-character commit SHA"
+        return 1
+    fi
+
+    local plugin_python="$PYTHON_PATH"
+    if [ "$USE_VENV" = true ] && [ -x "$INSTALL_DIR/venv/bin/python" ]; then
+        plugin_python="$INSTALL_DIR/venv/bin/python"
+    fi
+    if [ ! -x "$plugin_python" ]; then
+        log_error "Runtime plugin interpreter not found: $plugin_python"
+        return 1
+    fi
+
+    local stage clone wheel_dir wheel_path actual normalized_ref target backup
+    stage="$(mktemp -d "$HERMES_HOME/.runtime-plugin.XXXXXX")"
+    clone="$stage/source"
+    wheel_dir="$stage/wheel"
+    mkdir -p "$wheel_dir" "$HERMES_HOME/plugins"
+
+    log_info "Installing Runtime Edition plugin '$RUNTIME_PLUGIN_NAME' at $RUNTIME_PLUGIN_REF..."
+    if ! GIT_TERMINAL_PROMPT=0 git clone --quiet --no-checkout --filter=blob:none --depth 1 \
+        "$RUNTIME_PLUGIN_REPO_HTTPS" "$clone" \
+        || ! GIT_TERMINAL_PROMPT=0 git -C "$clone" fetch --quiet --depth 1 origin "$RUNTIME_PLUGIN_REF" \
+        || ! git -C "$clone" checkout --quiet --detach "$RUNTIME_PLUGIN_REF"; then
+        log_error "Could not fetch the pinned Runtime Edition plugin"
+        rm -rf "$stage"
+        return 1
+    fi
+    actual="$(git -C "$clone" rev-parse HEAD 2>/dev/null || true)"
+    normalized_ref="$(printf '%s' "$RUNTIME_PLUGIN_REF" | tr '[:upper:]' '[:lower:]')"
+    if [ "$actual" != "$normalized_ref" ]; then
+        log_error "Runtime plugin checkout did not resolve to the requested commit"
+        rm -rf "$stage"
+        return 1
+    fi
+
+    # Build from the staged checkout, then install only the wheel. Never pip-install
+    # the clone path: the plugin's declared typesafe-sdk dependency must resolve in
+    # the installer interpreter, while the runtime discovery tree stays standalone.
+    find "$clone" -type d -name '*.egg-info' -prune -exec rm -rf {} + 2>/dev/null || true
+    if [ -z "${UV_CMD:-}" ]; then
+        log_error "uv is required to build the Runtime Edition plugin wheel"
+        rm -rf "$stage"
+        return 1
+    fi
+    if ! "$UV_CMD" build --wheel --out-dir "$wheel_dir" "$clone"; then
+        log_error "Could not build the Runtime Edition plugin wheel"
+        rm -rf "$stage"
+        return 1
+    fi
+    for candidate in "$wheel_dir"/*.whl; do
+        if [ -f "$candidate" ]; then
+            wheel_path="$candidate"
+            break
+        fi
+    done
+    if [ -z "${wheel_path:-}" ]; then
+        log_error "Runtime Edition plugin build produced no wheel"
+        rm -rf "$stage"
+        return 1
+    fi
+    if ! "$UV_CMD" pip install --python "$plugin_python" --upgrade "$wheel_path"; then
+        log_error "Could not install the Runtime Edition plugin wheel and its declared dependencies"
+        rm -rf "$stage"
+        return 1
+    fi
+
+    target="$HERMES_HOME/plugins/$RUNTIME_PLUGIN_NAME"
+    backup="$HERMES_HOME/.runtime-plugin-backup.$$"
+    local metadata_path metadata_backup metadata_had_file=false
+    metadata_path="$HERMES_HOME/plugins/.install-metadata.json"
+    metadata_backup="$stage/install-metadata-before.json"
+    if [ -f "$metadata_path" ]; then
+        cp "$metadata_path" "$metadata_backup"
+        metadata_had_file=true
+    fi
+    if [ -e "$target" ]; then
+        mv "$target" "$backup"
+    fi
+    if ! mv "$clone" "$target"; then
+        [ -e "$backup" ] && mv "$backup" "$target"
+        log_error "Could not install the Runtime Edition plugin checkout"
+        rm -rf "$stage"
+        return 1
+    fi
+    find "$target" -type d -name '*.egg-info' -prune -exec rm -rf {} + 2>/dev/null || true
+    if [ "$(git -C "$target" rev-parse HEAD 2>/dev/null || true)" != "$normalized_ref" ]; then
+        if ! mv "$target" "$stage/source" 2>/dev/null; then
+            rm -rf "$target"
+        fi
+        [ -e "$backup" ] && mv -f "$backup" "$target"
+        log_error "Installed Runtime Edition plugin checkout did not retain the pinned revision"
+        rm -rf "$stage"
+        return 1
+    fi
+
+    # Keep the same provenance sidecar as `hermes plugins install`: Runtime
+    # Edition's key-neutral path deliberately avoids cmd_install's env-var
+    # prompt, so record the exact source and revision here for plugin update/
+    # pack flows. The helper atomically writes and reads the record back.
+    if ! "$plugin_python" - "$metadata_path" "$RUNTIME_PLUGIN_NAME" "$RUNTIME_PLUGIN_REF" "$RUNTIME_PLUGIN_REPO_HTTPS" >/dev/null 2>&1 <<'PY'
+import json
+import os
+import sys
+import tempfile
+from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
+
+metadata_path = Path(sys.argv[1])
+plugin_name, revision, source = sys.argv[2:]
+if metadata_path.exists():
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+else:
+    metadata = {}
+if not isinstance(metadata, dict):
+    raise ValueError("plugin install metadata must be an object")
+
+parsed = urlsplit(source)
+if parsed.scheme and parsed.netloc:
+    host = parsed.hostname or ""
+    if parsed.port is not None:
+        host = f"{host}:{parsed.port}"
+    source = urlunsplit((parsed.scheme, host, parsed.path, "", ""))
+record = {"pinned": True, "revision": revision.lower(), "source": source}
+metadata[plugin_name] = record
+metadata_path.parent.mkdir(parents=True, exist_ok=True)
+fd, temp_name = tempfile.mkstemp(prefix=f".{metadata_path.name}.tmp-", dir=metadata_path.parent)
+os.close(fd)
+temp_path = Path(temp_name)
+try:
+    temp_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(temp_path, metadata_path)
+finally:
+    temp_path.unlink(missing_ok=True)
+
+readback = json.loads(metadata_path.read_text(encoding="utf-8"))
+if readback.get(plugin_name) != record:
+    raise ValueError("plugin install metadata read-back mismatch")
+PY
+    then
+        if ! mv "$target" "$stage/source" 2>/dev/null; then
+            rm -rf "$target"
+        fi
+        [ -e "$backup" ] && mv -f "$backup" "$target"
+        if [ "$metadata_had_file" = true ]; then
+            mv -f "$metadata_backup" "$metadata_path"
+        else
+            rm -f "$metadata_path"
+        fi
+        log_error "Could not record the pinned Runtime Edition plugin metadata"
+        rm -rf "$stage"
+        return 1
+    fi
+    rm -rf "$backup" "$stage"
+
+    local hermes_command
+    hermes_command="$(get_command_link_dir)/hermes"
+    if [ ! -x "$hermes_command" ]; then
+        log_error "Hermes launcher not found: $hermes_command"
+        return 1
+    fi
+    if ! HERMES_HOME="$HERMES_HOME" "$hermes_command" plugins enable \
+        "$RUNTIME_PLUGIN_NAME" --no-allow-tool-override </dev/null; then
+        log_error "Could not enable the Runtime Edition plugin"
+        return 1
+    fi
+    log_success "Runtime Edition plugin installed and enabled (keyless until configured)"
 }
 
 find_system_browser() {
@@ -3712,7 +3924,9 @@ run_stage_body() {
             detect_os
             resolve_install_layout
             check_git
+            configure_runtime_origin
             clone_repo
+            configure_runtime_remotes
             ;;
         venv)
             detect_os
@@ -3751,6 +3965,14 @@ run_stage_body() {
             resolve_install_layout
             require_install_dir
             copy_config_templates
+            ;;
+        runtime-plugin)
+            detect_os
+            resolve_install_layout
+            require_install_dir
+            install_uv
+            check_python
+            install_runtime_plugin
             ;;
         setup)
             detect_os
@@ -3851,7 +4073,9 @@ main() {
     check_network_prerequisites
     install_system_packages
 
+    configure_runtime_origin
     clone_repo
+    configure_runtime_remotes
     setup_venv
     install_deps
     install_node_deps || return
@@ -3859,6 +4083,7 @@ main() {
     install_computer_use_driver
     setup_path
     copy_config_templates
+    install_runtime_plugin
     run_setup_wizard
     maybe_start_gateway
 

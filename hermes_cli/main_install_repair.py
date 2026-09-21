@@ -1187,5 +1187,14 @@ def _resolve_node_runtime_npm() -> str | None:
 
 
 def _resolve_update_branch(args) -> str:
-    """Normalize ``args.branch`` to a non-empty name (default ``main``; blank/whitespace = default)."""
-    return (getattr(args, "branch", None) or "main").strip() or "main"
+    """Normalize ``args.branch``; Runtime Edition installs default to ``local/runtime``."""
+    requested = (getattr(args, "branch", None) or "").strip()
+    if requested:
+        return requested
+    try:
+        from hermes_cli.main import PROJECT_ROOT
+        from hermes_cli.runtime_edition import default_update_branch, origin_url
+
+        return default_update_branch(origin_url(PROJECT_ROOT))
+    except (OSError, ValueError):
+        return "main"

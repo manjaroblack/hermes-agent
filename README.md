@@ -3,7 +3,7 @@
 >
 > This is the public [manjaroblack/hermes-agent](https://github.com/manjaroblack/hermes-agent) fork of [Nous Research Hermes Agent](https://github.com/NousResearch/hermes-agent). The default branch here is [`local/runtime`](https://github.com/manjaroblack/hermes-agent/tree/local/runtime): it contains the upstream-shaped Hermes code plus the Runtime Edition overlays below. The `origin/main` branch remains the upstream-shaped mirror.
 >
-> **Install warning:** `curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash` installs the official Nous Hermes release, not this fork. Clone this repository and build from `local/runtime` to get Runtime Edition.
+> **Install warning:** `curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash` installs the official Nous Hermes release, not this fork. Clone this repository and run `scripts/install-runtime.sh` from `local/runtime` to get Runtime Edition.
 >
 > The upstream README and documentation remain the source of truth for the base project: see the [Nous README](https://github.com/NousResearch/hermes-agent/blob/main/README.md) and [Hermes documentation](https://hermes-agent.nousresearch.com/docs/).
 
@@ -19,9 +19,33 @@ The catalog below groups commits present on `local/runtime` but not on `origin/m
 | Dashboard | New chat is a single fresh launch; fresh PTY state is preserved and honored across reconnects. |
 | Dependencies | The nanoid advisory is cleared for the web and TUI packages. |
 | House skill restyle | Bundled and optional skills use the house constraint-schema on this branch. Clones will see different skill text than Nous; this is disclosed as a corpus change, not presented as a user-facing product feature. |
-| Companion plugin | [hermes-typesafe](https://github.com/manjaroblack/hermes-typesafe) is a separate, default-off TypeSafe System One plugin with a `jev-1.13.0` pin. Suggestion, guardrail, and routing paths are opt-in; some environments report `HELD_UNSUPPORTED_HOST`. It is not in-tree and is not installed by the Nous `install.sh`. |
+| Companion plugin | [hermes-typesafe](https://github.com/manjaroblack/hermes-typesafe) is a separate TypeSafe System One plugin with a `jev-1.13.0` policy pin. Runtime Edition installs the plugin at an immutable reviewed commit and enables the plugin; `system_one` remains key-gated, and suggestion, guardrail, and routing paths remain default-off. It is not in-tree or part of the Hermes core dependency set. |
 
-The companion plugin is deliberately separate from the core fork: Runtime Edition does not rebrand Hermes as Jev or present TypeSafe as bundled.
+The companion plugin is deliberately separate from the core fork: Runtime Edition does not rebrand Hermes as Jev or vendor the TypeSafe SDK into Hermes core.
+
+## Runtime Edition install
+
+Runtime Edition v1 supports Linux, macOS, and WSL. Native Windows PowerShell is not part of this overlay.
+Until a release tag exists, use the pinned branch checkout rather than a floating hosted installer:
+
+```bash
+git clone --branch local/runtime https://github.com/manjaroblack/hermes-agent.git
+cd hermes-agent
+bash scripts/install-runtime.sh
+```
+
+The wrapper selects `manjaroblack/hermes-agent` `local/runtime`, delegates bootstrap work to
+`scripts/install.sh`, and installs the standalone `hermes-typesafe` plugin at commit
+`0cbb7b3f61964467c97b5cfae7450571909c7040`. It builds and installs the plugin wheel plus its declared
+`typesafe-sdk>=0.7,<0.9` dependency into the Hermes installer interpreter, then places the reviewed
+Jev/TypeSafe plugin checkout at `~/.hermes/plugins/typesafe` and enables it. The checkout's generated `*.egg-info`
+metadata is removed. The checkout keeps `origin` on the fork's `local/runtime` branch and adds the
+Nous repository as a fetch-only `upstream` remote.
+
+The installer never asks for, logs, exports, or writes `TYPESAFE_API_KEY`. After installation, add it
+through Dashboard Keys → Custom (the plugin reads the Hermes scoped secret). Without that key,
+`system_one` is unavailable. Suggestion, guardrail, and routing settings stay off until explicitly
+configured. Verify the effective plan without network access with `bash scripts/install-runtime.sh --dry-run`.
 
 ---
 
