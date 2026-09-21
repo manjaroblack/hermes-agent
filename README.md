@@ -1,3 +1,32 @@
+> [!NOTE]
+> **Hermes Agent — Runtime Edition**
+>
+> This is the public [manjaroblack/hermes-agent](https://github.com/manjaroblack/hermes-agent) fork of [Nous Research Hermes Agent](https://github.com/NousResearch/hermes-agent). The default branch here is [`local/runtime`](https://github.com/manjaroblack/hermes-agent/tree/local/runtime): it contains the upstream-shaped Hermes code plus the Runtime Edition overlays below. The `origin/main` branch remains the upstream-shaped mirror.
+>
+> **Install warning:** `curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash` installs the official Nous Hermes release, not this fork. Clone this repository and build from `local/runtime` to get Runtime Edition.
+>
+> The upstream README and documentation remain the source of truth for the base project: see the [Nous README](https://github.com/NousResearch/hermes-agent/blob/main/README.md) and [Hermes documentation](https://hermes-agent.nousresearch.com/docs/).
+
+## How this differs
+
+The catalog below groups commits present on `local/runtime` but not on `origin/main`; the companion row is a separately maintained repository. This describes the fork without turning the README into a commit log.
+
+| Overlay family | Runtime Edition changes |
+| --- | --- |
+| Plugin host contracts | [PR 17](https://github.com/manjaroblack/hermes-agent/pull/17) adds generic guarded plugin contracts: model switches occur on the owning turn, pre-tool decisions fail closed, and skill-roster snapshots are bounded. [PR 18](https://github.com/manjaroblack/hermes-agent/pull/18) adds effort-only plugin model switches through the existing `switch_model` path; invalid effort values are omitted. Both are merged into `local/runtime`; no TypeSafe SDK is in core. |
+| Kanban / fleet | Project boards as a durable work boundary; review-lane recovery after blocked work or feedback; validated board notification storage; attachments visible to code-execution workers; explicit board-pin identity; gateway create fail-closed on the `ok` key; project-scope inheritance and reconciliation; sidecar-free audit reads; legacy custom-DB notification inheritance. |
+| Discord gateway | Opt-in auto-threading for free-response channels; configuration extras honored for free-response threads; `metadata.thread_id` honored for file/media sends; final-only responses can be delivered without a thread. |
+| Dashboard | New chat is a single fresh launch; fresh PTY state is preserved and honored across reconnects. |
+| Dependencies | The nanoid advisory is cleared for the web and TUI packages. |
+| House skill restyle | Bundled and optional skills use the house constraint-schema on this branch. Clones will see different skill text than Nous; this is disclosed as a corpus change, not presented as a user-facing product feature. |
+| Companion plugin | [hermes-typesafe](https://github.com/manjaroblack/hermes-typesafe) is a separate, default-off TypeSafe System One plugin with a `jev-1.13.0` pin. Suggestion, guardrail, and routing paths are opt-in; some environments report `HELD_UNSUPPORTED_HOST`. It is not in-tree and is not installed by the Nous `install.sh`. |
+
+The companion plugin is deliberately separate from the core fork: Runtime Edition does not rebrand Hermes as Jev or present TypeSafe as bundled.
+
+---
+
+The original Nous README begins below this separator and is intentionally left intact.
+
 <p align="center">
   <img src="assets/banner.png" alt="Hermes Agent" width="100%">
 </p>
