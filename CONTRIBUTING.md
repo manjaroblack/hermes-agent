@@ -2,6 +2,8 @@
 
 Thank you for contributing to Hermes Agent! This guide covers everything you need: setting up your dev environment, understanding the architecture, deciding what to build, and getting your PR merged.
 
+> **Runtime Edition fork:** Report bugs in the Runtime Edition overlay, installer, fork-only defaults, or companion-plugin integration at [manjaroblack/hermes-agent](https://github.com/manjaroblack/hermes-agent). Report bugs in unchanged upstream Hermes behavior at [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent). Do not add the standalone TypeSafe SDK to Hermes core; the reviewed `hermes-typesafe` repository remains a separate plugin.
+
 ---
 
 ## Contribution Priorities

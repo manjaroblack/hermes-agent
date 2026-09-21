@@ -4,6 +4,8 @@ This document describes Hermes Agent's trust model, names the one
 security boundary the project treats as load-bearing, and defines the
 scope for vulnerability reports.
 
+> **Runtime Edition fork:** Security reports about the Runtime Edition installer, fork-only overlay, or companion-plugin integration belong at [manjaroblack/hermes-agent](https://github.com/manjaroblack/hermes-agent). Reports about unchanged upstream Hermes behavior belong at [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent). The standalone `hermes-typesafe` plugin is maintained separately; do not send `TYPESAFE_API_KEY` in an issue, pull request, or chat.
+
 ## 1. Reporting a Vulnerability
 
 Report privately via [GitHub Security Advisories](https://github.com/NousResearch/hermes-agent/security/advisories/new)
