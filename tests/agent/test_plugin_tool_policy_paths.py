@@ -99,7 +99,7 @@ def _activate_policy(tmp_path, monkeypatch, *, blocked):
 
 
 def _run_path(path, runtime_agent, monkeypatch, handler):
-    from tests.run_agent.test_run_agent import _mock_assistant_msg, _mock_tool_call
+    from tests.agent.test_run_agent import _mock_assistant_msg, _mock_tool_call
 
     original = {"value": "original"}
     tool_name = "web_search"
@@ -128,7 +128,7 @@ def _run_path(path, runtime_agent, monkeypatch, handler):
             lambda *_args, **_kwargs: ["manage_connections"],
         )
         monkeypatch.setattr(
-            "model_tools_connectors.dispatch_connector_call",
+            "tools.connectors.dispatch_connector_call",
             lambda name, args, _call_id: handler(name, args),
         )
         from model_tools import handle_function_call

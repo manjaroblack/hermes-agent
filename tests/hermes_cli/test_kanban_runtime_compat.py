@@ -110,8 +110,12 @@ def test_worker_kanban_block_forwards_structured_metadata(
             assignee="hermes-coding",
             initial_status="running",
         )
+        claimed = kb.claim_task(conn, task_id)
+        assert claimed is not None
+        assert claimed.current_run_id is not None
 
     monkeypatch.setenv("HERMES_KANBAN_TASK", task_id)
+    monkeypatch.setenv("HERMES_KANBAN_RUN_ID", str(claimed.current_run_id))
     result = json.loads(
         kanban_tools._handle_block(
             {

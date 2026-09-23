@@ -235,7 +235,7 @@ def test_run_conversation_routes_the_next_real_sdk_request_without_mutating_froz
     from hermes_cli import plugins
     from hermes_cli.plugins import PluginContext, PluginManager, PluginManifest
     from run_agent import AIAgent
-    from tests.run_agent.test_run_agent import _mock_response
+    from tests.agent.test_run_agent import _mock_response
 
     with (
         patch("model_tools.get_tool_definitions", return_value=_tool_definitions()),

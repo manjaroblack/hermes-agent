@@ -230,7 +230,7 @@ class TestKanbanAttachmentSandboxTools(unittest.TestCase):
             self.assertIn(f"def {tool_name}(", src)
 
     def test_non_kanban_session_does_not_expose_attachment_tools(self):
-        """A normal session must not inherit worker-only attachment tools."""
+        """A session without the kanban toolset must not inherit attachment tools."""
         import model_tools
         from tools.registry import invalidate_check_fn_cache
 
@@ -238,7 +238,7 @@ class TestKanbanAttachmentSandboxTools(unittest.TestCase):
         try:
             invalidate_check_fn_cache()
             definitions = model_tools.get_tool_definitions(
-                enabled_toolsets=["code_execution", "kanban"],
+                enabled_toolsets=["code_execution"],
                 quiet_mode=True,
             )
             session_tools = {
@@ -887,7 +887,12 @@ class TestEnvVarFiltering(unittest.TestCase):
         try:
             os.environ["HERMES_TIMEZONE"] = "America/New_York"
             child_env = self._get_child_env()
-            self.assertEqual(child_env.get("TZ"), "America/New_York")
+            if sys.platform == "win32":
+                # The MSVC runtime only parses POSIX-form TZ; an IANA name yields a wrong
+                # offset (#112233), so Windows children keep the OS zone instead.
+                self.assertNotIn("TZ", child_env)
+            else:
+                self.assertEqual(child_env.get("TZ"), "America/New_York")
         finally:
             os.environ.clear()
             os.environ.update(env_backup)
@@ -1009,7 +1014,7 @@ class TestLoadConfig(unittest.TestCase):
         mock_cli = MagicMock()
         mock_cli.CLI_CONFIG = {"code_execution": {"timeout": 999}}
         with patch.dict("sys.modules", {"cli": mock_cli}), \
-             patch("hermes_cli.config.read_raw_config", return_value={}):
+             patch("hermes_cli.config.load_config_readonly", return_value={}):
             result = _load_config()
         self.assertEqual(result, {})
 
