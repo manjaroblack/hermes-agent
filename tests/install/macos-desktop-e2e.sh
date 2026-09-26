@@ -9,6 +9,10 @@
 # whatever `main` serves - so parking serve.git's main at OLD stages the
 # "user on the current release" start, and advancing it to HEAD makes an
 # update available exactly the way it does for a real user.
+# The dmg would download upstream main's install.sh, which now runs
+# `pm install` against pm/lock.json. This fork's served commits do not
+# have that file, so the install phase points HERMES_SETUP_DEV_REPO_ROOT
+# at the script from the commit being installed.
 #
 # Phases (state shared via the workroot, mirroring the windows driver):
 #   stage    bare-clone this checkout to serve.git, park main at OLD
@@ -208,6 +212,10 @@ phase_install() {
   # shellcheck disable=SC1090
   . "$STATE"
   arm_redirect
+  local script_root
+  script_root="$(bash "$ASSETS/stage-served-install-scripts.sh" "$REPO_ROOT" "$OLD_SHA" "$WORK_ROOT")"
+  export HERMES_SETUP_DEV_REPO_ROOT="$script_root"
+  ok "install script pinned to $OLD_SHA via HERMES_SETUP_DEV_REPO_ROOT"
   step "installing OLD ($OLD_REF) via the published Hermes-Setup.dmg"
 
   local dmg="$WORK_ROOT/Hermes-Setup.dmg"

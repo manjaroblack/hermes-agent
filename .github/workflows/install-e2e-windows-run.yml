@@ -118,6 +118,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The published installer downloads upstream main's script, which
+      # requires pm/lock.json. Point it at the script from the served commit.
+      - name: Pin desktop installer script to the served commit
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests\install\e2e-assets\enable-served-install-script.ps1
+
       # One recording mechanism on every OS: the composite action installs
       # ffmpeg (cached - winget's download is the slow part), starts the
       # capture, and record-stop fails on a zero-frame file so a silently
