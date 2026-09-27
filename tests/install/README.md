@@ -33,7 +33,9 @@ Each leg with the script drivers has these phases:
 4. Update: move `main` to HEAD. Apply one update method. Make sure that the checkout is at HEAD and that `hermes --version` works.
 5. Desktop smoke again, at HEAD.
 
-The windows GUI driver replaces phases 2 and 4 when the install method is `desktop-installer@latest`. It downloads the published `Hermes-Setup.exe`, clicks through the installer window with AutoHotkey, and clicks "Update now" in the running app with Playwright.
+The windows GUI driver replaces phases 2 and 4 when the install method is `desktop-installer@latest`. It downloads the published `Hermes-Setup.exe`, clicks through the installer window with AutoHotkey, and clicks "Update now" in the running app with Playwright. The macOS GUI driver does the same with the published `Hermes-Setup.dmg`.
+
+The published Setup app downloads `install.ps1` / `install.sh` from `NousResearch/hermes-agent` `main` unless `HERMES_SETUP_DEV_REPO_ROOT` is set. That upstream script now requires `pm/lock.json`. The commits this fork serves do not contain that file, so the GUI drivers stage the install script from the same commit `serve.git` is cloning and point the env var at it. Script installs already ran that commit's own script.
 
 ## Old versions
 
